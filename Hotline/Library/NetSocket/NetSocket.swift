@@ -1,5 +1,6 @@
 // NetSocket.swift
 // Dustin Mierau • @mierau
+// MIT License
 
 import Foundation
 import Network
@@ -791,10 +792,7 @@ public actor NetSocket {
   
   private func startReceiveLoop() {
     @Sendable func loop(_ connection: NWConnection, chunk: Int, owner: NetSocket, connID: String) {
-      print("NetSocket[\(connID)]: Calling connection.receive(\(chunk)) to request more data...")
-      
       connection.receive(minimumIncompleteLength: 1, maximumLength: chunk) { [weak owner] data, _, isComplete, error in
-        print("NetSocket[\(connID)]: Receive callback - data: \(data?.count ?? 0) bytes, isComplete: \(isComplete), error: \(String(describing: error))")
         Task {
           guard let o = owner else {
             return
@@ -808,7 +806,6 @@ public actor NetSocket {
             await o.append(data, connID: connID)
           }
           if isComplete {
-            print("NetSocket[\(connID)]: EOF from peer.")
             await o.handleEOF()
             return
           }
@@ -950,7 +947,6 @@ public actor NetSocket {
   }
   
   private func append(_ data: Data, connID: String) {
-    print("NetSocket[\(connID)]: Received \(data.count) bytes from network, buffer now has \(buffer.count - head + data.count) available")
     buffer.append(data)
     if buffer.count - head > config.maxBufferBytes {
       // Hard stop: drop connection rather than OOM'ing.

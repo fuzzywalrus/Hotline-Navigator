@@ -1,4 +1,4 @@
-// NetSocketProgress
+// NetSocket FileProgress
 // Dustin Mierau • @mierau
 // MIT License
 

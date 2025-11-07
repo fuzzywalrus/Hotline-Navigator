@@ -1,5 +1,10 @@
 import Foundation
 
+enum Endianness {
+  case big
+  case little
+}
+
 struct HotlinePorts {
   static let DefaultServerPort: Int = 5500
   static let DefaultTrackerPort: Int = 5498

@@ -1,10 +1,87 @@
 import Foundation
 import SwiftUI
+import UniformTypeIdentifiers
 
-enum Endianness {
-  case big
-  case little
+extension Data {
+  func saveAsFileToDownloads(filename: String, bounceDock: Bool = true) -> Bool {
+    let folderURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+    let filePath = folderURL.generateUniqueFilePath(filename: filename)
+    if FileManager.default.createFile(atPath: filePath, contents: nil) {
+      if let h = FileHandle(forWritingAtPath: filePath) {
+        try? h.write(contentsOf: self)
+        try? h.close()
+        if bounceDock {
+          #if os(macOS)
+          var downloadURL = URL(filePath: filePath)
+          downloadURL.resolveSymlinksInPath()
+          DistributedNotificationCenter.default().post(name: .init("com.apple.DownloadFileFinished"), object: downloadURL.path)
+          #endif
+        }
+        return true
+      }
+    }
+    return false
+  }
 }
+
+// MARK: -
+
+extension URL {
+  func generateUniqueFilePath(filename base: String) -> String {
+    let fileManager = FileManager.default
+    var finalName = base
+    var counter = 2
+    
+    // Helper function to generate a new filename with a counter
+    func makeFileName() -> String {
+      let baseName = (base as NSString).deletingPathExtension
+      let extensionName = (base as NSString).pathExtension
+      return extensionName.isEmpty ? "\(baseName) \(counter)" : "\(baseName) \(counter).\(extensionName)"
+    }
+    
+    // Check if file exists and append counter until a unique name is found
+    var filePath = self.appending(component: finalName).path(percentEncoded: false)
+    while fileManager.fileExists(atPath: filePath) {
+      finalName = makeFileName()
+      filePath = self.appending(component: finalName).path(percentEncoded: false)
+      counter += 1
+    }
+    
+    return filePath
+  }
+}
+
+// MARK: -
+
+extension UTType {
+  var canBePreviewedByQuickLook: Bool {
+    // QuickLook supports most common document types
+    let supportedSupertypes: [UTType] = [
+      .image,
+      .movie,
+      .audio,
+      .pdf,
+      .font,
+      .usdz,
+      .text,
+      .sourceCode,
+      .spreadsheet,
+      .presentation,
+      
+//       Microsoft Office
+      .init(filenameExtension: "doc")!,
+      .init(filenameExtension: "docx")!,
+      .init(filenameExtension: "xls")!,
+      .init(filenameExtension: "xlsx")!,
+      .init(filenameExtension: "ppt")!,
+      .init(filenameExtension: "pptx")!,
+    ]
+    
+    return supportedSupertypes.contains { self.conforms(to: $0) }
+  }
+}
+
+// MARK: -
 
 extension String {
   
@@ -79,14 +156,14 @@ extension String {
 //      if let _ = try? RegularExpressions.supportedLinkScheme.prefixMatch(in: linkText) {
 //        injectedScheme = ""
 //      }
-//      
+//
 //      return "[\(linkText)](\(injectedScheme)\(linkText))"
 //    }
 //    return cp
   }
 }
 
-
+// MARK: -
 
 extension Binding where Value: OptionSet, Value == Value.Element {
   func bindedValue(_ options: Value) -> Bool {
@@ -103,5 +180,13 @@ extension Binding where Value: OptionSet, Value == Value.Element {
         self.wrappedValue.remove(options)
       }
     }
+  }
+}
+
+// MARK: -
+
+extension Color {
+  init(hex: Int, opacity: Double = 1.0) {
+    self.init(red: Double((hex >> 16) & 0xFF) / 255.0, green: Double((hex >> 8) & 0xFF) / 255.0, blue: Double(hex & 0xFF) / 255.0, opacity: opacity)
   }
 }

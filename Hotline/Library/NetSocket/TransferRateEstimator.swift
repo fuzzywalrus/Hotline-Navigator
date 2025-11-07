@@ -1,4 +1,4 @@
-// TransferRateEstimator
+// NetSocket: TransferRateEstimator
 // Dustin Mierau • @mierau
 // MIT License
 

@@ -485,38 +485,61 @@ struct TrackerBookmarkSheet: View {
   
   var body: some View {
     VStack(alignment: .leading) {
-      if self.bookmark == nil {
-        Text("Type the address and name of a Hotline Tracker:")
-          .foregroundStyle(.secondary)
-          .padding(.bottom, 8)
-      }
-      
       Form {
-        Group {
-          TextField(text: $trackerAddress) {
-            Text("Address:")
-          }
-          TextField(text: $trackerName, prompt: Text("Optional")) {
-            Text("Name:")
+        if self.bookmark == nil {
+          HStack(alignment: .top, spacing: 10) {
+            GroupedIconView(color: .blue, systemName: "point.3.filled.connected.trianglepath.dotted", padding: 5.0)
+              .frame(width: 28, height: 28)
+            
+            VStack(alignment: .leading) {
+              Text("Add a Hotline Tracker")
+              
+              Text("Enter the address and name of a Hotline Tracker you want to add.")
+                .foregroundStyle(.secondary)
+                .font(.subheadline)
+            }
           }
         }
-        .textFieldStyle(.roundedBorder)
+        else {
+          HStack(alignment: .top, spacing: 10) {
+            GroupedIconView(color: .blue, systemName: "point.3.filled.connected.trianglepath.dotted", padding: 5.0)
+              .frame(width: 28, height: 28)
+            
+            VStack(alignment: .leading) {
+              Text("Edit Hotline Tracker")
+              
+              Text("Change the address and name of your Hotline Tracker.")
+                .foregroundStyle(.secondary)
+                .font(.subheadline)
+            }
+          }
+        }
+        
+        Group {
+          TextField(text: $trackerAddress) {
+            Text("Address")
+          }
+          TextField(text: $trackerName, prompt: Text("Optional")) {
+            Text("Name")
+          }
+        }
+//        .textFieldStyle(.roundedBorder)
         .controlSize(.large)
       }
+      .formStyle(.grouped)
     }
-    .frame(width: 300)
+    .frame(width: 350)
     .fixedSize(horizontal: true, vertical: true)
-    .padding()
     .toolbar {
       ToolbarItem(placement: .confirmationAction) {
         Button {
           self.saveTracker()
         } label: {
           if self.bookmark != nil {
-            Text("Save Tracker")
+            Text("Save")
           }
           else {
-            Text("Add Tracker")
+            Text("Add")
           }
         }
       }
