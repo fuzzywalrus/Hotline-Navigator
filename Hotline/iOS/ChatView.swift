@@ -27,7 +27,7 @@ struct ChatView: View {
                   
                   VStack(alignment: .center) {
                     if let bannerImage = self.model.bannerImage {
-                      Image(uiImage: bannerImage)
+                      bannerImage
                         .resizable()
                         .scaledToFit()
                         .frame(maxWidth: 468.0)

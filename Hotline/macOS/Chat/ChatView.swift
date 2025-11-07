@@ -88,7 +88,7 @@ struct ChatMessageView: View {
 }
 
 struct ChatView: View {
-  @Environment(Hotline.self) private var model: Hotline
+  @Environment(HotlineState.self) private var model: HotlineState
   @Environment(\.colorScheme) var colorScheme
   @Environment(\.dismiss) var dismiss
 
@@ -98,12 +98,14 @@ struct ChatView: View {
   @State private var searchQuery: String = ""
   @State private var searchResults: [ChatMessage] = []
   @State private var isSearching: Bool = false
+  
+  @State private var stableBannerImage: Image?
 
   @FocusState private var focusedField: FocusedField?
 
   @Namespace var bottomID
 
-  private var bindableModel: Bindable<Hotline> {
+  private var bindableModel: Bindable<HotlineState> {
     Bindable(model)
   }
 
@@ -114,7 +116,36 @@ struct ChatView: View {
   var displayedMessages: [ChatMessage] {
     searchQuery.isEmpty ? model.chat : searchResults
   }
-
+  
+//  private var blurredBannerImage: some View {
+//    self.stableBannerImage?
+//      .resizable()
+//      .scaledToFit()
+//      .frame(maxWidth: 468.0)
+//      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+//      .offset(y: 1.5)
+//      .blur(radius: 4)
+//      .opacity(0.2)
+//  }
+  
+  private var bannerView: some View {
+    ZStack {
+      self.stableBannerImage?
+        .resizable()
+        .scaledToFit()
+        .frame(maxWidth: 468.0)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .offset(y: 1.5)
+        .blur(radius: 4)
+        .opacity(0.2)
+      self.stableBannerImage?
+        .resizable()
+        .scaledToFit()
+        .frame(maxWidth: 468.0)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+  }
+  
   var body: some View {
     @Bindable var bindModel = model
     
@@ -129,28 +160,10 @@ struct ChatView: View {
                 ForEach(displayedMessages) { msg in
                   if msg.type == .agreement {
                     VStack(alignment: .center, spacing: 16) {
-                      if let bannerImage = self.model.bannerImage {
-                        HStack(spacing: 0) {
-                          Spacer(minLength: 0)
-                          ZStack {
-                            Image(nsImage: bannerImage)
-                              .resizable()
-                              .scaledToFit()
-                              .frame(maxWidth: 468.0)
-                              .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                              .offset(y: 1.5)
-                              .blur(radius: 4)
-                              .opacity(0.2)
-                            
-                            Image(nsImage: bannerImage)
-                              .resizable()
-                              .scaledToFit()
-                              .frame(maxWidth: 468.0)
-                              .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                          }
-                          
-                          Spacer(minLength: 0)
-                        }
+                      HStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        self.bannerView
+                        Spacer(minLength: 0)
                       }
 
                       ServerAgreementView(text: msg.text)
@@ -218,7 +231,11 @@ struct ChatView: View {
               .multilineTextAlignment(.leading)
               .onSubmit {
                 if !model.chatInput.isEmpty {
-                  model.sendChat(model.chatInput, announce: NSEvent.modifierFlags.contains(.shift))
+                  let message = model.chatInput
+                  let announce = NSEvent.modifierFlags.contains(.shift)
+                  Task {
+                    try? await model.sendChat(message, announce: announce)
+                  }
                 }
                 model.chatInput = ""
               }
@@ -251,6 +268,12 @@ struct ChatView: View {
 //    .navigationTitle(model.serverTitle)
     .onChange(of: searchQuery) {
       performSearch()
+    }
+    .onChange(of: model.bannerImage) { oldValue, newValue in
+      stableBannerImage = newValue
+    }
+    .onAppear {
+      stableBannerImage = model.bannerImage
     }
 //    .toolbar {
 //      ToolbarItem(placement: .primaryAction) {
@@ -318,5 +341,5 @@ struct ChatView: View {
 
 #Preview {
   ChatView()
-    .environment(Hotline(trackerClient: HotlineTrackerClient(), client: HotlineClient()))
+    .environment(HotlineState())
 }

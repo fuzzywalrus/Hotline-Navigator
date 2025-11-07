@@ -8,10 +8,10 @@
 			<key>CFBundleTypeName</key>
 			<string>Hotline Bookmark</string>
 			<key>LSHandlerRank</key>
-			<string>None</string>
+			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>&apos;HTbm&apos;</string>
+				<string>'HTbm'</string>
 			</array>
 		</dict>
 	</array>
@@ -46,7 +46,7 @@
 			<key>UTTypeIconFiles</key>
 			<array/>
 			<key>UTTypeIdentifier</key>
-			<string>&apos;HTbm&apos;</string>
+			<string>'HTbm'</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>

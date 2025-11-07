@@ -8,12 +8,12 @@ class HotlinePanel: NSPanel {
     super.init(contentRect: NSRect(x: 0, y: 0, width: HOTLINE_PANEL_SIZE.width, height: HOTLINE_PANEL_SIZE.height), styleMask: [.nonactivatingPanel, .titled, .closable, .utilityWindow, .fullSizeContentView], backing: .buffered, defer: false)
     
     // Make sure that the panel is in front of almost all other windows
-    self.isFloatingPanel = false
+    self.isFloatingPanel = true
     self.level = .floating
     self.hidesOnDeactivate = true
     self.animationBehavior = .utilityWindow
     
-    // Allow the panel to appear in a fullscreen space
+    // Allow the panelto appear in a fullscreen space
 //    self.collectionBehavior.insert(.fullScreenAuxiliary)
     self.collectionBehavior.insert(.canJoinAllSpaces)
     self.collectionBehavior.insert(.ignoresCycle)
@@ -23,7 +23,7 @@ class HotlinePanel: NSPanel {
     // Don't delete panel state when it's closed.
     self.isReleasedWhenClosed = false
     
-    self.standardWindowButton(.closeButton)?.isHidden = true
+    self.standardWindowButton(.closeButton)?.isHidden = false
     self.standardWindowButton(.zoomButton)?.isHidden = true
     self.standardWindowButton(.miniaturizeButton)?.isHidden = true
     

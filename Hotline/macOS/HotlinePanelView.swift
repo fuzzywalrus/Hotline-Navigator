@@ -3,10 +3,27 @@ import SwiftUI
 struct HotlinePanelView: View {
   @Environment(\.openWindow) var openWindow
   @Environment(\.colorScheme) var colorScheme
+  @Environment(\.appState) private var appState
+
+  private var activeServerState: ServerState? {
+    self.appState.activeServerState
+  }
+
+  private var activeHotline: HotlineState? {
+    self.appState.activeHotline
+  }
+
+  private var bannerImage: Image {
+    self.activeHotline?.bannerImage ?? Image("Default Banner")
+  }
+
+  private var backgroundColor: Color {
+    Color(nsColor: self.activeHotline?.bannerColors?.backgroundColor ?? NSColor.controlBackgroundColor)
+  }
 
   var body: some View {
     VStack(spacing: 0) {
-      Image(nsImage: AppState.shared.activeServerState?.serverBanner ?? NSImage(named: "Default Banner")!)
+      self.bannerImage
         .interpolation(.high)
         .resizable()
         .scaledToFill()
@@ -14,8 +31,7 @@ struct HotlinePanelView: View {
         .frame(minWidth: 468, maxWidth: 468, minHeight: 60, maxHeight: 60)
         .clipped()
         .background(.black)
-//        .clipShape(RoundedRectangle(cornerRadius: 6.0))
-//        .padding([.top, .leading, .trailing], 4)
+        .animation(.default, value: self.bannerImage)
       
       HStack(spacing: 12) {
         Button {
@@ -36,7 +52,7 @@ struct HotlinePanelView: View {
         .help("Hotline Servers")
 
         Button {
-          AppState.shared.activeServerState?.selection = .chat
+          self.activeServerState?.selection = .chat
         }
         label: {
           Image("Section Chat")
@@ -45,11 +61,11 @@ struct HotlinePanelView: View {
         }
         .buttonStyle(.plain)
         .frame(width: 20, height: 20)
-        .disabled(AppState.shared.activeServerState == nil)
+        .disabled(self.activeServerState == nil)
         .help("Public Chat")
 
         Button {
-          AppState.shared.activeServerState?.selection = .board
+          self.activeServerState?.selection = .board
         }
         label: {
           Image("Section Board")
@@ -58,11 +74,11 @@ struct HotlinePanelView: View {
         }
         .buttonStyle(.plain)
         .frame(width: 20, height: 20)
-        .disabled(AppState.shared.activeServerState == nil)
+        .disabled(self.activeServerState == nil)
         .help("Message Board")
 
         Button {
-          AppState.shared.activeServerState?.selection = .news
+          self.activeServerState?.selection = .news
         }
         label: {
           Image("Section News")
@@ -71,11 +87,11 @@ struct HotlinePanelView: View {
         }
         .buttonStyle(.plain)
         .frame(width: 20, height: 20)
-        .disabled(AppState.shared.activeServerState == nil || (AppState.shared.activeHotline?.serverVersion ?? 0) < 151)
+        .disabled(self.activeServerState == nil || (self.activeHotline?.serverVersion ?? 0) < 151)
         .help("News")
 
         Button {
-          AppState.shared.activeServerState?.selection = .files
+          self.activeServerState?.selection = .files
         }
         label: {
           Image("Section Files")
@@ -84,14 +100,14 @@ struct HotlinePanelView: View {
         }
         .buttonStyle(.plain)
         .frame(width: 20, height: 20)
-        .disabled(AppState.shared.activeServerState == nil)
+        .disabled(self.activeServerState == nil)
         .help("Files")
 
         Spacer()
 
-        if AppState.shared.activeHotline?.access?.contains(.canOpenUsers) == true {
+        if self.activeHotline?.access?.contains(.canOpenUsers) == true {
           Button {
-            AppState.shared.activeServerState?.selection = .accounts
+            self.activeServerState?.selection = .accounts
           }
           label: {
             Image("Section Users")
@@ -100,7 +116,7 @@ struct HotlinePanelView: View {
           }
           .buttonStyle(.plain)
           .frame(width: 20, height: 20)
-          .disabled(AppState.shared.activeServerState == nil)
+          .disabled(self.activeServerState == nil)
           .help("Accounts")
         }
 
@@ -116,9 +132,9 @@ struct HotlinePanelView: View {
       .padding(.top, 12)
       .padding(.bottom, 12)
       .padding([.leading, .trailing], 12)
-      .background(AppState.shared.activeServerState?.bannerColors.map { Color(nsColor: $0.backgroundColor) } ?? Color(nsColor: .controlBackgroundColor))
-      .foregroundStyle(AppState.shared.activeServerState?.bannerColors.map { Color(nsColor: $0.primaryColor) } ?? Color.primary)
-//      .background(Color.red.opacity(0.5).blendMode(.multiply))
+      .background(self.backgroundColor)
+      .foregroundStyle(.primary)
+      .animation(.default, value: self.backgroundColor)
       
 //      GroupBox {
 //        HStack(spacing: 0) {
@@ -146,5 +162,5 @@ struct HotlinePanelView: View {
 
 #Preview {
   HotlinePanelView()
-    .environment(Hotline(trackerClient: HotlineTrackerClient(), client: HotlineClient()))
+    .environment(HotlineState())
 }

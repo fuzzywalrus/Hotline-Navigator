@@ -5,18 +5,26 @@ struct HotlinePorts {
   static let DefaultTrackerPort: Int = 5498
 }
 
-struct HotlineUserOptions: OptionSet {
-  let rawValue: UInt16
-  
-  static let none: HotlineUserOptions = []
-  
-  static let refusePrivateMessages = HotlineUserOptions(rawValue: 1 << 0)
-  static let refusePrivateChat = HotlineUserOptions(rawValue: 1 << 1)
-  static let automaticResponse = HotlineUserOptions(rawValue: 1 << 2)
+public struct HotlineUserOptions: OptionSet, Sendable {
+  public let rawValue: UInt16
+
+  public init(rawValue: UInt16) {
+    self.rawValue = rawValue
+  }
+
+  public static let none: HotlineUserOptions = []
+
+  public static let refusePrivateMessages = HotlineUserOptions(rawValue: 1 << 0)
+  public static let refusePrivateChat = HotlineUserOptions(rawValue: 1 << 1)
+  public static let automaticResponse = HotlineUserOptions(rawValue: 1 << 2)
 }
 
-struct HotlineUserAccessOptions: OptionSet {
-  let rawValue: UInt64
+public struct HotlineUserAccessOptions: OptionSet, Sendable {
+  public let rawValue: UInt64
+
+  public init(rawValue: UInt64) {
+    self.rawValue = rawValue
+  }
   
   static func accessIndexToBit(_ index: Int) -> Int {
     return 63 - index
@@ -201,23 +209,23 @@ struct HotlineServer: Identifiable, Hashable, NetSocketDecodable {
   }
 }
 
-struct HotlineNewsArticle: Identifiable {
-  let id: UInt32
-  let parentID: UInt32
-  let flags: UInt32
-  let title: String
-  let username: String
-  let date: Date?
-  var flavors: [(String, UInt16)] = []
-  var path: [String] = []
-  
-  static func == (lhs: HotlineNewsArticle, rhs: HotlineNewsArticle) -> Bool {
+public struct HotlineNewsArticle: Identifiable, Sendable {
+  public let id: UInt32
+  public let parentID: UInt32
+  public let flags: UInt32
+  public let title: String
+  public let username: String
+  public let date: Date?
+  public var flavors: [(String, UInt16)] = []
+  public var path: [String] = []
+
+  public static func == (lhs: HotlineNewsArticle, rhs: HotlineNewsArticle) -> Bool {
     return lhs.id == rhs.id
   }
 }
 
-struct HotlineAccount: Identifiable {
-  let id: UUID = UUID()
+public struct HotlineAccount: Identifiable {
+  public let id: UUID = UUID()
   var name: String = ""
   var login: String = ""
   var password: String? = nil
@@ -279,11 +287,11 @@ struct HotlineAccount: Identifiable {
       }
     }
   }
-  
-  static func == (lhs: HotlineAccount, rhs: HotlineAccount) -> Bool {
+
+  public static func == (lhs: HotlineAccount, rhs: HotlineAccount) -> Bool {
     return lhs.id == rhs.id
   }
-  
+
   // Generate an initial random 21 character alphanumeric password, in the spirit of the original client
   static func randomPassword() -> String {
     return String((0..<20).map{_ in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".randomElement()!})
@@ -291,7 +299,7 @@ struct HotlineAccount: Identifiable {
 }
 
 extension HotlineAccount: Hashable {
-  func hash(into hasher: inout Hasher) {
+  public func hash(into hasher: inout Hasher) {
     hasher.combine(self.id)
   }
 }
@@ -389,22 +397,22 @@ struct HotlineNewsList: Identifiable {
   }
 }
 
-struct HotlineNewsCategory: Identifiable, Hashable {
-  let id = UUID()
-  let type: UInt16
-  let count: UInt16
-  let name: String
-  var path: [String] = []
-  
-  static func == (lhs: HotlineNewsCategory, rhs: HotlineNewsCategory) -> Bool {
+public struct HotlineNewsCategory: Identifiable, Hashable, Sendable {
+  public let id = UUID()
+  public let type: UInt16
+  public let count: UInt16
+  public let name: String
+  public var path: [String] = []
+
+  public static func == (lhs: HotlineNewsCategory, rhs: HotlineNewsCategory) -> Bool {
     return lhs.id == rhs.id
   }
-  
-  func hash(into hasher: inout Hasher) {
+
+  public func hash(into hasher: inout Hasher) {
     hasher.combine(self.id)
   }
-  
-  init(type: UInt16, count: UInt16, name: String) {
+
+  public init(type: UInt16, count: UInt16, name: String) {
     self.type = type
     self.count = count
     self.name = name
@@ -438,32 +446,32 @@ struct HotlineNewsCategory: Identifiable, Hashable {
 
 
 @Observable
-class HotlineFile: Identifiable, Hashable {
-  let id = UUID()
-  let type: String
-  let creator: String
-  let fileSize: UInt32
-  let name: String
+public class HotlineFile: Identifiable, Hashable {
+  public let id = UUID()
+  public let type: String
+  public let creator: String
+  public let fileSize: UInt32
+  public let name: String
+
+  public var path: [String] = []
+  public var isExpanded: Bool = false
+  public var files: [HotlineFile]? = nil
+
+  public let isFolder: Bool
   
-  var path: [String] = []
-  var isExpanded: Bool = false
-  var files: [HotlineFile]? = nil
-  
-  let isFolder: Bool
-  
-  var isDropboxFolder: Bool {
+  public var isDropboxFolder: Bool {
     guard self.isFolder,
           (self.name.range(of: "upload", options: [.caseInsensitive]) != nil) || (self.name.range(of: "drop box", options: [.caseInsensitive]) != nil) else {
       return false
     }
     return true
   }
-  
-  static func == (lhs: HotlineFile, rhs: HotlineFile) -> Bool {
+
+  public static func == (lhs: HotlineFile, rhs: HotlineFile) -> Bool {
     return lhs.id == rhs.id
   }
-  
-  func hash(into hasher: inout Hasher) {
+
+  public func hash(into hasher: inout Hasher) {
     hasher.combine(self.id)
   }
   
@@ -501,25 +509,25 @@ class HotlineFile: Identifiable, Hashable {
   }
 }
 
-struct HotlineUser: Identifiable, Hashable {
-  let id: UInt16
-  let iconID: UInt16
-  let status: UInt16
-  let name: String
-  
-  var isAdmin: Bool {
+public struct HotlineUser: Identifiable, Hashable, Sendable {
+  public let id: UInt16
+  public let iconID: UInt16
+  public let status: UInt16
+  public let name: String
+
+  public var isAdmin: Bool {
     return ((self.status & 0x0002) != 0)
   }
-  
-  var isIdle: Bool {
+
+  public var isIdle: Bool {
     return ((self.status & 0x0001) != 0)
   }
-  
-  static func == (lhs: HotlineUser, rhs: HotlineUser) -> Bool {
+
+  public static func == (lhs: HotlineUser, rhs: HotlineUser) -> Bool {
     return lhs.id == rhs.id
   }
-  
-  init(id: UInt16, iconID: UInt16, status: UInt16, name: String) {
+
+  public init(id: UInt16, iconID: UInt16, status: UInt16, name: String) {
     self.id = id
     self.iconID = iconID
     self.status = status
@@ -535,10 +543,10 @@ struct HotlineUser: Identifiable, Hashable {
     self.name = data.readString(at: 8, length: userNameLength)!
   }
   
-  func hash(into hasher: inout Hasher) {
+  public func hash(into hasher: inout Hasher) {
     hasher.combine(self.id)
   }
-  
+
   func encoded() -> [UInt8] {
     var data: [UInt8] = []
     data.appendUInt16(self.id)
@@ -819,6 +827,111 @@ struct HotlineTransaction {
     self.fields.append(HotlineTransactionField(type: type, pathComponents: val))
   }
   
+  // MARK: - Subscript support for typed field access
+  // Replaces any existing field with the same type, or removes the field if value is set to nil
+  private mutating func replaceField(type: HotlineTransactionFieldType, with field: HotlineTransactionField?) {
+    // Remove existing fields of this type
+    self.fields.removeAll { $0.type == type }
+    // Append new field if provided
+    if let field = field {
+      self.fields.append(field)
+    }
+  }
+
+  // UInt8
+  subscript(_ type: HotlineTransactionFieldType) -> UInt8? {
+    get { self.getField(type: type)?.getUInt8() }
+    set {
+      if let v = newValue {
+        self.replaceField(type: type, with: HotlineTransactionField(type: type, val: v))
+      } else {
+        self.replaceField(type: type, with: nil)
+      }
+    }
+  }
+
+  // UInt16
+  subscript(_ type: HotlineTransactionFieldType) -> UInt16? {
+    get { self.getField(type: type)?.getUInt16() }
+    set {
+      if let v = newValue {
+        self.replaceField(type: type, with: HotlineTransactionField(type: type, val: v))
+      } else {
+        self.replaceField(type: type, with: nil)
+      }
+    }
+  }
+
+  // UInt32
+  subscript(_ type: HotlineTransactionFieldType) -> UInt32? {
+    get { self.getField(type: type)?.getUInt32() }
+    set {
+      if let v = newValue {
+        self.replaceField(type: type, with: HotlineTransactionField(type: type, val: v))
+      } else {
+        self.replaceField(type: type, with: nil)
+      }
+    }
+  }
+
+  // UInt64
+  subscript(_ type: HotlineTransactionFieldType) -> UInt64? {
+    get { self.getField(type: type)?.getUInt64() }
+    set {
+      if let v = newValue {
+        self.replaceField(type: type, with: HotlineTransactionField(type: type, val: v))
+      } else {
+        self.replaceField(type: type, with: nil)
+      }
+    }
+  }
+
+  // String (plain, not obfuscated)
+  subscript(_ type: HotlineTransactionFieldType) -> String? {
+    get { self.getField(type: type)?.getString() }
+    set {
+      if let v = newValue {
+        self.replaceField(type: type, with: HotlineTransactionField(type: type, string: v, encoding: .utf8, encrypt: false))
+      } else {
+        self.replaceField(type: type, with: nil)
+      }
+    }
+  }
+  
+  // [String] path components
+//  subscript(path type: HotlineTransactionFieldType) -> [String]? {
+//    get {
+//      self.getField(type: type)?.getString()
+//    }
+//    set {
+//      if let v = newValue {
+//        self.replaceField(type: type, with: HotlineTransactionField(type: type, pathComponents: v))
+//      } else {
+//        self.replaceField(type: type, with: nil)
+//      }
+//    }
+//  }
+  
+  // Field list
+  subscript(_ type: HotlineTransactionFieldType) -> [HotlineTransactionField]? {
+    get { self.fields.filter { $0.type == type } }
+    set {
+      // Remove existing fields of this type
+      self.fields.removeAll { $0.type == type }
+      
+      if let v = newValue {
+        self.fields.append(contentsOf: v)
+      }
+    }
+  }
+  
+  // Field
+  subscript(_ type: HotlineTransactionFieldType) -> HotlineTransactionField? {
+    get { self.fields.first { $0.type == type } }
+    set { self.replaceField(type: type, with: newValue) }
+  }
+  
+  
   func getField(type: HotlineTransactionFieldType) -> HotlineTransactionField? {
     return self.fields.first { p in
       p.type == type
@@ -838,7 +951,7 @@ struct HotlineTransaction {
     data.appendUInt16(self.isReply == 1 ? HotlineTransactionType.reply.rawValue : self.type.rawValue)
     data.appendUInt32(self.id)
     data.appendUInt32(self.errorCode)
-    
+
     if self.fields.count > 0 {
       var fieldData: [UInt8] = []
       fieldData.appendUInt16(UInt16(self.fields.count))
@@ -847,7 +960,7 @@ struct HotlineTransaction {
         fieldData.appendUInt16(f.dataSize)
         fieldData.appendData(f.data)
       }
-      
+
       data.appendUInt32(UInt32(fieldData.count))
       data.appendUInt32(UInt32(fieldData.count))
       data.appendData(fieldData)
@@ -858,6 +971,64 @@ struct HotlineTransaction {
       data.appendUInt16(0)
     }
     return data
+  }
+}
+
+// MARK: - NetSocket Protocol Conformance
+
+extension HotlineTransaction: NetSocketEncodable {
+  func encode(endian: Endian) throws -> Data {
+    return Data(self.encoded())
+  }
+}
+
+extension HotlineTransaction: NetSocketDecodable {
+  /// Decode a Hotline transaction directly from the socket stream
+  ///
+  /// Reads the 20-byte header, then reads and decodes the variable-length body with fields.
+  init(from socket: NetSocketNew, endian: Endian) async throws {
+    // Read 20-byte header
+    let flags = try await socket.read(UInt8.self)
+    let isReply = try await socket.read(UInt8.self)
+    let typeRaw = try await socket.read(UInt16.self, endian: endian)
+    let id = try await socket.read(UInt32.self, endian: endian)
+    let errorCode = try await socket.read(UInt32.self, endian: endian)
+    let totalSize = try await socket.read(UInt32.self, endian: endian)
+    let dataSize = try await socket.read(UInt32.self, endian: endian)
+
+    // Initialize with header data
+    self.flags = flags
+    self.isReply = isReply
+    self.type = HotlineTransactionType(rawValue: typeRaw) ?? .unknown
+    self.id = id
+    self.errorCode = errorCode
+    self.totalSize = totalSize
+    self.dataSize = dataSize
+    self.fields = []
+
+    // Read body if present
+    guard dataSize > 0 else { return }
+
+    let bodyData = try await socket.read(Int(dataSize))
+    var fieldBytes = [UInt8](bodyData)
+
+    // Decode fields
+    guard let fieldCount = fieldBytes.consumeUInt16(), fieldCount > 0 else { return }
+
+    for _ in 0..<fieldCount {
+      guard
+        let fieldID = fieldBytes.consumeUInt16(),
+        let fieldSize = fieldBytes.consumeUInt16()
+      else { break }
+
+      guard let fieldData: [UInt8] = fieldBytes.consumeBytes(Int(fieldSize)) else {
+        break
+      }
+
+      if let fieldType = HotlineTransactionFieldType(rawValue: fieldID) {
+        self.fields.append(HotlineTransactionField(type: fieldType, dataSize: fieldSize, data: fieldData))
+      }
+    }
   }
 }
 

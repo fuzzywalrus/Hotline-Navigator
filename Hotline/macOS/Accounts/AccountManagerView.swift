@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct AccountManagerView: View {
-  @Environment(Hotline.self) private var model: Hotline
+  @Environment(HotlineState.self) private var model: HotlineState
   
   @State private var accounts: [HotlineAccount] = []
   @State private var selection: HotlineAccount?
@@ -43,7 +43,7 @@ struct AccountManagerView: View {
     .alternatingRowBackgrounds(.enabled)
     .task {
       if loading {
-        accounts = await model.getAccounts()
+        accounts = (try? await model.getAccounts()) ?? []
         loading = false
       }
     }
@@ -243,47 +243,49 @@ struct AccountManagerView: View {
 //        .padding()
         
         Spacer()
-        
-        Button("Save"){
+
+        Button(action: {
           guard let selection else {
             return
           }
-          
+
           // Update existing account
           if selection.persisted == true {
 
             if pendingPassword == placeholderPassword {
               Task { @MainActor in
-                model.client.sendSetUser(name: pendingName, login: pendingLogin, newLogin: nil, password: nil, access: pendingAccess.rawValue)
+                try? await model.setUser(name: pendingName, login: pendingLogin, newLogin: nil, password: nil, access: pendingAccess.rawValue)
               }
             } else {
               Task { @MainActor in
-                model.client.sendSetUser(name: pendingName, login: pendingLogin, newLogin: nil, password: pendingPassword, access: pendingAccess.rawValue)
+                try? await model.setUser(name: pendingName, login: pendingLogin, newLogin: nil, password: pendingPassword, access: pendingAccess.rawValue)
               }
             }
 
           } else {
             // Create new existing account
             Task { @MainActor in
-              model.client.sendCreateUser(name: pendingName, login: pendingLogin, password: pendingPassword, access: pendingAccess.rawValue)
+              try? await model.createUser(name: pendingName, login: pendingLogin, password: pendingPassword, access: pendingAccess.rawValue)
             }
             self.selection?.password = pendingPassword
             pendingPassword = placeholderPassword
           }
-          
+
           var account = HotlineAccount(pendingName, pendingLogin, pendingAccess)
           account.persisted = true
           account.password = placeholderPassword
-          
+
           accounts = accounts.filter { $0.persisted == true && $0.login != selection.login }
-          
+
           // Add new account to list
           accounts.append(account)
-          
+
           // Re-sort accounts
           accounts.sort { $0.login < $1.login }
           self.selection = account
-        }
+        }, label: {
+          Text("Save")
+        })
         .controlSize(.large)
         .frame(minWidth: 75)
         .keyboardShortcut(.defaultAction)
@@ -349,23 +351,25 @@ struct AccountManagerView: View {
         }
         
         ToolbarItem(placement: .primaryAction) {
-          Button("Delete") {
+          Button(action: {
             guard let userToDelete = toDelete else {
               return
             }
-            
+
             self.toDelete = nil
             self.selection = nil
-            
+
             if userToDelete.persisted {
               Task { @MainActor in
-                model.client.sendDeleteUser(login: userToDelete.login)
+                try? await model.deleteUser(login: userToDelete.login)
               }
             }
-            
+
             accounts = accounts.filter { $0.login != userToDelete.login }
-            
-          }
+
+          }, label: {
+            Text("Delete")
+          })
         }
       }
     }

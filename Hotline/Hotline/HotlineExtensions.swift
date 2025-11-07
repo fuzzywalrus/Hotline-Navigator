@@ -11,6 +11,24 @@ extension URL {
   func urlForResourceFork() -> URL {
     self.appendingPathComponent("..namedfork/rsrc")
   }
+
+  /// Append multiple path components to a URL by iterating through an array
+  /// - Parameter components: Array of path component strings
+  /// - Returns: New URL with all components appended
+  func appendingPathComponents(_ components: [String]) -> URL {
+    var path = self.path
+    for component in components {
+      path = (path as NSString).appendingPathComponent(component)
+    }
+    return URL(filePath: path)
+  }
+  
+#if os(macOS)
+  func notifyDownloadFinished() {
+    print("DOWNLOAD FINISHED AT", self)
+    DistributedNotificationCenter.default().post(name: .init("com.apple.DownloadFileFinished"), object: self.path)
+  }
+#endif
 }
 
 extension String {
@@ -382,7 +400,7 @@ extension FileManager {
     
     // Get resource fork size.
     var resourceForkSize: UInt32 = 0
-    let resourceFileURL: URL = fileURL.appendingPathComponent("..namedfork/rsrc")
+    let resourceFileURL: URL = fileURL.urlForResourceFork()
     let resourceFilePath: String = fileURL.path(percentEncoded: false)
     if self.fileExists(atPath: resourceFilePath) {
       let resourceFileAttributes: [FileAttributeKey: Any]? = try? self.attributesOfItem(atPath: resourceFileURL.path(percentEncoded: false))
@@ -394,6 +412,36 @@ extension FileManager {
     return (dataForkSize: dataForkSize, resourceForkSize: resourceForkSize)
   }
   
+  /// Create a file with metadata from a Hotline INFO fork
+  ///
+  /// - Parameters:
+  ///   - url: Destination URL for the new file
+  ///   - infoFork: Hotline file info containing metadata
+  /// - Returns: FileHandle open for writing
+  /// - Throws: Error if file creation fails
+  func createHotlineFile(at url: URL, infoFork: HotlineFileInfoFork) throws -> FileHandle {
+    var attributes: [FileAttributeKey: Any] = [:]
+
+    if infoFork.creator != 0 {
+      attributes[.hfsCreatorCode] = infoFork.creator as NSNumber
+    }
+    if infoFork.type != 0 {
+      attributes[.hfsTypeCode] = infoFork.type as NSNumber
+    }
+    attributes[.creationDate] = infoFork.createdDate as NSDate
+    attributes[.modificationDate] = infoFork.modifiedDate as NSDate
+
+    guard self.createFile(atPath: url.path, contents: nil, attributes: attributes) else {
+      throw HotlineFileClientError.failedToTransfer
+    }
+
+    guard let handle = FileHandle(forWritingAtPath: url.path) else {
+      throw HotlineFileClientError.failedToTransfer
+    }
+
+    return handle
+  }
+
   func getFlattenedFileSize(_ fileURL: URL) -> UInt64? {
     var fileIsDirectory: ObjCBool = false
     let filePath: String = fileURL.path(percentEncoded: false)
@@ -454,10 +502,51 @@ extension FileManager {
 //        print("FOUND RESOURCE FORK: \(resourceForkSize)")
 //      }
 //    }
-//    
+//
 //    totalSize += resourceForkSize
-    
+
     return totalSize
+  }
+
+  /// Get the total size of all files in a folder (recursively)
+  /// Returns the sum of flattened file sizes for all files in the folder, and the total count of all items (files + folders)
+  func getFolderSize(_ folderURL: URL) -> (size: UInt64, count: UInt32)? {
+    var isDirectory: ObjCBool = false
+    let folderPath = folderURL.path(percentEncoded: false)
+
+    guard folderURL.isFileURL,
+          self.fileExists(atPath: folderPath, isDirectory: &isDirectory),
+          isDirectory.boolValue == true else {
+      return nil
+    }
+
+    var totalSize: UInt64 = 0
+    var itemCount: UInt32 = 0
+
+    guard let enumerator = self.enumerator(at: folderURL, includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey], options: [.skipsHiddenFiles]) else {
+      return nil
+    }
+
+    for case let fileURL as URL in enumerator {
+      guard let resourceValues = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey]) else {
+        continue
+      }
+
+      let isRegularFile = resourceValues.isRegularFile ?? false
+      let isDirectory = resourceValues.isDirectory ?? false
+
+      // Count all items (files and folders)
+      if isRegularFile || isDirectory {
+        itemCount += 1
+
+        // Only add size for files, not folders
+        if isRegularFile, let fileSize = self.getFlattenedFileSize(fileURL) {
+          totalSize += fileSize
+        }
+      }
+    }
+
+    return (size: totalSize, count: itemCount)
   }
 }
 
@@ -1014,5 +1103,53 @@ extension FourCharCode {
       UInt8(self & 0xFF)
     ]
     return String(bytes: bytes, encoding: .ascii) ?? ""
+  }
+}
+
+
+extension NetSocketNew {
+  /// Read a pascal string (1-byte length prefix followed by string data)
+  ///
+  /// This method reads a single byte for the length, then reads that many bytes and attempts
+  /// to decode them as a string. It tries multiple encodings for compatibility with legacy
+  /// protocols like Hotline: UTF-8, Shift-JIS, Windows-1251, and falls back to MacRoman.
+  ///
+  /// - Returns: The decoded string, or nil if length is 0
+  /// - Throws: `NetSocketError` if reading fails or no encoding succeeds
+  func readPascalString() async throws -> String? {
+    let length = try await read(UInt8.self)
+    guard length > 0 else { return nil }
+
+    let data = try await read(Int(length))
+
+    // Try auto-detection with common encodings
+    let allowedEncodings = [
+      String.Encoding.utf8.rawValue,
+      String.Encoding.shiftJIS.rawValue,
+      String.Encoding.unicode.rawValue,
+      String.Encoding.windowsCP1251.rawValue
+    ]
+
+    var decodedString: NSString?
+    let detected = NSString.stringEncoding(
+      for: data,
+      encodingOptions: [.allowLossyKey: false],
+      convertedString: &decodedString,
+      usedLossyConversion: nil
+    )
+
+    if allowedEncodings.contains(detected), let str = decodedString as? String {
+      return str
+    }
+
+    // Fallback to MacRoman for classic Mac compatibility
+    guard let str = String(data: data, encoding: .macOSRoman) else {
+      throw NetSocketError.decodeFailed(NSError(
+        domain: "NetSocketNew",
+        code: -1,
+        userInfo: [NSLocalizedDescriptionKey: "Failed to decode pascal string with any known encoding"]
+      ))
+    }
+    return str
   }
 }

@@ -3,7 +3,7 @@ import MarkdownUI
 import SplitView
 
 struct NewsView: View {
-  @Environment(Hotline.self) private var model: Hotline
+  @Environment(HotlineState.self) private var model: HotlineState
   @Environment(\.openWindow) private var openWindow
   @Environment(\.colorScheme) private var colorScheme
   
@@ -64,7 +64,7 @@ struct NewsView: View {
         .task {
           if !model.newsLoaded {
             loading = true
-            await model.getNewsList()
+            try? await model.getNewsList()
             loading = false
           }
         }
@@ -123,13 +123,13 @@ struct NewsView: View {
           loading = true
           if let selectionPath = selection?.path {
             Task {
-              await model.getNewsList(at: selectionPath)
+              try? await model.getNewsList(at: selectionPath)
               loading = false
             }
           }
           else {
             Task {
-              await model.getNewsList()
+              try? await model.getNewsList()
               loading = false
             }
           }
@@ -179,7 +179,7 @@ struct NewsView: View {
         if let articleFlavor = article.articleFlavors?.first,
            let articleID = article.articleID {
           Task {
-            if let articleText = await self.model.getNewsArticle(id: articleID, at: article.path, flavor: articleFlavor) {
+            if let articleText = try? await self.model.getNewsArticle(id: articleID, at: article.path, flavor: articleFlavor) {
               self.articleText = articleText
             }
           }
@@ -293,5 +293,5 @@ struct NewsView: View {
 
 #Preview {
   NewsView()
-    .environment(Hotline(trackerClient: HotlineTrackerClient(), client: HotlineClient()))
+    .environment(HotlineState())
 }

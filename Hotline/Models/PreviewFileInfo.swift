@@ -1,11 +1,5 @@
 import UniformTypeIdentifiers
 
-enum PreviewFileType: Equatable {
-  case unknown
-  case image
-  case text
-}
-
 struct PreviewFileInfo: Identifiable, Codable {
   var id: UInt32
   var address: String

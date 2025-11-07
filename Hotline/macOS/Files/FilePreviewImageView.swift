@@ -12,7 +12,7 @@ struct FilePreviewImageView: View {
   
   @Binding var info: PreviewFileInfo?
   
-  @State var preview: FilePreview? = nil
+  @State var preview: FilePreviewState? = nil
   @FocusState private var focusField: FilePreviewFocus?
   
   var body: some View {
@@ -78,13 +78,16 @@ struct FilePreviewImageView: View {
         if let info = info {
           ToolbarItem(placement: .primaryAction) {
             Button {
-              let _ = preview?.data?.saveAsFileToDownloads(filename: info.name)
+              if let fileURL = preview?.fileURL,
+                 let data = try? Data(contentsOf: fileURL) {
+                let _ = data.saveAsFileToDownloads(filename: info.name)
+              }
             } label: {
               Label("Download Image...", systemImage: "arrow.down")
             }
             .help("Download Image")
           }
-          
+
           ToolbarItem(placement: .primaryAction) {
             ShareLink(item: img, preview: SharePreview(info.name, image: img)) {
               Label("Share Image...", systemImage: "square.and.arrow.up")
@@ -96,7 +99,7 @@ struct FilePreviewImageView: View {
     }
     .task {
       if let info = info {
-        preview = FilePreview(info: info)
+        preview = FilePreviewState(info: info)
         preview?.download()
       }
     }

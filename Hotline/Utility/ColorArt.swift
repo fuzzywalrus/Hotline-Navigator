@@ -1,7 +1,11 @@
 
+//  Swift translation and modernization
+//  by Dustin Mierau
+//
+//  of:
+//
 //  ColorArt.swift
 //  SLColorArt by Panic Inc.
-//  Swift translation by Dustin Mierau
 //
 //  Copyright (C) 2012 Panic Inc. Code by Wade Cosgrove. All rights reserved.
 //
@@ -32,12 +36,14 @@ import SwiftUI
 
 fileprivate let kColorThresholdMinimumPercentage: CGFloat = 0.001
 
+// ColorArt.analyze(image: img) -> ColorArt?
+
 struct ColorArt: Equatable {
   let backgroundColor: NSColor
   let primaryColor: NSColor
   let secondaryColor: NSColor
   let detailColor: NSColor
-  let scaledImage: NSImage
+//  let scaledImage: NSImage
 
   static func == (lhs: ColorArt, rhs: ColorArt) -> Bool {
     return lhs.backgroundColor == rhs.backgroundColor &&
@@ -45,57 +51,80 @@ struct ColorArt: Equatable {
            lhs.secondaryColor == rhs.secondaryColor &&
            lhs.detailColor == rhs.detailColor
   }
+  
+  static func analyze(image: NSImage) -> ColorArt? {
+    print("ColorArt.analyze: Starting, image size: \(image.size)")
+    // Scale image to a reasonable size for analysis
+    // This is important because:
+    // 1. Makes analysis faster (fewer pixels)
+    // 2. Normalizes weird image dimensions
+    // 3. Ensures CGImage conversion succeeds
+    print("ColorArt.analyze: Calling scaleImage...")
+    let finalImage = Self.scaleImage(image, size: NSSize(width: 100, height: 100))
+    print("ColorArt.analyze: scaleImage returned, scaled size: \(finalImage.size)")
 
-  init?(image: NSImage, scaledSize: NSSize = .zero) {
-    let finalImage = Self.scaleImage(image, size: scaledSize)
-    self.scaledImage = finalImage
-    
     guard let colors = Self.analyzeImage(finalImage) else {
+      print("ColorArt.analyze: failed with no colors")
       return nil
     }
     
-    self.backgroundColor = colors.background
-    self.primaryColor = colors.primary
-    self.secondaryColor = colors.secondary
-    self.detailColor = colors.detail
+    print("ColorArt.analyze: returning colors", colors)
+
+    return ColorArt(backgroundColor: colors.background,
+                    primaryColor: colors.primary,
+                    secondaryColor: colors.secondary,
+                    detailColor: colors.detail)
   }
   
   // MARK: - Image Scaling
   
   private static func scaleImage(_ image: NSImage, size scaledSize: NSSize) -> NSImage {
+    print("ColorArt.scaleImage: Entered, input: \(image.size), target: \(scaledSize)")
+    // Get CGImage directly without using lockFocus
+    print("ColorArt.scaleImage: Getting CGImage...")
+    guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+      print("ColorArt.scaleImage: Failed to get CGImage, returning original")
+      return image
+    }
+    print("ColorArt.scaleImage: Got CGImage")
+
     let imageSize = image.size
-    let squareImage = NSImage(size: NSSize(width: imageSize.width, height: imageSize.width))
-    var drawRect: NSRect
-    
-    // Make the image square
-    if imageSize.height > imageSize.width {
-      drawRect = NSRect(x: 0, y: imageSize.height - imageSize.width, width: imageSize.width, height: imageSize.width)
-    } else {
-      drawRect = NSRect(x: 0, y: 0, width: imageSize.height, height: imageSize.height)
-    }
-    
+    let squareSize = min(imageSize.width, imageSize.height)
+
     // Use native square size if passed zero size
-    let finalScaledSize = scaledSize == .zero ? drawRect.size : scaledSize
-    let scaledImage = NSImage(size: finalScaledSize)
-    
-    squareImage.lockFocus()
-    image.draw(in: NSRect(x: 0, y: 0, width: imageSize.width, height: imageSize.width), from: drawRect, operation: .sourceOver, fraction: 1.0)
-    squareImage.unlockFocus()
-    
-    // Scale the image to the desired size
-    scaledImage.lockFocus()
-    squareImage.draw(in: NSRect(x: 0, y: 0, width: finalScaledSize.width, height: finalScaledSize.height), from: .zero, operation: .sourceOver, fraction: 1.0)
-    scaledImage.unlockFocus()
-    
-    // Convert back to readable bitmap data
-    guard let cgImage = scaledImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-      return scaledImage
+    let finalScaledSize = scaledSize == .zero ? NSSize(width: squareSize, height: squareSize) : scaledSize
+
+    // Create bitmap context for drawing
+    let width = Int(finalScaledSize.width)
+    let height = Int(finalScaledSize.height)
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+
+    guard let context = CGContext(
+      data: nil,
+      width: width,
+      height: height,
+      bitsPerComponent: 8,
+      bytesPerRow: width * 4,
+      space: colorSpace,
+      bitmapInfo: bitmapInfo.rawValue
+    ) else {
+      return image
     }
-    
-    let bitmapRep = NSBitmapImageRep(cgImage: cgImage)
-    let finalImage = NSImage(size: scaledImage.size)
+
+    // Draw the image scaled
+    context.interpolationQuality = .high
+    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: finalScaledSize.width, height: finalScaledSize.height))
+
+    // Create NSImage from context
+    guard let scaledCGImage = context.makeImage() else {
+      return image
+    }
+
+    let bitmapRep = NSBitmapImageRep(cgImage: scaledCGImage)
+    let finalImage = NSImage(size: finalScaledSize)
     finalImage.addRepresentation(bitmapRep)
-    
+
     return finalImage
   }
   
@@ -120,33 +149,45 @@ struct ColorArt: Equatable {
     if primaryColor == nil {
       primaryColor = darkBackground ? .white : .black
     }
-    
+
     if secondaryColor == nil {
       secondaryColor = darkBackground ? .white : .black
     }
-    
+
     if detailColor == nil {
       detailColor = darkBackground ? .white : .black
     }
-    
-    return (backgroundColor, primaryColor!, secondaryColor!, detailColor!)
+
+    // Convert all colors to calibrated RGB color space for consistency
+    // This ensures all colors are in the same color space and prevents
+    // any color space conversion issues when used in SwiftUI
+    let rgbColorSpace = NSColorSpace.genericRGB
+    let finalBackground = backgroundColor.usingColorSpace(rgbColorSpace) ?? backgroundColor
+    let finalPrimary = primaryColor!.usingColorSpace(rgbColorSpace) ?? primaryColor!
+    let finalSecondary = secondaryColor!.usingColorSpace(rgbColorSpace) ?? secondaryColor!
+    let finalDetail = detailColor!.usingColorSpace(rgbColorSpace) ?? detailColor!
+
+    return (finalBackground, finalPrimary, finalSecondary, finalDetail)
   }
   
   // MARK: - Edge Color Detection
   
   private static func findEdgeColor(_ image: NSImage, imageColors: inout NSCountedSet?) -> NSColor? {
-    guard var imageRep = image.representations.last else {
-      return nil
+    var bitmapRep: NSBitmapImageRep?
+
+    // Try to get existing bitmap representation
+    if let existingRep = image.representations.last as? NSBitmapImageRep {
+      bitmapRep = existingRep
+    } else {
+      // Create bitmap rep from CGImage instead of using lockFocus
+      guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+        return nil
+      }
+      bitmapRep = NSBitmapImageRep(cgImage: cgImage)
     }
-    
-    if !(imageRep is NSBitmapImageRep) {
-      image.lockFocus()
-      imageRep = NSBitmapImageRep(focusedViewRect: NSRect(x: 0, y: 0, width: image.size.width, height: image.size.height))!
-      image.unlockFocus()
-    }
-    
+
     // Convert to RGB color space
-    guard let bitmapRep = (imageRep as? NSBitmapImageRep)?.converting(to: .genericRGB, renderingIntent: .default) else {
+    guard let bitmapRep = bitmapRep?.converting(to: .genericRGB, renderingIntent: .default) else {
       return nil
     }
     

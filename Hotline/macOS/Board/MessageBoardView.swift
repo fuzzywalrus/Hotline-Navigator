@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct MessageBoardView: View {
-  @Environment(Hotline.self) private var model: Hotline
+  @Environment(HotlineState.self) private var model: HotlineState
   
   @State private var composerDisplayed: Bool = false
   @State private var composerText: String = ""
@@ -25,7 +25,7 @@ struct MessageBoardView: View {
         }
         .task {
           if !model.messageBoardLoaded {
-            let _ = await model.getMessageBoard()
+            let _ = try? await model.getMessageBoard()
           }
         }
         .overlay {
@@ -98,5 +98,5 @@ struct MessageBoardView: View {
 
 #Preview {
   MessageBoardView()
-    .environment(Hotline(trackerClient: HotlineTrackerClient(), client: HotlineClient()))
+    .environment(HotlineState())
 }

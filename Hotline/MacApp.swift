@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import CloudKit
 import UniformTypeIdentifiers
+import Darwin
 
 @Observable
 final class AppLaunchState {
@@ -65,7 +66,7 @@ struct Application: App {
   @State private var selection: TrackerSelection? = nil
   @Bindable private var update = AppUpdate.shared
 
-  @FocusedValue(\.activeHotlineModel) private var activeHotline: Hotline?
+  @FocusedValue(\.activeHotlineModel) private var activeHotline: HotlineState?
   @FocusedValue(\.activeServerState) private var activeServerState: ServerState?
   
   private var modelContainer: ModelContainer = {
@@ -173,9 +174,7 @@ struct Application: App {
     .defaultSize(width: 690, height: 760)
     .defaultPosition(.center)
     .onChange(of: activeServerState) {
-      withAnimation {
-        AppState.shared.activeServerState = activeServerState
-      }
+      AppState.shared.activeServerState = activeServerState
     }
     .onChange(of: activeHotline) {
       AppState.shared.activeHotline = activeHotline
@@ -187,7 +186,7 @@ struct Application: App {
         }
         .keyboardShortcut(.init("K"), modifiers: .command)
       }
-      CommandGroup(after: .singleWindowList) {
+      CommandGroup(before: .singleWindowList) {
         Button("Toolbar") {
           toggleBannerWindow()
         }
@@ -222,7 +221,11 @@ struct Application: App {
         .disabled(selection == nil || selection?.server == nil)
         .keyboardShortcut(.downArrow, modifiers: .command)
         Button("Disconnect") {
-          activeHotline?.disconnect()
+          if let hotline = activeHotline {
+            Task {
+              await hotline.disconnect()
+            }
+          }
         }
         .disabled(activeHotline?.status == .disconnected)
         Divider()
@@ -264,6 +267,15 @@ struct Application: App {
     Settings {
       SettingsView()
     }
+
+    // MARK: Transfers Window
+    Window("Transfers", id: "transfers") {
+      TransfersView()
+        .frame(minWidth: 500, minHeight: 200)
+    }
+    .defaultSize(width: 600, height: 400)
+    .defaultPosition(.center)
+    .keyboardShortcut(.init("T"), modifiers: [.shift, .command])
         
     // MARK: Image Preview Window
     WindowGroup(id: "preview-image", for: PreviewFileInfo.self) { $info in
@@ -280,6 +292,18 @@ struct Application: App {
     WindowGroup(id: "preview-text", for: PreviewFileInfo.self) { $info in
       FilePreviewTextView(info: $info)
     }
+    .windowResizability(.automatic)
+    .windowStyle(.titleBar)
+    .windowToolbarStyle(.unifiedCompact(showsTitle: true))
+    .defaultSize(width: 450, height: 550)
+    .defaultPosition(.center)
+    .restorationBehavior(.disabled)
+
+    // MARK: QuickLook Preview Window
+    WindowGroup(id: "preview-quicklook", for: PreviewFileInfo.self) { $info in
+      FilePreviewQuickLookView(info: $info)
+    }
+    .windowManagerRole(.associated)
     .windowResizability(.automatic)
     .windowStyle(.titleBar)
     .windowToolbarStyle(.unifiedCompact(showsTitle: true))
@@ -320,3 +344,4 @@ struct Application: App {
     }
   }
 }
+

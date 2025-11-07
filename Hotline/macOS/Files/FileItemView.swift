@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct FileItemView: View {
-  @Environment(Hotline.self) private var model: Hotline
+  @Environment(HotlineState.self) private var model: HotlineState
   
   var file: FileInfo
   let depth: Int

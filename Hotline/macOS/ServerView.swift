@@ -69,7 +69,7 @@ struct ListItemView: View {
 }
 
 extension FocusedValues {
-  @Entry var activeHotlineModel: Hotline?
+  @Entry var activeHotlineModel: HotlineState?
   @Entry var activeServerState: ServerState?
 }
 
@@ -80,7 +80,7 @@ struct ServerView: View {
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.modelContext) private var modelContext
   
-  @State private var model: Hotline = Hotline(trackerClient: HotlineTrackerClient(), client: HotlineClient())
+  @State private var model: HotlineState = HotlineState()
   @State private var state: ServerState = ServerState(selection: .chat)
   @State private var agreementShown: Bool = false
   @State private var connectAddress: String = ""
@@ -119,6 +119,27 @@ struct ServerView: View {
         connectForm
           .navigationTitle("Connect to Server")
       }
+      else if case .failed(let error) = model.status {
+        VStack {
+          Image("Hotline")
+            .resizable()
+            .renderingMode(.template)
+            .scaledToFit()
+            .foregroundColor(Color(hex: 0xE10000))
+            .frame(width: 18)
+            .opacity(controlActiveState == .inactive ? 0.5 : 1.0)
+            .padding(.trailing, 4)
+
+          Text("Connection Failed")
+            .font(.headline)
+          Text(error)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: 300)
+        .padding()
+        .navigationTitle("Connection Failed")
+      }
       else if model.status != .loggedIn {
         HStack {
           Image("Hotline")
@@ -129,7 +150,7 @@ struct ServerView: View {
             .frame(width: 18)
             .opacity(controlActiveState == .inactive ? 0.5 : 1.0)
             .padding(.trailing, 4)
-          
+
           ProgressView(value: connectionStatusToProgress(status: model.status)) {
             Text(connectionStatusToLabel(status: model.status))
           }
@@ -142,12 +163,24 @@ struct ServerView: View {
       else {
         serverView
           .environment(model)
-          .onChange(of: Prefs.shared.userIconID) { sendPreferences() }
-          .onChange(of: Prefs.shared.username) { sendPreferences() }
-          .onChange(of: Prefs.shared.refusePrivateMessages) { sendPreferences() }
-          .onChange(of: Prefs.shared.refusePrivateChat) { sendPreferences() }
-          .onChange(of: Prefs.shared.enableAutomaticMessage) { sendPreferences() }
-          .onChange(of: Prefs.shared.automaticMessage) { sendPreferences() }
+          .onChange(of: Prefs.shared.userIconID) {
+            Task { try? await model.sendUserPreferences() }
+          }
+          .onChange(of: Prefs.shared.username) {
+            Task { try? await model.sendUserPreferences() }
+          }
+          .onChange(of: Prefs.shared.refusePrivateMessages) {
+            Task { try? await model.sendUserPreferences() }
+          }
+          .onChange(of: Prefs.shared.refusePrivateChat) {
+            Task { try? await model.sendUserPreferences() }
+          }
+          .onChange(of: Prefs.shared.enableAutomaticMessage) {
+            Task { try? await model.sendUserPreferences() }
+          }
+          .onChange(of: Prefs.shared.automaticMessage) {
+            Task { try? await model.sendUserPreferences() }
+          }
           .toolbar {
             if #available(macOS 26.0, *) {
               ToolbarItem(placement: .navigation) {
@@ -172,21 +205,23 @@ struct ServerView: View {
       }
     }
     .onDisappear {
-      model.disconnect()
-    }
-    .onChange(of: model.serverTitle) { oldTitle, newTitle in
-      state.serverName = newTitle
-    }
-    .onChange(of: model.bannerImage) { oldBanner, newBanner in
-      withAnimation {
-        state.serverBanner = newBanner
-        if let banner = newBanner {
-          state.bannerColors = ColorArt(image: banner, scaledSize: NSSize(width: 100, height: 100))
-        } else {
-          state.bannerColors = nil
-        }
+      Task {
+        await model.disconnect()
       }
     }
+    .onChange(of: model.serverTitle) {
+      state.serverName = model.serverTitle
+    }
+//    .onChange(of: model.bannerImage) {
+//      state.serverBanner = model.bannerImage
+//    }
+//    .onChange(of: model.bannerColors) {
+//      guard let backgroundColor = model.bannerColors?.backgroundColor else {
+//        state.bannerBackgroundColor = nil
+//        return
+//      }
+//      state.bannerBackgroundColor = Color(nsColor: backgroundColor)
+//    }
     .alert(model.errorMessage ?? "Server Error", isPresented: $model.errorDisplayed) {
       Button("OK") {}
     }
@@ -310,16 +345,18 @@ struct ServerView: View {
             if !name.isEmpty {
               connectNameSheetPresented = false
               connectName = ""
-              Task.detached {
-                let (host, port) = Server.parseServerAddressAndPort(connectAddress)
-                let login: String? = connectLogin.isEmpty ? nil : connectLogin
-                let password: String? = connectPassword.isEmpty ? nil : connectPassword
-                
-                if !host.isEmpty {
-                  let newBookmark = Bookmark(type: .server, name: name, address: host, port: port, login: login, password: password)
-                  Bookmark.add(newBookmark, context: modelContext)
-                }
+//              Task.detached {
+              
+              let (host, port) = Server.parseServerAddressAndPort(connectAddress)
+              let login: String? = connectLogin.isEmpty ? nil : connectLogin
+              let password: String? = connectPassword.isEmpty ? nil : connectPassword
+              
+              if !host.isEmpty {
+                let newBookmark = Bookmark(type: .server, name: name, address: host, port: port, login: login, password: password)
+                Bookmark.add(newBookmark, context: modelContext)
               }
+              
+//              }
             }
           }
         }
@@ -390,7 +427,7 @@ struct ServerView: View {
 //    Section("\(model.users.count) Online") {
       ForEach(model.users) { user in
         HStack(spacing: 5) {
-          if let iconImage = Hotline.getClassicIcon(Int(user.iconID)) {
+          if let iconImage = HotlineState.getClassicIcon(Int(user.iconID)) {
             Image(nsImage: iconImage)
               .frame(width: 16, height: 16)
               .padding(.leading, 2)
@@ -476,35 +513,37 @@ struct ServerView: View {
     guard !server.address.isEmpty else {
       return
     }
-    model.login(server: server, username: Prefs.shared.username, iconID: Prefs.shared.userIconID) { success in
-      if !success {
-        print("FAILED LOGIN??")
-        model.disconnect()
-      }
-      else {
-        sendPreferences()
-        model.getUserList()
-        model.downloadBanner()
+
+    Task { @MainActor in
+      do {
+        // login() handles everything: connect, getUserList, sendPreferences, downloadBanner
+        try await model.login(
+          server: server,
+          username: Prefs.shared.username,
+          iconID: Prefs.shared.userIconID
+        )
+      } catch {
+        print("ServerView: Login failed: \(error)")
       }
     }
   }
   
-  private func connectionStatusToProgress(status: HotlineClientStatus) -> Double {
+  private func connectionStatusToProgress(status: HotlineConnectionStatus) -> Double {
     switch status {
     case .disconnected:
       return 0.0
     case .connecting:
       return 0.4
     case .connected:
-      return 0.75
-    case .loggingIn:
       return 0.9
     case .loggedIn:
       return 1.0
+    case .failed:
+      return 0.0
     }
   }
-  
-  private func connectionStatusToLabel(status: HotlineClientStatus) -> String {
+
+  private func connectionStatusToLabel(status: HotlineConnectionStatus) -> String {
     let n = server.name ?? server.address
     switch status {
     case .disconnected:
@@ -512,42 +551,21 @@ struct ServerView: View {
     case .connecting:
       return "Connecting to \(n)..."
     case .connected:
-      return "Connected to \(n)"
-    case .loggingIn:
       return "Logging in to \(n)..."
     case .loggedIn:
       return "Logged in to \(n)"
+    case .failed(let error):
+      return "Failed: \(error)"
     }
   }
   
-  @MainActor func sendPreferences() {
-    if self.model.status == .loggedIn {
-      var options: HotlineUserOptions = HotlineUserOptions()
-      
-      if Prefs.shared.refusePrivateMessages {
-        options.update(with: .refusePrivateMessages)
-      }
-      
-      if Prefs.shared.refusePrivateChat {
-        options.update(with: .refusePrivateChat)
-      }
-      
-      if Prefs.shared.enableAutomaticMessage {
-        options.update(with: .automaticResponse)
-      }
-      
-      print("Updating preferences with server")
-      
-      self.model.sendUserInfo(username: Prefs.shared.username, iconID: Prefs.shared.userIconID, options: options, autoresponse: Prefs.shared.automaticMessage)
-    }
-  }
 }
 
 struct TransferItemView: View {
   let transfer: TransferInfo
     
   @Environment(\.controlActiveState) private var controlActiveState
-  @Environment(Hotline.self) private var model: Hotline
+  @Environment(HotlineState.self) private var model: HotlineState
   @State private var hovered: Bool = false
   @State private var buttonHovered: Bool = false
   
@@ -559,8 +577,8 @@ struct TransferItemView: View {
       return "File transfer failed"
     }
     else if self.transfer.progress > 0.0 {
-      if self.transfer.timeRemaining > 0.0 {
-        return "\(round(self.transfer.progress * 100.0))% – \(self.transfer.timeRemaining) seconds left"
+      if let estimate = self.transfer.timeRemaining, estimate > 0.0 {
+        return "\(round(self.transfer.progress * 100.0))% – \(estimate) seconds left"
       }
       else {
         return "\(round(self.transfer.progress * 100.0))% complete"
@@ -597,7 +615,7 @@ struct TransferItemView: View {
       
       if self.hovered {
         Button {
-          model.deleteTransfer(id: transfer.id)
+          AppState.shared.cancelTransfer(id: transfer.id)
         } label: {
           Image(systemName: self.buttonHovered ? "xmark.circle.fill" : "xmark.circle")
             .resizable()
@@ -657,4 +675,3 @@ struct TransferItemView: View {
     .help(formattedProgressHelp())
   }
 }
-

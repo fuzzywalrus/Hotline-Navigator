@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NewsItemView: View {
-  @Environment(Hotline.self) private var model: Hotline
+  @Environment(HotlineState.self) private var model: HotlineState
   
   var news: NewsInfo
   let depth: Int
@@ -132,9 +132,9 @@ struct NewsItemView: View {
       guard news.expanded, news.type == .bundle || news.type == .category else {
         return
       }
-      
+
       Task {
-        await model.getNewsList(at: news.path)
+        try? await model.getNewsList(at: news.path)
       }
     }
     
@@ -148,5 +148,5 @@ struct NewsItemView: View {
 
 #Preview {
   NewsItemView(news: NewsInfo(hotlineNewsArticle: HotlineNewsArticle(id: 0, parentID: 0, flags: 0, title: "Title", username: "username", date: Date.now, flavors: [("", 1)], path: ["Guest"])), depth: 0)
-    .environment(Hotline(trackerClient: HotlineTrackerClient(), client: HotlineClient()))
+    .environment(HotlineState())
 }

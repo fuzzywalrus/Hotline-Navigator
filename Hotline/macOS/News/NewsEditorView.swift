@@ -9,7 +9,7 @@ struct NewsEditorView: View {
   @Environment(\.controlActiveState) private var controlActiveState
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.dismiss) private var dismiss
-  @Environment(Hotline.self) private var model: Hotline
+  @Environment(HotlineState.self) private var model: HotlineState
   
   let editorTitle: String
   let isReply: Bool
@@ -24,15 +24,16 @@ struct NewsEditorView: View {
   
   func sendArticle() async -> Bool {
     sending = true
-    
-    let success = await model.postNewsArticle(title: title, body: text, at: path, parentID: parentID)
-    if success {
-      await model.getNewsList(at: path)
+
+    do {
+      try await model.postNewsArticle(title: title, body: text, at: path, parentID: parentID)
+      try? await model.getNewsList(at: path)
+      sending = false
+      return true
+    } catch {
+      sending = false
+      return false
     }
-    
-    sending = false
-    
-    return success
   }
   
   var body: some View {

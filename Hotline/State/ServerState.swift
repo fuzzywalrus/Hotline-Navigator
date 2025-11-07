@@ -5,8 +5,8 @@ class ServerState: Equatable {
   var id: UUID = UUID()
   var selection: ServerNavigationType
   var serverName: String? = nil
-  var serverBanner: NSImage? = nil
-  var bannerColors: ColorArt? = nil
+//  var serverBanner: NSImage? = nil
+//  var bannerBackgroundColor: Color? = nil
 
   init(selection: ServerNavigationType) {
     self.selection = selection

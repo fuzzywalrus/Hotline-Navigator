@@ -1,19 +1,26 @@
+//
+//  FilePreviewQuickLookView.swift
+//  Hotline
+//
+//  QuickLook-based file preview window for all supported file types
+//
+
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct FilePreviewTextView: View {
+struct FilePreviewQuickLookView: View {
   enum FilePreviewFocus: Hashable {
     case window
   }
-  
+
   @Environment(\.controlActiveState) private var controlActiveState
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.dismiss) var dismiss
-  
+
   @Binding var info: PreviewFileInfo?
   @State var preview: FilePreviewState? = nil
   @FocusState private var focusField: FilePreviewFocus?
-  
+
   var body: some View {
     Group {
       if preview?.state != .loaded {
@@ -23,9 +30,8 @@ struct FilePreviewTextView: View {
             .focusable(false)
             .progressViewStyle(.circular)
             .controlSize(.extraLarge)
-            .tint(.white)
             .frame(maxWidth: 300, alignment: .center)
-          Spacer()
+            .padding(.bottom, 48)
           Spacer()
         }
         .background(Color(nsColor: .textBackgroundColor))
@@ -33,22 +39,14 @@ struct FilePreviewTextView: View {
         .padding()
       }
       else {
-        if let text = preview?.text {
-          TextEditor(text: .constant(text))
-            .textEditorStyle(.plain)
-            .font(.system(size: 14))
-            .lineSpacing(3)
-            .padding(16)
-            .contentMargins(.top, -16.0, for: .scrollIndicators)
-            .contentMargins(.bottom, -16.0, for: .scrollIndicators)
-            .contentMargins(.trailing, -16.0, for: .scrollIndicators)
-            .scrollClipDisabled()
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        if let fileURL = preview?.fileURL {
+          QuickLookPreviewView(fileURL: fileURL)
+            .frame(minWidth: 400, maxWidth: .infinity, minHeight: 400, maxHeight: .infinity)
         }
         else {
           VStack(alignment: .center, spacing: 0) {
             Spacer()
-            
+
             Image(systemName: "eye.trianglebadge.exclamationmark")
               .resizable()
               .scaledToFit()
@@ -64,7 +62,7 @@ struct FilePreviewTextView: View {
             .font(.system(size: 14.0))
             .frame(maxWidth: 300)
             .multilineTextAlignment(.center)
-            
+
             Spacer()
             Spacer()
           }
@@ -78,14 +76,16 @@ struct FilePreviewTextView: View {
     .background(Color(nsColor: .textBackgroundColor))
     .focused($focusField, equals: .window)
     .navigationTitle(info?.name ?? "File Preview")
+    .background(
+        WindowConfigurator { window in
+          if let fileURL = preview?.fileURL {
+            window.representedURL = fileURL
+            window.standardWindowButton(.documentIconButton)?.isHidden = false
+          }
+        }
+      )
     .toolbar {
-      ToolbarItem(placement: .navigation) {
-        FileIconView(filename: info?.name ?? "", fileType: nil)
-          .frame(width: 16, height: 16)
-          .opacity(controlActiveState == .inactive ? 0.5 : 1.0)
-      }
-      
-      if let _ = preview?.text {
+      if let _ = preview?.fileURL {
         if let info = info {
           ToolbarItem(placement: .primaryAction) {
             Button {
@@ -94,9 +94,9 @@ struct FilePreviewTextView: View {
                 let _ = data.saveAsFileToDownloads(filename: info.name)
               }
             } label: {
-              Label("Save Text File...", systemImage: "square.and.arrow.down")
+              Label("Download File...", systemImage: "arrow.down")
             }
-            .help("Save Text File")
+            .help("Download File")
           }
         }
       }
@@ -114,7 +114,7 @@ struct FilePreviewTextView: View {
         }
         return
       }
-      
+
       focusField = .window
     }
     .onDisappear {
@@ -126,5 +126,6 @@ struct FilePreviewTextView: View {
         dismiss()
       }
     }
+    .preferredColorScheme(.dark)
   }
 }

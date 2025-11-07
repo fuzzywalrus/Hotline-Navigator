@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 
 struct FileDetailsView: View {
-  @Environment(Hotline.self) private var model: Hotline
+  @Environment(HotlineState.self) private var model: HotlineState
   @Environment(\.presentationMode) var presentationMode
 
   var fd: FileDetails
@@ -73,8 +73,8 @@ struct FileDetailsView: View {
             if comment != fd.comment {
               editedComment = comment
             }
-            
-            model.client.sendSetFileInfo(fileName: fd.name, path: fd.path, fileNewName: editedFilename, comment: editedComment)
+
+            model.setFileInfo(fileName: fd.name, path: fd.path, fileNewName: editedFilename, comment: editedComment)
             presentationMode.wrappedValue.dismiss()
             
             // TODO: Update the file list if the filename was changed

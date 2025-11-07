@@ -7,7 +7,7 @@ import AppKit
 
 
 struct FilesView: View {
-  @Environment(Hotline.self) private var model: Hotline
+  @Environment(HotlineState.self) private var model: HotlineState
   @Environment(\.openWindow) private var openWindow
   
   @State private var selection: FileInfo?
@@ -15,6 +15,7 @@ struct FilesView: View {
   @State private var uploadFileSelectorDisplayed: Bool = false
   @State private var searchText: String = ""
   @State private var isSearching: Bool = false
+  @State private var dragOver: Bool = false
 
   private var isShowingSearchResults: Bool {
     switch model.fileSearchStatus {
@@ -68,17 +69,18 @@ struct FilesView: View {
   private func openPreviewWindow(_ previewInfo: PreviewFileInfo) {
     switch previewInfo.previewType {
     case .image:
-      openWindow(id: "preview-image", value: previewInfo)
+      openWindow(id: "preview-quicklook", value: previewInfo)
     case .text:
-      openWindow(id: "preview-text", value: previewInfo)
-    default:
+      openWindow(id: "preview-quicklook", value: previewInfo)
+    case .unknown:
+      openWindow(id: "preview-quicklook", value: previewInfo)
       return
     }
   }
   
   @MainActor private func getFileInfo(_ file: FileInfo) {
     Task {
-      if let fileInfo = await model.getFileDetails(file.name, path: file.path) {
+      if let fileInfo = try? await model.getFileDetails(file.name, path: file.path) {
         Task { @MainActor in
           self.fileDetails = fileInfo
         }
@@ -88,10 +90,10 @@ struct FilesView: View {
   
   @MainActor private func downloadFile(_ file: FileInfo) {
     if file.isFolder {
-      model.downloadFolder(file.name, path: file.path)
+      model.downloadFolderNew(file.name, path: file.path)
     }
     else {
-      model.downloadFile(file.name, path: file.path)
+      model.downloadFileNew(file.name, path: file.path)
     }
   }
   
@@ -99,7 +101,31 @@ struct FilesView: View {
     model.uploadFile(url: fileURL, path: path) { info in
       Task {
         // Refresh file listing to display newly uploaded file.
-        let _ = await model.getFileList(path: path)
+        let _ = try? await model.getFileList(path: path)
+      }
+    }
+  }
+  
+  @MainActor private func upload(file fileURL: URL, to path: [String]) {
+    var fileIsDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: fileURL.path(percentEncoded: false), isDirectory: &fileIsDirectory) else {
+      return
+    }
+
+    if fileIsDirectory.boolValue {
+      self.model.uploadFolder(url: fileURL, path: path, complete: { info in
+        Task {
+          // Refresh file listing to display newly uploaded file.
+          try? await model.getFileList(path: path)
+        }
+      })
+    }
+    else {
+      self.model.uploadFile(url: fileURL, path: path) { info in
+        Task {
+          // Refresh file listing to display newly uploaded file.
+          try? await model.getFileList(path: path)
+        }
       }
     }
   }
@@ -121,15 +147,15 @@ struct FilesView: View {
     if file.path.count > 1 {
       parentPath = Array(file.path[0..<file.path.count-1])
     }
-    
-    if await model.deleteFile(file.name, path: file.path) {
-      let _ = await model.getFileList(path: parentPath)
+
+    if (try? await model.deleteFile(file.name, path: file.path)) == true {
+      let _ = try? await model.getFileList(path: parentPath)
     }
   }
   
   var body: some View {
     NavigationStack {
-      List(displayedFiles, id: \.self, selection: $selection) { file in
+      List(self.displayedFiles, id: \.self, selection: self.$selection) { file in
         if file.isFolder {
           FolderItemView(file: file, depth: 0).tag(file.id)
         }
@@ -140,9 +166,36 @@ struct FilesView: View {
       .environment(\.defaultMinListRowHeight, 28)
       .listStyle(.inset)
       .alternatingRowBackgrounds(.enabled)
+      .onDrop(of: [.fileURL], isTargeted: self.$dragOver) { items in
+        guard self.model.access?.contains(.canUploadFiles) == true,
+              let item = items.first,
+              let identifier = item.registeredTypeIdentifiers.first else {
+          return false
+        }
+        
+        item.loadItem(forTypeIdentifier: identifier, options: nil) { (urlData, error) in
+          DispatchQueue.main.async {
+            if let urlData = urlData as? Data,
+               let fileURL = URL(dataRepresentation: urlData, relativeTo: nil, isAbsolute: true) {
+
+              // Access security-scoped resource for drag-and-drop
+              let didStartAccessing = fileURL.startAccessingSecurityScopedResource()
+              defer {
+                if didStartAccessing {
+                  fileURL.stopAccessingSecurityScopedResource()
+                }
+              }
+
+              self.upload(file: fileURL, to: [])
+            }
+          }
+        }
+        
+        return true
+      }
       .task {
-        if !model.filesLoaded {
-          let _ = await model.getFileList()
+        if !self.model.filesLoaded {
+          let _ = try? await self.model.getFileList()
         }
       }
       .contextMenu(forSelectionType: FileInfo.self) { items in
@@ -246,7 +299,7 @@ struct FilesView: View {
             Label("Preview", systemImage: "eye")
           }
           .help("Preview")
-          .disabled(selection == nil || selection?.isPreviewable == false)
+          .disabled(selection == nil || selection?.isPreviewable != true)
 
           Button {
             if let selectedFile = selection {
@@ -264,10 +317,7 @@ struct FilesView: View {
             Label("Upload", systemImage: "arrow.up")
           }
           .help("Upload")
-          .disabled(
-            model.access?.contains(.canUploadFiles) != true ||
-            (model.fileSearchStatus.isActive && !(selection?.isFolder ?? false))
-          )
+          .disabled(model.access?.contains(.canUploadFiles) != true)
 
           Button {
             if let selectedFile = selection {
@@ -284,16 +334,14 @@ struct FilesView: View {
     .sheet(item: $fileDetails ) { item in
       FileDetailsView(fd: item)
     }
-    .fileImporter(isPresented: $uploadFileSelectorDisplayed, allowedContentTypes: [.data], allowsMultipleSelection: false, onCompletion: { results in
+    .fileImporter(isPresented: $uploadFileSelectorDisplayed, allowedContentTypes: [.data, .folder], allowsMultipleSelection: false, onCompletion: { results in
       switch results {
       case .success(let fileURLS):
-        guard fileURLS.count > 0 else {
+        guard fileURLS.count > 0,
+              let fileURL = fileURLS.first
+        else {
           return
         }
-        
-        let fileURL = fileURLS.first!
-
-        print(fileURL)
         
         var uploadPath: [String] = []
         
@@ -308,7 +356,8 @@ struct FilesView: View {
         }
         
         print("UPLOAD PATH: \(uploadPath)")
-        uploadFile(file: fileURL, to: uploadPath)
+        self.upload(file: fileURL, to: uploadPath)
+//        uploadFile(file: fileURL, to: uploadPath)
         
       case .failure(let error):
         print(error)
@@ -414,5 +463,5 @@ struct FilesView: View {
 
 #Preview {
   FilesView()
-    .environment(Hotline(trackerClient: HotlineTrackerClient(), client: HotlineClient()))
+    .environment(HotlineState())
 }

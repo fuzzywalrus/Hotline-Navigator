@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ServerView: View {
-  @Environment(Hotline.self) private var model: Hotline
+  @Environment(HotlineState.self) private var model: HotlineState
   @Environment(\.colorScheme) var colorScheme
   
   enum Tab {

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct MessageView: View {
-  @Environment(Hotline.self) private var model: Hotline
+  @Environment(HotlineState.self) private var model: HotlineState
   @Environment(\.colorScheme) private var colorScheme
   
   @State private var input: String = ""
@@ -75,7 +75,11 @@ struct MessageView: View {
             .multilineTextAlignment(.leading)
             .onSubmit {
               if !self.input.isEmpty {
-                model.sendInstantMessage(self.input, userID: self.userID)
+                let message = self.input
+                let uid = self.userID
+                Task {
+                  try? await model.sendInstantMessage(message, userID: uid)
+                }
               }
               self.input = ""
             }
@@ -107,5 +111,5 @@ struct MessageView: View {
 
 #Preview {
   ChatView()
-    .environment(Hotline(trackerClient: HotlineTrackerClient(), client: HotlineClient()))
+    .environment(HotlineState())
 }

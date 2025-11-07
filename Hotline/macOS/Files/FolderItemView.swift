@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct FolderItemView: View {
-  @Environment(Hotline.self) private var model: Hotline
+  @Environment(HotlineState.self) private var model: HotlineState
   
   @State var loading = false
   @State var dragOver = false
@@ -20,7 +20,7 @@ struct FolderItemView: View {
     model.uploadFile(url: fileURL, path: filePath) { info in
       Task {
         // Refresh file listing to display newly uploaded file.
-        let _ = await model.getFileList(path: filePath)
+        let _ = try? await model.getFileList(path: filePath)
       }
     }
   }
@@ -103,7 +103,7 @@ struct FolderItemView: View {
       if file.expanded && file.fileSize > 0 {
         Task {
           loading = true
-          let _ = await model.getFileList(path: file.path)
+          let _ = try? await model.getFileList(path: file.path)
           loading = false
         }
       }

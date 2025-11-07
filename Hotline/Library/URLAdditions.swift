@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 extension URL {
   func generateUniqueFilePath(filename base: String) -> String {
@@ -22,5 +23,33 @@ extension URL {
     }
     
     return filePath
+  }
+}
+
+extension UTType {
+  var canBePreviewedByQuickLook: Bool {
+    // QuickLook supports most common document types
+    let supportedSupertypes: [UTType] = [
+      .image,
+      .movie,
+      .audio,
+      .pdf,
+      .font,
+      .usdz,
+      .text,
+      .sourceCode,
+      .spreadsheet,
+      .presentation,
+      
+//       Microsoft Office
+      .init(filenameExtension: "doc")!,
+      .init(filenameExtension: "docx")!,
+      .init(filenameExtension: "xls")!,
+      .init(filenameExtension: "xlsx")!,
+      .init(filenameExtension: "ppt")!,
+      .init(filenameExtension: "pptx")!,
+    ]
+    
+    return supportedSupertypes.contains { self.conforms(to: $0) }
   }
 }

@@ -822,7 +822,7 @@ class Hotline: Equatable, HotlineClientDelegate, HotlineFileDownloadClientDelega
         fileClient.delegate = self
         self.downloads.append(fileClient)
         
-        let transfer = TransferInfo(id: referenceNumber, title: fileName, size: UInt(transferSize))
+        let transfer = TransferInfo(reference: referenceNumber, title: fileName, size: UInt(transferSize))
         transfer.downloadCallback = callback
         self.transfers.append(transfer)
         
@@ -856,7 +856,7 @@ class Hotline: Equatable, HotlineClientDelegate, HotlineFileDownloadClientDelega
         fileClient.delegate = self
         self.downloads.append(fileClient)
         
-        let transfer = TransferInfo(id: referenceNumber, title: fileName, size: UInt(transferSize))
+        let transfer = TransferInfo(reference: referenceNumber, title: fileName, size: UInt(transferSize))
         transfer.downloadCallback = callback
         transfer.progressCallback = progressCallback
         self.transfers.append(transfer)
@@ -894,7 +894,7 @@ class Hotline: Equatable, HotlineClientDelegate, HotlineFileDownloadClientDelega
         folderClient.delegate = self
         self.downloads.append(folderClient)
 
-        let transfer = TransferInfo(id: referenceNumber, title: folderName, size: UInt(transferSize))
+        let transfer = TransferInfo(reference: referenceNumber, title: folderName, size: UInt(transferSize))
         transfer.isFolder = true
         transfer.downloadCallback = callback
         self.transfers.append(transfer)
@@ -972,7 +972,7 @@ class Hotline: Equatable, HotlineClientDelegate, HotlineFileDownloadClientDelega
         fileClient.delegate = self
         self.downloads.append(fileClient)
         
-        let transfer = TransferInfo(id: referenceNumber, title: fileName, size: fileSize)
+        let transfer = TransferInfo(reference: referenceNumber, title: fileName, size: fileSize)
         transfer.uploadCallback = callback
         self.transfers.append(transfer)
 

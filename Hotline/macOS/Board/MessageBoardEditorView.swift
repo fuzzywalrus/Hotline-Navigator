@@ -8,7 +8,7 @@ struct MessageBoardEditorView: View {
   @Environment(\.controlActiveState) private var controlActiveState
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.dismiss) private var dismiss
-  @Environment(Hotline.self) private var model: Hotline
+  @Environment(HotlineState.self) private var model: HotlineState
     
   @State private var text: String = ""
   @State private var sending: Bool = false
@@ -17,11 +17,11 @@ struct MessageBoardEditorView: View {
   
   func sendPost() async {
     sending = true
-    
+
     let cleanedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    
-    model.postToMessageBoard(text: cleanedText)
-    let _ = await model.getMessageBoard()
+
+    try? await model.postToMessageBoard(text: cleanedText)
+    let _ = try? await model.getMessageBoard()
     
 //    let success = await model.postNewsArticle(title: title, body: text, at: path, parentID: parentID)
 //    if success {
@@ -69,9 +69,9 @@ struct MessageBoardEditorView: View {
         else {
           Button {
             sending = true
-            model.postToMessageBoard(text: text)
             Task {
-              let _ = await model.getMessageBoard()
+              try? await model.postToMessageBoard(text: text)
+              let _ = try? await model.getMessageBoard()
               Task { @MainActor in
                 sending = false
                 dismiss()

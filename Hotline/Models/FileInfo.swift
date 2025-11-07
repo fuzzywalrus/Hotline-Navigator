@@ -49,9 +49,23 @@ import UniformTypeIdentifiers
   var children: [FileInfo]? = nil
   
   var isPreviewable: Bool {
-    let fileExtension = (self.name as NSString).pathExtension
+    let fileExtension = (self.name as NSString).pathExtension.lowercased()
     if let fileType = UTType(filenameExtension: fileExtension) {
+      if fileType.canBePreviewedByQuickLook {
+        return true
+      }
+      
+      print("FILE TYPE?", fileType, fileExtension, fileType.isSubtype(of: .pdf), fileType.isSupertype(of: .pdf))
       if fileType.isSubtype(of: .image) {
+        return true
+      }
+      else if fileType.isSubtype(of: .pdf) || fileExtension == "pdf" {
+        return true
+      }
+      else if fileType.isSubtype(of: .audio) {
+        return true
+      }
+      else if fileType.isSubtype(of: .video) {
         return true
       }
       else if fileType.isSubtype(of: .text) {
