@@ -731,12 +731,6 @@ struct HotlineTransactionField {
 
 struct HotlineTransaction {
   static let headerSize = 20
-  static var sequenceID: UInt32 = 1
-  
-  static func nextID() -> UInt32 {
-    HotlineTransaction.sequenceID += 1
-    return HotlineTransaction.sequenceID
-  }
   
   var flags: UInt8 = 0
   var isReply: UInt8 = 0
@@ -748,9 +742,9 @@ struct HotlineTransaction {
   
   var fields: [HotlineTransactionField] = []
   
-  init(type: HotlineTransactionType) {
+  init(id: UInt32, type: HotlineTransactionType) {
     self.type = type
-    self.id = HotlineTransaction.nextID()
+    self.id = id
   }
   
   init?(from data: [UInt8]) {

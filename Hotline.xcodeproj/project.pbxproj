@@ -33,6 +33,10 @@
 		DA4F2BF82B16A17200D8ADDC /* HotlineProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA4F2BF72B16A17200D8ADDC /* HotlineProtocol.swift */; };
 		DA4F2C012B1A558E00D8ADDC /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA4F2C002B1A558E00D8ADDC /* ChatView.swift */; platformFilter = ios; };
 		DA501BE22EBE9018001714F8 /* GroupedIconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA501BE12EBE9018001714F8 /* GroupedIconView.swift */; };
+		DA501BE42EBE9517001714F8 /* ServerBookmarkSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA501BE32EBE9517001714F8 /* ServerBookmarkSheet.swift */; };
+		DA501BE72EBE9542001714F8 /* TrackerBookmarkSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA501BE62EBE9542001714F8 /* TrackerBookmarkSheet.swift */; };
+		DA501BE92EBE9589001714F8 /* TrackerItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA501BE82EBE9589001714F8 /* TrackerItemView.swift */; };
+		DA501BEB2EBE95B4001714F8 /* TrackerBookmarkServerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA501BEA2EBE95B4001714F8 /* TrackerBookmarkServerView.swift */; };
 		DA52689C2EB0738B00DCB941 /* GeneralSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA52689B2EB0738B00DCB941 /* GeneralSettingsView.swift */; platformFilters = (macos, ); };
 		DA52689E2EB073A400DCB941 /* IconSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA52689D2EB073A400DCB941 /* IconSettingsView.swift */; platformFilters = (macos, ); };
 		DA5268A02EB073BC00DCB941 /* SoundSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA52689F2EB073BC00DCB941 /* SoundSettingsView.swift */; platformFilters = (macos, ); };
@@ -139,6 +143,10 @@
 		DA4F2BF72B16A17200D8ADDC /* HotlineProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotlineProtocol.swift; sourceTree = "<group>"; };
 		DA4F2C002B1A558E00D8ADDC /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		DA501BE12EBE9018001714F8 /* GroupedIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupedIconView.swift; sourceTree = "<group>"; };
+		DA501BE32EBE9517001714F8 /* ServerBookmarkSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerBookmarkSheet.swift; sourceTree = "<group>"; };
+		DA501BE62EBE9542001714F8 /* TrackerBookmarkSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerBookmarkSheet.swift; sourceTree = "<group>"; };
+		DA501BE82EBE9589001714F8 /* TrackerItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerItemView.swift; sourceTree = "<group>"; };
+		DA501BEA2EBE95B4001714F8 /* TrackerBookmarkServerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerBookmarkServerView.swift; sourceTree = "<group>"; };
 		DA52689B2EB0738B00DCB941 /* GeneralSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsView.swift; sourceTree = "<group>"; };
 		DA52689D2EB073A400DCB941 /* IconSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconSettingsView.swift; sourceTree = "<group>"; };
 		DA52689F2EB073BC00DCB941 /* SoundSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundSettingsView.swift; sourceTree = "<group>"; };
@@ -289,6 +297,18 @@
 				DA6980782BF80525003E434B /* BetterTextEditor.swift */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		DA501BE52EBE9520001714F8 /* Trackers */ = {
+			isa = PBXGroup;
+			children = (
+				DAE734FA2B2E41F9000C56F6 /* TrackerView.swift */,
+				DA501BE82EBE9589001714F8 /* TrackerItemView.swift */,
+				DA501BEA2EBE95B4001714F8 /* TrackerBookmarkServerView.swift */,
+				DA501BE62EBE9542001714F8 /* TrackerBookmarkSheet.swift */,
+				DA501BE32EBE9517001714F8 /* ServerBookmarkSheet.swift */,
+			);
+			path = Trackers;
 			sourceTree = "<group>";
 		};
 		DA52689A2EB0737400DCB941 /* Settings */ = {
@@ -497,10 +517,10 @@
 				DA55AC762BE589F700034857 /* AboutView.swift */,
 				DACCE5E22EABE86A008CDD92 /* AppUpdateView.swift */,
 				DAE136B92B9D1147007D8307 /* HotlinePanelView.swift */,
-				DAE734FA2B2E41F9000C56F6 /* TrackerView.swift */,
 				DAE734F82B2E4185000C56F6 /* ServerView.swift */,
 				DAE735022B30C0BB000C56F6 /* MessageView.swift */,
 				DA5268B42EB6840A00DCB941 /* TransfersView.swift */,
+				DA501BE52EBE9520001714F8 /* Trackers */,
 				DA5268A82EB081AF00DCB941 /* Chat */,
 				DA5268A62EB0762300DCB941 /* Board */,
 				DA5268A92EB081DE00DCB941 /* News */,
@@ -615,6 +635,7 @@
 				DA7725412B21435B006C5ABB /* ObservableScrollView.swift in Sources */,
 				DAE734FF2B2E6750000C56F6 /* ChatView.swift in Sources */,
 				DA5268B52EB6840A00DCB941 /* TransfersView.swift in Sources */,
+				DA501BE42EBE9517001714F8 /* ServerBookmarkSheet.swift in Sources */,
 				11F8288B2BF9428100216BA0 /* AccountManagerView.swift in Sources */,
 				DAC6B2E42EAFE92F004E2CBA /* SpinningGlobeView.swift in Sources */,
 				DADDB28D2B22B5920024040D /* Server.swift in Sources */,
@@ -654,11 +675,13 @@
 				11A7260A2BE0675A000C1DA7 /* FileDetailsView.swift in Sources */,
 				DA72A0DD2B4CD0BF00A0F48A /* NewsEditorView.swift in Sources */,
 				DA52689C2EB0738B00DCB941 /* GeneralSettingsView.swift in Sources */,
+				DA501BE92EBE9589001714F8 /* TrackerItemView.swift in Sources */,
 				DA57536C2B36BA1D00FAC277 /* TextDocument.swift in Sources */,
 				DACCE5E12EABE4B4008CDD92 /* AppUpdate.swift in Sources */,
 				DA5268AD2EB12FE200DCB941 /* ServerState.swift in Sources */,
 				DA77253F2B21176D006C5ABB /* NewsView.swift in Sources */,
 				DAC6B2E22EAEE9FE004E2CBA /* NetSocket.swift in Sources */,
+				DA501BEB2EBE95B4001714F8 /* TrackerBookmarkServerView.swift in Sources */,
 				DA99218E2C51AA5D0058FA6C /* HotlineDataBuilder.swift in Sources */,
 				DA872B132BDDBF78008B1012 /* HotlinePanel.swift in Sources */,
 				DA4B8F3A2EA6FB3C00CBFD53 /* iOSApp.swift in Sources */,
@@ -680,6 +703,7 @@
 				DAC87F072C5010E80060FADF /* HotlineExtensions.swift in Sources */,
 				DAE734FD2B2E65E9000C56F6 /* MessageBoardView.swift in Sources */,
 				DA6980832BFFD06C003E434B /* BookmarkDocument.swift in Sources */,
+				DA501BE72EBE9542001714F8 /* TrackerBookmarkSheet.swift in Sources */,
 				DAB4D87E2B4C8BCA0048A05C /* FilePreviewTextView.swift in Sources */,
 				DA3429B72EBAB1750010784E /* QuickLookPreviewView.swift in Sources */,
 				DA4F2C012B1A558E00D8ADDC /* ChatView.swift in Sources */,

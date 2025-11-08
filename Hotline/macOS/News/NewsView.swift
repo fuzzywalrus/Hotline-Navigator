@@ -138,7 +138,7 @@ struct NewsView: View {
     ContentUnavailableView {
       Label("No News", systemImage: "newspaper")
     } description: {
-      Text("This server has no newsgroups")
+      Text("This server has not created any newsgroups yet")
     }
   }
   

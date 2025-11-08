@@ -1,3 +1,5 @@
+import SwiftUI
+
 struct TrackerItemView: View {
   let bookmark: Bookmark
   let isExpanded: Bool

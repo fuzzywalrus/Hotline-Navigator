@@ -160,6 +160,13 @@ public actor HotlineClientNew {
     UInt16(0x0001) // Version
     UInt16(0x0002) // Sub-version
   })
+  
+  // Transaction IDs
+  private var nextTransactionID: UInt32 = 1
+  private func generateTransactionID() -> UInt32 {
+    defer { self.nextTransactionID += 1 }
+    return self.nextTransactionID
+  }
 
   // MARK: - Connection
 
@@ -258,7 +265,7 @@ public actor HotlineClientNew {
   // MARK: - Login
 
   private func performLogin(_ login: HotlineLoginInfo) async throws -> HotlineServerInfo {
-    var transaction = HotlineTransaction(type: .login)
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .login)
     transaction.setFieldEncodedString(type: .userLogin, val: login.login)
     transaction.setFieldEncodedString(type: .userPassword, val: login.password)
     transaction.setFieldUInt16(type: .userIconID, val: login.iconID)
@@ -494,28 +501,29 @@ public actor HotlineClientNew {
   // MARK: - Keep-Alive
 
   private func startKeepAlive() {
-    keepAliveTask = Task { [weak self] in
+    self.keepAliveTask = Task { [weak self] in
       while !Task.isCancelled {
         try? await Task.sleep(nanoseconds: 180_000_000_000) // 3 minutes
-
-        guard let self else { return }
-
-        do {
-          if let version = await self.serverInfo?.version, version >= 185 {
-            let transaction = HotlineTransaction(type: .connectionKeepAlive)
-            try await self.socket.send(transaction, endian: .big)
-          } else {
-            // Older servers: send getUserNameList as keep-alive
-            _ = try? await self.getUserList()
-          }
-        } catch {
-          print("HotlineClientNew: Keep-alive failed: \(error)")
-        }
+        await self?.sendKeepAlive()
       }
     }
   }
+  
+  private func sendKeepAlive() async {
+    do {
+      if let version = self.serverInfo?.version, version >= 185 {
+        let transaction = HotlineTransaction(id: self.generateTransactionID(), type: .connectionKeepAlive)
+        try await self.socket.send(transaction, endian: .big)
+      } else {
+        // Older servers: send getUserNameList as keep-alive
+        let _ = try? await self.getUserList()
+      }
+    } catch {
+      print("HotlineClientNew: Keep-alive failed: \(error)")
+    }
+  }
 
-  // MARK: - Public API - Chat
+  // MARK: - Chat
 
   /// Send a chat message to the server
   ///
@@ -524,20 +532,20 @@ public actor HotlineClientNew {
   ///   - encoding: Text encoding (default: UTF-8)
   ///   - announce: Whether this is an announcement (admin only, default: false)
   public func sendChat(_ message: String, encoding: String.Encoding = .utf8, announce: Bool = false) async throws {
-    var transaction = HotlineTransaction(type: .sendChat)
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .sendChat)
     transaction.setFieldString(type: .data, val: message, encoding: encoding)
     transaction.setFieldUInt16(type: .chatOptions, val: announce ? 1 : 0)
 
     try await socket.send(transaction, endian: .big)
   }
 
-  // MARK: - Public API - Users
+  // MARK: - Users
 
   /// Get the list of users currently connected to the server
   ///
   /// - Returns: Array of connected users
   public func getUserList() async throws -> [HotlineUser] {
-    let transaction = HotlineTransaction(type: .getUserNameList)
+    let transaction = HotlineTransaction(id: self.generateTransactionID(), type: .getUserNameList)
     let reply = try await sendTransaction(transaction)
 
     var users: [HotlineUser] = []
@@ -555,7 +563,7 @@ public actor HotlineClientNew {
   ///   - userID: Target user ID
   ///   - encoding: Text encoding (default: UTF-8)
   public func sendInstantMessage(_ message: String, to userID: UInt16, encoding: String.Encoding = .utf8) async throws {
-    var transaction = HotlineTransaction(type: .sendInstantMessage)
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .sendInstantMessage)
     transaction.setFieldUInt16(type: .userID, val: userID)
     transaction.setFieldUInt32(type: .options, val: 1)
     transaction.setFieldString(type: .data, val: message, encoding: encoding)
@@ -576,7 +584,7 @@ public actor HotlineClientNew {
     options: HotlineUserOptions = [],
     autoresponse: String? = nil
   ) async throws {
-    var transaction = HotlineTransaction(type: .setClientUserInfo)
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .setClientUserInfo)
     transaction.setFieldString(type: .userName, val: username)
     transaction.setFieldUInt16(type: .userIconID, val: iconID)
     transaction.setFieldUInt16(type: .options, val: options.rawValue)
@@ -588,13 +596,13 @@ public actor HotlineClientNew {
     try await socket.send(transaction, endian: .big)
   }
 
-  // MARK: - Public API - Agreement
+  // MARK: - Agreement
 
   /// Send agreement acceptance to the server
   ///
   /// Call this after receiving `.agreementRequired` event.
   public func sendAgree() async throws {
-    let transaction = HotlineTransaction(type: .agreed)
+    let transaction = HotlineTransaction(id: self.generateTransactionID(), type: .agreed)
     try await socket.send(transaction, endian: .big)
   }
 
@@ -605,7 +613,7 @@ public actor HotlineClientNew {
   /// - Parameter path: Directory path (empty for root)
   /// - Returns: Array of files and folders
   public func getFileList(path: [String] = []) async throws -> [HotlineFile] {
-    var transaction = HotlineTransaction(type: .getFileNameList)
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .getFileNameList)
     if !path.isEmpty {
       transaction.setFieldPath(type: .filePath, val: path)
     }
@@ -634,7 +642,7 @@ public actor HotlineClientNew {
     path: [String],
     preview: Bool = false
   ) async throws -> (referenceNumber: UInt32, size: Int, fileSize: Int?, waitingCount: Int?) {
-    var transaction = HotlineTransaction(type: .downloadFile)
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .downloadFile)
     transaction.setFieldString(type: .fileName, val: name)
     transaction.setFieldPath(type: .filePath, val: path)
 
@@ -664,7 +672,7 @@ public actor HotlineClientNew {
   /// - Parameter path: Category path (empty for root)
   /// - Returns: Array of news categories
   public func getNewsCategories(path: [String] = []) async throws -> [HotlineNewsCategory] {
-    var transaction = HotlineTransaction(type: .getNewsCategoryNameList)
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .getNewsCategoryNameList)
     if !path.isEmpty {
       transaction.setFieldPath(type: .newsPath, val: path)
     }
@@ -686,7 +694,7 @@ public actor HotlineClientNew {
   /// - Parameter path: Category path
   /// - Returns: Array of news articles
   public func getNewsArticles(path: [String] = []) async throws -> [HotlineNewsArticle] {
-    var transaction = HotlineTransaction(type: .getNewsArticleNameList)
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .getNewsArticleNameList)
     if !path.isEmpty {
       transaction.setFieldPath(type: .newsPath, val: path)
     }
@@ -713,7 +721,7 @@ public actor HotlineClientNew {
   ///   - flavor: Content flavor (default: "text/plain")
   /// - Returns: Article content as string
   public func getNewsArticle(id: UInt32, path: [String], flavor: String = "text/plain") async throws -> String? {
-    var transaction = HotlineTransaction(type: .getNewsArticleData)
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .getNewsArticleData)
     transaction.setFieldPath(type: .newsPath, val: path)
     transaction.setFieldUInt32(type: .newsArticleID, val: id)
     transaction.setFieldString(type: .newsArticleDataFlavor, val: flavor, encoding: .ascii)
@@ -739,7 +747,7 @@ public actor HotlineClientNew {
       throw HotlineClientError.invalidResponse
     }
 
-    var transaction = HotlineTransaction(type: .postNewsArticle)
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .postNewsArticle)
     transaction.setFieldPath(type: .newsPath, val: path)
     transaction.setFieldUInt32(type: .newsArticleID, val: parentID)
     transaction.setFieldString(type: .newsArticleTitle, val: title)
@@ -756,7 +764,7 @@ public actor HotlineClientNew {
   ///
   /// - Returns: Array of message strings
   public func getMessageBoard() async throws -> [String] {
-    let transaction = HotlineTransaction(type: .getMessageBoard)
+    let transaction = HotlineTransaction(id: self.generateTransactionID(), type: .getMessageBoard)
     let reply = try await sendTransaction(transaction)
 
     guard let text = reply.getField(type: .data)?.getString() else {
@@ -774,7 +782,7 @@ public actor HotlineClientNew {
   public func postMessageBoard(_ text: String) async throws {
     guard !text.isEmpty else { return }
 
-    var transaction = HotlineTransaction(type: .oldPostNews)
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .oldPostNews)
     transaction.setFieldString(type: .data, val: text, encoding: .macOSRoman)
 
     try await socket.send(transaction, endian: .big)
@@ -789,7 +797,7 @@ public actor HotlineClientNew {
   ///   - path: Directory path containing the file
   /// - Returns: File details or nil if not found
   public func getFileInfo(name: String, path: [String]) async throws -> FileDetails? {
-    var transaction = HotlineTransaction(type: .getFileInfo)
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .getFileInfo)
     transaction.setFieldString(type: .fileName, val: name)
     transaction.setFieldPath(type: .filePath, val: path)
 
@@ -828,7 +836,7 @@ public actor HotlineClientNew {
   ///   - path: Directory path containing the item
   /// - Returns: True if deletion succeeded
   public func deleteFile(name: String, path: [String]) async throws -> Bool {
-    var transaction = HotlineTransaction(type: .deleteFile)
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .deleteFile)
     transaction.setFieldString(type: .fileName, val: name)
     transaction.setFieldPath(type: .filePath, val: path)
 
@@ -840,13 +848,13 @@ public actor HotlineClientNew {
     }
   }
 
-  // MARK: - Public API - User Administration
+  // MARK: - Administration
 
   /// Get list of user accounts (requires admin access)
   ///
   /// - Returns: Array of user accounts sorted by login
   public func getAccounts() async throws -> [HotlineAccount] {
-    let transaction = HotlineTransaction(type: .getAccounts)
+    let transaction = HotlineTransaction(id: self.generateTransactionID(), type: .getAccounts)
     let reply = try await sendTransaction(transaction)
 
     let accountFields = reply.getFieldList(type: .data)
@@ -869,7 +877,7 @@ public actor HotlineClientNew {
   ///   - password: Optional password (nil for no password)
   ///   - access: Access permissions bitmask
   public func createUser(name: String, login: String, password: String?, access: UInt64) async throws {
-    var transaction = HotlineTransaction(type: .newUser)
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .newUser)
 
     transaction.setFieldString(type: .userName, val: name)
     transaction.setFieldEncodedString(type: .userLogin, val: login)
@@ -891,7 +899,7 @@ public actor HotlineClientNew {
   ///   - password: Password update - nil to keep current, "" to remove, or new password string
   ///   - access: Access permissions bitmask
   public func setUser(name: String, login: String, newLogin: String?, password: String?, access: UInt64) async throws {
-    var transaction = HotlineTransaction(type: .setUser)
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .setUser)
     transaction.setFieldString(type: .userName, val: name)
     transaction.setFieldUInt64(type: .userAccess, val: access)
 
@@ -919,20 +927,20 @@ public actor HotlineClientNew {
   ///
   /// - Parameter login: Login username to delete
   public func deleteUser(login: String) async throws {
-    var transaction = HotlineTransaction(type: .deleteUser)
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .deleteUser)
     transaction.setFieldEncodedString(type: .userLogin, val: login)
 
     _ = try await sendTransaction(transaction)
   }
 
-  // MARK: - Public API - Banner Download
+  // MARK: - Banners
 
   /// Request to download the server banner image
   ///
   /// - Returns: Tuple of (referenceNumber, transferSize) for the banner download
   /// - Throws: HotlineClientError if not connected or server doesn't support banners
   public func downloadBanner() async throws -> (referenceNumber: UInt32, transferSize: Int)? {
-    let transaction = HotlineTransaction(type: .downloadBanner)
+    let transaction = HotlineTransaction(id: self.generateTransactionID(), type: .downloadBanner)
     let reply = try await sendTransaction(transaction)
 
     guard
@@ -947,7 +955,7 @@ public actor HotlineClientNew {
     return (referenceNumber, transferSize)
   }
 
-  // MARK: Files
+  // MARK: - Transfers
 
   /// Request to download a file
   ///
@@ -957,7 +965,7 @@ public actor HotlineClientNew {
   ///   - preview: If true, request preview mode (smaller transfer)
   /// - Returns: Tuple of (referenceNumber, transferSize, fileSize, waitingCount) for the download
   public func downloadFile(name: String, path: [String], preview: Bool = false) async throws -> (referenceNumber: UInt32, transferSize: Int, fileSize: Int, waitingCount: Int)? {
-    var transaction = HotlineTransaction(type: .downloadFile)
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .downloadFile)
     transaction.setFieldString(type: .fileName, val: name)
     transaction.setFieldPath(type: .filePath, val: path)
 
@@ -989,7 +997,7 @@ public actor HotlineClientNew {
   ///   - path: Directory path containing the folder
   /// - Returns: Tuple of (referenceNumber, transferSize, itemCount, waitingCount) for the download
   public func downloadFolder(name: String, path: [String]) async throws -> (referenceNumber: UInt32, transferSize: Int, itemCount: Int, waitingCount: Int)? {
-    var transaction = HotlineTransaction(type: .downloadFolder)
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .downloadFolder)
     transaction.setFieldString(type: .fileName, val: name)
     transaction.setFieldPath(type: .filePath, val: path)
 
@@ -1016,7 +1024,7 @@ public actor HotlineClientNew {
   ///   - path: Directory path where the file should be uploaded
   /// - Returns: Reference number for the upload transfer
   public func uploadFile(name: String, path: [String]) async throws -> UInt32? {
-    var transaction = HotlineTransaction(type: .uploadFile)
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .uploadFile)
     transaction.setFieldString(type: .fileName, val: name)
     transaction.setFieldPath(type: .filePath, val: path)
 
@@ -1041,7 +1049,7 @@ public actor HotlineClientNew {
   public func uploadFolder(name: String, path: [String], fileCount: UInt32, totalSize: UInt32) async throws -> UInt32? {
     print("HotlineClientNew: uploadFolder request - name='\(name)', path=\(path), fileCount=\(fileCount), totalSize=\(totalSize)")
 
-    var transaction = HotlineTransaction(type: .uploadFolder)
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .uploadFolder)
     transaction.setFieldString(type: .fileName, val: name)
     transaction.setFieldPath(type: .filePath, val: path)
     transaction.setFieldUInt32(type: .transferSize, val: totalSize)

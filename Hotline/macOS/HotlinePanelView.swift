@@ -119,6 +119,18 @@ struct HotlinePanelView: View {
           .disabled(self.activeServerState == nil)
           .help("Accounts")
         }
+        
+        Button {
+          self.openWindow(id: "transfers")
+        }
+        label: {
+          Image("Section Transfers")
+            .resizable()
+            .scaledToFit()
+        }
+        .buttonStyle(.plain)
+        .frame(width: 20, height: 20)
+        .help("File Transfers")
 
         SettingsLink(label: {
           Image("Section Settings")
