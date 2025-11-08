@@ -38,6 +38,8 @@
 		DA501BE92EBE9589001714F8 /* TrackerItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA501BE82EBE9589001714F8 /* TrackerItemView.swift */; };
 		DA501BEB2EBE95B4001714F8 /* TrackerBookmarkServerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA501BEA2EBE95B4001714F8 /* TrackerBookmarkServerView.swift */; };
 		DA501BEE2EBEC42E001714F8 /* Kingfisher in Frameworks */ = {isa = PBXBuildFile; productRef = DA501BED2EBEC42E001714F8 /* Kingfisher */; };
+		DA501BF02EBED848001714F8 /* BonjourState.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA501BEF2EBED848001714F8 /* BonjourState.swift */; };
+		DA501BF22EBEF415001714F8 /* BonjourServerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA501BF12EBEF415001714F8 /* BonjourServerRow.swift */; };
 		DA52689C2EB0738B00DCB941 /* GeneralSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA52689B2EB0738B00DCB941 /* GeneralSettingsView.swift */; platformFilters = (macos, ); };
 		DA52689E2EB073A400DCB941 /* IconSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA52689D2EB073A400DCB941 /* IconSettingsView.swift */; platformFilters = (macos, ); };
 		DA5268A02EB073BC00DCB941 /* SoundSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA52689F2EB073BC00DCB941 /* SoundSettingsView.swift */; platformFilters = (macos, ); };
@@ -148,6 +150,8 @@
 		DA501BE62EBE9542001714F8 /* TrackerBookmarkSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerBookmarkSheet.swift; sourceTree = "<group>"; };
 		DA501BE82EBE9589001714F8 /* TrackerItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerItemView.swift; sourceTree = "<group>"; };
 		DA501BEA2EBE95B4001714F8 /* TrackerBookmarkServerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerBookmarkServerView.swift; sourceTree = "<group>"; };
+		DA501BEF2EBED848001714F8 /* BonjourState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BonjourState.swift; sourceTree = "<group>"; };
+		DA501BF12EBEF415001714F8 /* BonjourServerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BonjourServerRow.swift; sourceTree = "<group>"; };
 		DA52689B2EB0738B00DCB941 /* GeneralSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsView.swift; sourceTree = "<group>"; };
 		DA52689D2EB073A400DCB941 /* IconSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconSettingsView.swift; sourceTree = "<group>"; };
 		DA52689F2EB073BC00DCB941 /* SoundSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundSettingsView.swift; sourceTree = "<group>"; };
@@ -259,6 +263,7 @@
 				DACCE5E02EABE4B4008CDD92 /* AppUpdate.swift */,
 				DA3429B42EBA8A450010784E /* FilePreviewState.swift */,
 				DA5268B02EB2708E00DCB941 /* HotlineState.swift */,
+				DA501BEF2EBED848001714F8 /* BonjourState.swift */,
 			);
 			path = State;
 			sourceTree = "<group>";
@@ -304,6 +309,7 @@
 		DA501BE52EBE9520001714F8 /* Trackers */ = {
 			isa = PBXGroup;
 			children = (
+				DA501BF12EBEF415001714F8 /* BonjourServerRow.swift */,
 				DAE734FA2B2E41F9000C56F6 /* TrackerView.swift */,
 				DA501BE82EBE9589001714F8 /* TrackerItemView.swift */,
 				DA501BEA2EBE95B4001714F8 /* TrackerBookmarkServerView.swift */,
@@ -693,6 +699,7 @@
 				DA5753682B33E88A00FAC277 /* HotlineTransferClient.swift in Sources */,
 				DAB4D8822B4C8FED0048A05C /* FileIconView.swift in Sources */,
 				DA65499A2BEC280E00EDB697 /* ServerMessageView.swift in Sources */,
+				DA501BF02EBED848001714F8 /* BonjourState.swift in Sources */,
 				DAAEE66F2B47625600A5BA07 /* FilePreviewImageView.swift in Sources */,
 				DA872B152BDDEE1A008B1012 /* VisualEffectView.swift in Sources */,
 				DA3429AE2EB9C0280010784E /* HotlineFileUploadClientNew.swift in Sources */,
@@ -707,6 +714,7 @@
 				DAC87F072C5010E80060FADF /* HotlineExtensions.swift in Sources */,
 				DAE734FD2B2E65E9000C56F6 /* MessageBoardView.swift in Sources */,
 				DA6980832BFFD06C003E434B /* BookmarkDocument.swift in Sources */,
+				DA501BF22EBEF415001714F8 /* BonjourServerRow.swift in Sources */,
 				DA501BE72EBE9542001714F8 /* TrackerBookmarkSheet.swift in Sources */,
 				DAB4D87E2B4C8BCA0048A05C /* FilePreviewTextView.swift in Sources */,
 				DA3429B72EBAB1750010784E /* QuickLookPreviewView.swift in Sources */,

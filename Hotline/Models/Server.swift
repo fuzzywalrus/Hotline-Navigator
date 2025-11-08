@@ -10,6 +10,15 @@ struct Server: Codable {
   var login: String
   var password: String
   
+  var displayAddress: String {
+    if self.port == HotlinePorts.DefaultServerPort {
+      return self.address
+    }
+    else {
+      return "\(self.address):\(String(self.port))"
+    }
+  }
+  
   init(name: String?, description: String?, address: String, port: Int = HotlinePorts.DefaultServerPort, users: Int = 0, login: String? = nil, password: String? = nil) {
     self.name = name
     self.description = description

@@ -6,11 +6,15 @@ import UniformTypeIdentifiers
 enum TrackerSelection: Hashable {
   case bookmark(Bookmark)
   case bookmarkServer(BookmarkServer)
+  case bonjourGroup
+  case bonjourServer(BonjourState.BonjourServer)
   
   var server: Server? {
     switch self {
-    case .bookmark(let b): return b.server
-    case .bookmarkServer(let t): return t.server
+    case .bookmark(let b): b.server
+    case .bookmarkServer(let t): t.server
+    case .bonjourGroup: nil
+    case .bonjourServer(let b): b.server
     }
   }
 }
@@ -85,6 +89,62 @@ struct TrackerView: View {
       }
     }
   }
+  
+  var bonjourRowView: some View {
+    HStack(alignment: .center, spacing: 6) {
+      Button {
+        AppState.shared.bonjourState.isExpanded.toggle()
+      } label: {
+        Text(Image(systemName: AppState.shared.bonjourState.isExpanded ? "chevron.down" : "chevron.right"))
+          .bold()
+          .font(.system(size: 10))
+          .opacity(0.5)
+          .frame(alignment: .center)
+      }
+      .buttonStyle(.plain)
+      .frame(width: 10)
+      .padding(.leading, 4)
+      .padding(.trailing, 2)
+      
+      Image(systemName: "bonjour")
+        .resizable()
+        .scaledToFit()
+        .symbolRenderingMode(.multicolor)
+        .frame(width: 16, height: 16, alignment: .center)
+      Text("Bonjour").bold().lineLimit(1).truncationMode(.tail)
+
+      if AppState.shared.bonjourState.isBrowsing {
+        ProgressView()
+          .controlSize(.mini)
+      }
+      
+      Spacer(minLength: 0)
+      
+      if AppState.shared.bonjourState.isExpanded && !AppState.shared.bonjourState.discoveredServers.isEmpty {
+        HStack(spacing: 4) {
+          Text(String(AppState.shared.bonjourState.discoveredServers.count))
+
+          SpinningGlobeView()
+            .fontWeight(.semibold)
+            .frame(width: 12, height: 12)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .foregroundStyle(.secondary)
+//          .background(.quinary)
+        .clipShape(.capsule)
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .onChange(of: AppState.shared.bonjourState.isExpanded) { oldState, newState in
+      if newState {
+        AppState.shared.bonjourState.startBrowsing()
+      }
+      else {
+        AppState.shared.bonjourState.stopBrowsing()
+      }
+    }
+  }
 
   var body: some View {
     List(selection: $selection) {
@@ -114,6 +174,17 @@ struct TrackerView: View {
       }
       .onDelete { deletedIndexes in
         Bookmark.delete(at: deletedIndexes, context: modelContext)
+      }
+      
+      self.bonjourRowView
+        .tag(TrackerSelection.bonjourGroup)
+      
+      if AppState.shared.bonjourState.isExpanded {
+        ForEach(AppState.shared.bonjourState.discoveredServers, id: \.self) { record in
+          BonjourServerRow(server: record)
+            .tag(TrackerSelection.bonjourServer(record))
+            .padding(.leading, 16 + 8 + 10)
+        }
       }
     }
     .onDeleteCommand {
@@ -155,6 +226,10 @@ struct TrackerView: View {
           self.bookmarkContextMenu(bookmark)
         case .bookmarkServer(let server):
           self.bookmarkServerContextMenu(server)
+        case .bonjourGroup:
+          EmptyView()
+        case .bonjourServer(let bonjourServer):
+          self.bonjourServerContextMenu(bonjourServer)
         }
       }
     } primaryAction: { items in
@@ -180,6 +255,15 @@ struct TrackerView: View {
         
       case .bookmarkServer(let bookmarkServer):
         openWindow(id: "server", value: bookmarkServer.server)
+      
+      case .bonjourGroup:
+        AppState.shared.bonjourState.isExpanded.toggle()
+        
+      case .bonjourServer(let bonjourServer):
+        if let server = bonjourServer.server {
+          openWindow(id: "server", value: server)
+        }
+        
       }
     }
     .fileExporter(isPresented: $bookmarkExportActive, document: bookmarkExport, contentTypes: [.data], defaultFilename: "\(bookmarkExport?.bookmark.name ?? "Hotline Bookmark").hlbm", onCompletion: { result in
@@ -380,8 +464,32 @@ struct TrackerView: View {
       Label(bookmark.type == .tracker ? "Delete Tracker" : "Delete Bookmark", systemImage: "trash")
     }
   }
-
   
+  @ViewBuilder
+  func bonjourServerContextMenu(_ bonjourServer: BonjourState.BonjourServer) -> some View {
+    Button {
+      guard let server = bonjourServer.server else {
+        return
+      }
+      let newBookmark = Bookmark(type: .server, name: server.name ?? server.address, address: server.address, port: server.port, login: nil, password: nil)
+      Bookmark.add(newBookmark, context: modelContext)
+    } label: {
+      Label("Bookmark", systemImage: "bookmark")
+    }
+    
+    Divider()
+    
+    Button {
+      guard let server = bonjourServer.server else {
+        return
+      }
+      NSPasteboard.general.clearContents()
+      NSPasteboard.general.setString(server.displayAddress, forType: .string)
+    } label: {
+      Label("Copy Address", systemImage: "doc.on.doc")
+    }
+  }
+
   func refresh() {
     // When a tracker is selected, refresh only that tracker.
     if let trackerSelection = self.selection {

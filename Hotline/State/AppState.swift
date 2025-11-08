@@ -11,6 +11,8 @@ final class AppState {
   private init() {
 
   }
+  
+  var bonjourState = BonjourState()
 
   var activeHotline: HotlineState? = nil
   var activeServerState: ServerState? = nil

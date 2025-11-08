@@ -36,7 +36,7 @@ struct TrackerItemView: View {
         if isLoading {
           ProgressView()
             .padding([.leading, .trailing], 2)
-            .controlSize(.small)
+            .controlSize(.mini)
         }
         Spacer(minLength: 0)
         if isExpanded && count > 0 {
