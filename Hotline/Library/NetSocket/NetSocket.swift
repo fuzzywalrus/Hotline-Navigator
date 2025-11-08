@@ -173,7 +173,24 @@ public actor NetSocket {
     guard let nwPort = NWEndpoint.Port(rawValue: port) else {
       throw NetSocketError.invalidPort
     }
-    return try await self.connect(host: .name(host, nil), port: nwPort, tls: tls, config: config)
+
+    // Parse the host string to create the appropriate NWEndpoint.Host
+    let nwHost: NWEndpoint.Host
+
+    // Try parsing as IPv6 without zone
+    if let ipv6Addr = IPv6Address(host) {
+      nwHost = .ipv6(ipv6Addr)
+    }
+    // Try parsing as IPv4
+    else if let ipv4Addr = IPv4Address(host) {
+      nwHost = .ipv4(ipv4Addr)
+    }
+    // Fall back to treating as hostname
+    else {
+      nwHost = .name(host, nil)
+    }
+
+    return try await self.connect(host: nwHost, port: nwPort, tls: tls, config: config)
   }
   
   // MARK: Close

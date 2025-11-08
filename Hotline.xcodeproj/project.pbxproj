@@ -309,12 +309,12 @@
 		DA501BE52EBE9520001714F8 /* Trackers */ = {
 			isa = PBXGroup;
 			children = (
-				DA501BF12EBEF415001714F8 /* BonjourServerRow.swift */,
 				DAE734FA2B2E41F9000C56F6 /* TrackerView.swift */,
 				DA501BE82EBE9589001714F8 /* TrackerItemView.swift */,
 				DA501BEA2EBE95B4001714F8 /* TrackerBookmarkServerView.swift */,
 				DA501BE62EBE9542001714F8 /* TrackerBookmarkSheet.swift */,
 				DA501BE32EBE9517001714F8 /* ServerBookmarkSheet.swift */,
+				DA501BF12EBEF415001714F8 /* BonjourServerRow.swift */,
 			);
 			path = Trackers;
 			sourceTree = "<group>";

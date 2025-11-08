@@ -405,13 +405,12 @@ struct TrackerView: View {
   @ViewBuilder
   func bookmarkServerContextMenu(_ server: BookmarkServer) -> some View {
     Button {
-      let newBookmark = Bookmark(type: .server, name: server.name ?? server.address, address: server.address, port: server.port, login: nil, password: nil)
-      Bookmark.add(newBookmark, context: modelContext)
+      NSPasteboard.general.clearContents()
+      let displayAddress = (server.port == HotlinePorts.DefaultServerPort) ? server.address : "\(server.address):\(server.port)"
+      NSPasteboard.general.setString("hotline://\(displayAddress)", forType: .string)
     } label: {
-      Label("Bookmark", systemImage: "bookmark")
+      Label("Copy Link", systemImage: "link")
     }
-    
-    Divider()
     
     Button {
       NSPasteboard.general.clearContents()
@@ -420,10 +419,30 @@ struct TrackerView: View {
     } label: {
       Label("Copy Address", systemImage: "doc.on.doc")
     }
+    
+    Divider()
+    
+    Button {
+      let newBookmark = Bookmark(type: .server, name: server.name ?? server.address, address: server.address, port: server.port, login: nil, password: nil)
+      Bookmark.add(newBookmark, context: modelContext)
+    } label: {
+      Label("Bookmark", systemImage: "bookmark")
+    }
   }
   
   @ViewBuilder
   func bookmarkContextMenu(_ bookmark: Bookmark) -> some View {
+    Button {
+      let linkString: String = switch bookmark.type {
+      case .tracker: "hotlinetracker://\(bookmark.displayAddress)"
+      case .server: "hotline://\(bookmark.displayAddress)"
+      }
+      NSPasteboard.general.clearContents()
+      NSPasteboard.general.setString(linkString, forType: .string)
+    } label: {
+      Label("Copy Link", systemImage: "link")
+    }
+    
     Button {
       NSPasteboard.general.clearContents()
       NSPasteboard.general.setString(bookmark.displayAddress, forType: .string)
@@ -471,13 +490,12 @@ struct TrackerView: View {
       guard let server = bonjourServer.server else {
         return
       }
-      let newBookmark = Bookmark(type: .server, name: server.name ?? server.address, address: server.address, port: server.port, login: nil, password: nil)
-      Bookmark.add(newBookmark, context: modelContext)
+      NSPasteboard.general.clearContents()
+      let displayAddress = (server.port == HotlinePorts.DefaultServerPort) ? server.address : "\(server.address):\(server.port)"
+      NSPasteboard.general.setString("hotline://\(displayAddress)", forType: .string)
     } label: {
-      Label("Bookmark", systemImage: "bookmark")
+      Label("Copy Link", systemImage: "link")
     }
-    
-    Divider()
     
     Button {
       guard let server = bonjourServer.server else {
@@ -487,6 +505,18 @@ struct TrackerView: View {
       NSPasteboard.general.setString(server.displayAddress, forType: .string)
     } label: {
       Label("Copy Address", systemImage: "doc.on.doc")
+    }
+    
+    Divider()
+    
+    Button {
+      guard let server = bonjourServer.server else {
+        return
+      }
+      let newBookmark = Bookmark(type: .server, name: server.name ?? server.address, address: server.address, port: server.port, login: nil, password: nil)
+      Bookmark.add(newBookmark, context: modelContext)
+    } label: {
+      Label("Bookmark", systemImage: "bookmark")
     }
   }
 

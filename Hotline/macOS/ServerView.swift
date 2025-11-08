@@ -116,8 +116,13 @@ struct ServerView: View {
   var body: some View {
     Group {
       if model.status == .disconnected {
-        connectForm
-          .navigationTitle("Connect to Server")
+        VStack(alignment: .center) {
+          Spacer()
+          self.connectForm
+          Spacer()
+        }
+//        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationTitle("Connect to Server")
       }
       else if case .failed(let error) = model.status {
         VStack {
@@ -245,79 +250,80 @@ struct ServerView: View {
   }
   
   var connectForm: some View {
-    VStack(alignment: .center) {
-      GroupBox {
-        Form {
-          Group {
-            TextField(text: $connectAddress) {
-              Text("Address:")
-            }
-            .focused($focusedField, equals: .address)
-            
-            Text("Type the address of the Hotline server you would like to connect to. If you have an account on that server, type your login and password too.")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-              .padding(.bottom, 4)
-            
-            TextField(text: $connectLogin, prompt: Text("Optional")) {
-              Text("Login:")
-            }
-            .focused($focusedField, equals: .login)
-            SecureField(text: $connectPassword, prompt: Text("Optional")) {
-              Text("Password:")
-            }
-            .focused($focusedField, equals: .password)
-          }
-          .textFieldStyle(.roundedBorder)
-          .controlSize(.large)
-          
-          HStack {
-            Button("Save...") {
-              if !connectAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                connectNameSheetPresented = true
-              }
-            }
-            .disabled(connectAddress.isEmpty)
-            .controlSize(.regular)
-            .buttonStyle(.automatic)
-            .help("Bookmark server")
-            
-            Spacer()
-            
-            Button("Cancel") {
-              dismiss()
-            }
-            .controlSize(.regular)
-            .buttonStyle(.automatic)
-            .keyboardShortcut(.cancelAction)
-            
-            Button("Connect") {
-              connectToServer()
-            }
-            
-            .controlSize(.regular)
-            .buttonStyle(.automatic)
-            .keyboardShortcut(.defaultAction)
-          }
-          .padding(.top, 8)
-          
-        }
-        .padding()
-        .onChange(of: connectAddress) {
-          let (a, p) = Server.parseServerAddressAndPort(connectAddress)
-          server.address = a
-          server.port = p
-        }
-        .onChange(of: connectLogin) {
-          server.login = connectLogin.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        .onChange(of: connectPassword) {
-          server.password = connectPassword
+    Form {
+      HStack(alignment: .top, spacing: 10) {
+        Image("Server Large")
+          .resizable()
+          .scaledToFit()
+          .frame(width: 28, height: 28)
+        
+        VStack(alignment: .leading) {
+          Text("Connect to Server")
+          Text("Enter the address of a Hotline server to connect to.")
+            .foregroundStyle(.secondary)
+            .font(.subheadline)
         }
       }
-      .onAppear {
-        focusedField = .address
+      
+      TextField(text: $connectAddress) {
+        Text("Address:")
       }
+      .focused($focusedField, equals: .address)
+      
+      TextField(text: $connectLogin, prompt: Text("Optional")) {
+        Text("Login:")
+      }
+      .focused($focusedField, equals: .login)
+      SecureField(text: $connectPassword, prompt: Text("Optional")) {
+        Text("Password:")
+      }
+      .focused($focusedField, equals: .password)
+      
+      HStack {
+        Button("Save...") {
+          if !connectAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            connectNameSheetPresented = true
+          }
+        }
+        .disabled(connectAddress.isEmpty)
+        .controlSize(.regular)
+        .buttonStyle(.automatic)
+        .help("Bookmark server")
+        
+        Spacer()
+        
+        Button("Cancel") {
+          dismiss()
+        }
+        .controlSize(.regular)
+        .buttonStyle(.automatic)
+        .keyboardShortcut(.cancelAction)
+        
+        Button("Connect") {
+          connectToServer()
+        }
+        
+        .controlSize(.regular)
+        .buttonStyle(.automatic)
+        .keyboardShortcut(.defaultAction)
+      }
+      .padding(.top, 8)
+    }
+    .formStyle(.grouped)
+    .fixedSize(horizontal: false, vertical: true)
+    .onChange(of: connectAddress) {
+      let (a, p) = Server.parseServerAddressAndPort(connectAddress)
+      server.address = a
+      server.port = p
+    }
+    .onChange(of: connectLogin) {
+      server.login = connectLogin.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    .onChange(of: connectPassword) {
+      server.password = connectPassword
+    }
+    .onAppear {
+      focusedField = .address
     }
     .frame(maxWidth: 380)
     .padding()
@@ -346,8 +352,7 @@ struct ServerView: View {
             if !name.isEmpty {
               connectNameSheetPresented = false
               connectName = ""
-//              Task.detached {
-              
+
               let (host, port) = Server.parseServerAddressAndPort(connectAddress)
               let login: String? = connectLogin.isEmpty ? nil : connectLogin
               let password: String? = connectPassword.isEmpty ? nil : connectPassword
@@ -356,8 +361,6 @@ struct ServerView: View {
                 let newBookmark = Bookmark(type: .server, name: name, address: host, port: port, login: login, password: password)
                 Bookmark.add(newBookmark, context: modelContext)
               }
-              
-//              }
             }
           }
         }

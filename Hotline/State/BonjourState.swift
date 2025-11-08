@@ -115,12 +115,13 @@ class BonjourState {
   }
   
   private func cleanAddress(_ addressString: String) -> String {
-    // For link-local IPv6 (fe80::), keep zone ID as it's required
+    // For link-local IPv6 addresses (fe80::), we MUST keep the zone identifier
+    // because it tells the system which network interface to use for routing
+    // For all other addresses (global IPv6, IPv4), strip the zone identifier
     if addressString.hasPrefix("fe80:") {
       return addressString
     }
-    
-    // For everything else, strip zone identifier
+
     return addressString.components(separatedBy: "%").first ?? addressString
   }
   
@@ -128,7 +129,7 @@ class BonjourState {
     guard case .service(let name, _, _, _) = result.endpoint else {
       return
     }
-    
+
     // Create a connection to resolve the service
     let connection = NWConnection(to: result.endpoint, using: .tcp)
     let resolver = ConnectionResolverState()
@@ -148,32 +149,33 @@ class BonjourState {
           switch state {
           case .ready:
             await resolver.markComplete()
-            
+
             // Extract address and port
             var address: String?
             var port: UInt16?
-            
+
             guard let path = connection.currentPath, let endpoint = path.remoteEndpoint else {
               return
             }
-            
+
             var isLoopback: Bool = false
             if path.usesInterfaceType(.loopback) {
               isLoopback = true
             }
-            
+
             if case .hostPort(let host, let nwPort) = endpoint {
               switch host {
               case .ipv4(let ipv4):
                 address = self?.cleanAddress(ipv4.debugDescription)
               case .ipv6(let ipv6):
-                address = self?.cleanAddress(ipv6.debugDescription)
+                let ipv6String = ipv6.debugDescription
+                address = self?.cleanAddress(ipv6String)
               case .name(let hostname, _):
                 address = hostname
               @unknown default:
                 break
               }
-              
+
               if isLoopback {
                 address = "127.0.0.1"
               }

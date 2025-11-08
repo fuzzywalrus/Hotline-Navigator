@@ -15,7 +15,12 @@ struct Server: Codable {
       return self.address
     }
     else {
-      return "\(self.address):\(String(self.port))"
+      // Wrap IPv6 addresses in brackets when displaying with port
+      if self.address.contains(":") {
+        return "[\(self.address)]:\(String(self.port))"
+      } else {
+        return "\(self.address):\(String(self.port))"
+      }
     }
   }
   
@@ -50,10 +55,49 @@ struct Server: Codable {
   }
   
   static func parseServerAddressAndPort(_ address: String) -> (String, Int) {
-    let url = URL(string: "hotline://\(address)")
+    let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    // Check if this looks like an IPv6 address (contains colons but no port delimiter)
+    // IPv6 addresses can be:
+    // - fe80::1234
+    // - [fe80::1234]:5500 (with port)
+    // - 2001:db8::1
+    // - [2001:db8::1]:6500 (with port)
+
+    // If it starts with [, it's bracketed IPv6 with optional port
+    if trimmed.hasPrefix("[") {
+      // Find the closing bracket
+      if let closeBracketIndex = trimmed.firstIndex(of: "]") {
+        let hostEndIndex = trimmed.index(after: closeBracketIndex)
+        let host = String(trimmed[trimmed.index(after: trimmed.startIndex)..<closeBracketIndex])
+
+        // Check if there's a port after the bracket
+        if hostEndIndex < trimmed.endIndex && trimmed[closeBracketIndex...].contains(":") {
+          let portString = trimmed[trimmed.index(after: hostEndIndex)...]
+          if let port = Int(portString) {
+            return (host.lowercased(), port)
+          }
+        }
+
+        return (host.lowercased(), HotlinePorts.DefaultServerPort)
+      }
+    }
+
+    // Check if it's an IPv6 address without brackets
+    // IPv6 addresses have multiple colons, IPv4:port has only one
+    // Note: IPv6 may also have a zone identifier like fe80::1%en1
+    let colonCount = trimmed.filter { $0 == ":" }.count
+    if colonCount > 1 {
+      // This is likely an IPv6 address without a port
+      // Keep it as-is, including any zone identifier (e.g., %en1 for link-local)
+      return (trimmed.lowercased(), HotlinePorts.DefaultServerPort)
+    }
+
+    // Otherwise use URL parsing for IPv4 or hostnames
+    let url = URL(string: "hotline://\(trimmed)")
     let port = url?.port ?? HotlinePorts.DefaultServerPort
     let host = url?.host(percentEncoded: false) ?? ""
-    return (host.lowercased().trimmingCharacters(in: .whitespacesAndNewlines), port)
+    return (host.lowercased(), port)
   }
 }
 
