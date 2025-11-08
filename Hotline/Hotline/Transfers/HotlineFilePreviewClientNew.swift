@@ -31,14 +31,7 @@ public class HotlineFilePreviewClientNew {
     self.transferSize = size
   }
 
-  deinit {
-    // Cleanup in deinit - must be synchronous
-    if let tempURL = temporaryFileURL {
-      try? FileManager.default.removeItem(at: tempURL)
-    }
-  }
-
-  // MARK: - Public API
+  // MARK: -
 
   /// Download file to temporary location for preview
   /// - Parameter progressHandler: Optional progress callback

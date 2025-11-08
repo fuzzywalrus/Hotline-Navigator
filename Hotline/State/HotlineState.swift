@@ -206,6 +206,8 @@ class HotlineState: Equatable {
   var accountsLoaded: Bool = false
 
   // Banner
+  var bannerFileURL: URL? = nil
+  var bannerImageFormat: Data.ImageFormat = .unknown
   #if os(macOS)
   var bannerImage: Image? = nil
   var bannerColors: ColorArt? = nil
@@ -471,8 +473,10 @@ class HotlineState: Equatable {
       self.bannerDownloadTask?.cancel()
       self.bannerDownloadTask = nil
       self.bannerImage = nil
+      self.bannerImageFormat = .unknown
+      self.bannerFileURL = nil
       self.bannerColors = nil
-    } else if self.bannerDownloadTask != nil || self.bannerImage != nil {
+    } else if self.bannerDownloadTask != nil || self.bannerFileURL != nil {
       return
     }
 
@@ -503,13 +507,16 @@ class HotlineState: Equatable {
         )
 
         let fileURL = try await previewClient.preview()
-        defer {
-          previewClient.cleanup()
+        
+        if let oldFileURL = self.bannerFileURL {
+          try? FileManager.default.removeItem(at: oldFileURL)
         }
 
         guard self.client != nil else { return }
 
         let data = try Data(contentsOf: fileURL)
+        self.bannerImageFormat = data.detectedImageFormat
+        
         print("HotlineState: Banner download complete, data size: \(data.count) bytes")
 
 #if os(macOS)
@@ -525,6 +532,7 @@ class HotlineState: Equatable {
         }
         self.bannerImage = Image(uiImage: image)
 #endif
+        self.bannerFileURL = fileURL
         self.bannerImage = blah
         self.bannerColors = ColorArt.analyze(image: image)
         

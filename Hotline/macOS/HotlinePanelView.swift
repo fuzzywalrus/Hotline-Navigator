@@ -1,4 +1,5 @@
 import SwiftUI
+import Kingfisher
 
 struct HotlinePanelView: View {
   @Environment(\.openWindow) var openWindow
@@ -20,19 +21,25 @@ struct HotlinePanelView: View {
   private var backgroundColor: Color {
     Color(nsColor: self.activeHotline?.bannerColors?.backgroundColor ?? NSColor.controlBackgroundColor)
   }
+  
+  private var bannerFileURL: URL? {
+    self.activeHotline?.bannerFileURL
+  }
+  
+  private var bannerIsAnimated: Bool {
+    self.activeHotline?.bannerImageFormat == .gif
+  }
 
   var body: some View {
     VStack(spacing: 0) {
-      self.bannerImage
-        .interpolation(.high)
-        .resizable()
-        .scaledToFill()
-        .frame(width: 468, height: 60)
-        .frame(minWidth: 468, maxWidth: 468, minHeight: 60, maxHeight: 60)
-        .clipped()
-        .background(.black)
-        .animation(.default, value: self.bannerImage)
       
+      self.bannerView
+        .id("banner image view")
+        .animation(.default, value: self.bannerFileURL)
+        .background {
+          Color.black
+        }
+
       HStack(spacing: 12) {
         Button {
           if NSEvent.modifierFlags.contains(.option) {
@@ -169,6 +176,45 @@ struct HotlinePanelView: View {
 //      VisualEffectView(material: .headerView, blendingMode: .behindWindow)
 //        .cornerRadius(10.0)
 //    )
+  }
+  
+  private var bannerView: some View {
+    ZStack {
+      if self.bannerIsAnimated {
+        KFAnimatedImage
+          .url(self.bannerFileURL)
+          .placeholder {
+            Image("Default Banner")
+          }
+          .cacheMemoryOnly()
+          .cacheOriginalImage()
+          .scaledToFill()
+          .frame(width: 468, height: 60)
+          .frame(minWidth: 468, maxWidth: 468, minHeight: 60, maxHeight: 60)
+          .clipped()
+          .transition(.opacity)
+          .id("animated banner \(self.bannerFileURL?.absoluteString ?? "")")
+      }
+      else {
+        KFImage
+          .url(self.bannerFileURL)
+          .resizable()
+          .interpolation(.high)
+          .placeholder {
+            Image("Default Banner")
+          }
+          .cacheMemoryOnly()
+          .cacheOriginalImage()
+          .scaledToFill()
+          .frame(width: 468, height: 60)
+          .frame(minWidth: 468, maxWidth: 468, minHeight: 60, maxHeight: 60)
+          .clipped()
+          .transition(.opacity)
+          .id("static banner \(self.bannerFileURL?.absoluteString ?? "")")
+      }
+    }
+    .animation(.default, value: self.bannerIsAnimated)
+    .animation(.default, value: self.bannerFileURL)
   }
 }
 

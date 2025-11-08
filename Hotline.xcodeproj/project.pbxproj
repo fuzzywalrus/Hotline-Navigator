@@ -37,6 +37,7 @@
 		DA501BE72EBE9542001714F8 /* TrackerBookmarkSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA501BE62EBE9542001714F8 /* TrackerBookmarkSheet.swift */; };
 		DA501BE92EBE9589001714F8 /* TrackerItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA501BE82EBE9589001714F8 /* TrackerItemView.swift */; };
 		DA501BEB2EBE95B4001714F8 /* TrackerBookmarkServerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA501BEA2EBE95B4001714F8 /* TrackerBookmarkServerView.swift */; };
+		DA501BEE2EBEC42E001714F8 /* Kingfisher in Frameworks */ = {isa = PBXBuildFile; productRef = DA501BED2EBEC42E001714F8 /* Kingfisher */; };
 		DA52689C2EB0738B00DCB941 /* GeneralSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA52689B2EB0738B00DCB941 /* GeneralSettingsView.swift */; platformFilters = (macos, ); };
 		DA52689E2EB073A400DCB941 /* IconSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA52689D2EB073A400DCB941 /* IconSettingsView.swift */; platformFilters = (macos, ); };
 		DA5268A02EB073BC00DCB941 /* SoundSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA52689F2EB073BC00DCB941 /* SoundSettingsView.swift */; platformFilters = (macos, ); };
@@ -227,6 +228,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DA501BEE2EBEC42E001714F8 /* Kingfisher in Frameworks */,
 				DACCE5EF2EAC19C9008CDD92 /* SwiftUIIntrospect in Frameworks */,
 				DA72A0E02B4DA8CA00A0F48A /* SplitView in Frameworks */,
 				DAB4D8872B4CB3610048A05C /* MarkdownUI in Frameworks */,
@@ -551,6 +553,7 @@
 				DAB4D8862B4CB3610048A05C /* MarkdownUI */,
 				DA72A0DF2B4DA8CA00A0F48A /* SplitView */,
 				DACCE5EE2EAC19C9008CDD92 /* SwiftUIIntrospect */,
+				DA501BED2EBEC42E001714F8 /* Kingfisher */,
 			);
 			productName = Hotline;
 			productReference = DA9CAFB72B126D5700CDA197 /* Hotline.app */;
@@ -584,6 +587,7 @@
 				DAB4D8852B4CB3610048A05C /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 				DA72A0DE2B4DA8CA00A0F48A /* XCRemoteSwiftPackageReference "SplitView" */,
 				DACCE5ED2EAC19C9008CDD92 /* XCRemoteSwiftPackageReference "SwiftUI-Introspect" */,
+				DA501BEC2EBEC42E001714F8 /* XCRemoteSwiftPackageReference "Kingfisher" */,
 			);
 			productRefGroup = DA9CAFB82B126D5700CDA197 /* Products */;
 			projectDirPath = "";
@@ -934,6 +938,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		DA501BEC2EBEC42E001714F8 /* XCRemoteSwiftPackageReference "Kingfisher" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/onevcat/Kingfisher";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 8.6.1;
+			};
+		};
 		DA72A0DE2B4DA8CA00A0F48A /* XCRemoteSwiftPackageReference "SplitView" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/stevengharris/SplitView";
@@ -961,6 +973,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		DA501BED2EBEC42E001714F8 /* Kingfisher */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DA501BEC2EBEC42E001714F8 /* XCRemoteSwiftPackageReference "Kingfisher" */;
+			productName = Kingfisher;
+		};
 		DA72A0DF2B4DA8CA00A0F48A /* SplitView */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = DA72A0DE2B4DA8CA00A0F48A /* XCRemoteSwiftPackageReference "SplitView" */;
