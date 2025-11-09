@@ -850,56 +850,7 @@ class HotlineState: Equatable {
     return success
   }
 
-//  @MainActor
-//  func downloadFile(_ fileName: String, path: [String], to destination: URL? = nil, progress progressCallback: ((TransferInfo, Double) -> Void)? = nil, complete callback: ((TransferInfo, URL) -> Void)? = nil) {
-//    guard let client = self.client else { return }
-//
-//    var fullPath: [String] = []
-//    if path.count > 1 {
-//      fullPath = Array(path[0..<path.count-1])
-//    }
-//
-//    Task { @MainActor in
-//      guard let result = try? await client.downloadFile(name: fileName, path: fullPath),
-//            let server = self.server,
-//            let address = server.address as String?,
-//            let port = server.port as Int?
-//      else {
-//        return
-//      }
-//
-//      let fileClient = HotlineFileDownloadClient(
-//        address: address,
-//        port: UInt16(port),
-//        reference: result.referenceNumber,
-//        size: UInt32(result.transferSize)
-//      )
-//      fileClient.delegate = self
-//      self.downloads.append(fileClient)
-//
-//      let transfer = TransferInfo(
-//        id: result.referenceNumber,
-//        title: fileName,
-//        size: UInt(result.transferSize),
-//        serverID: self.id,
-//        serverName: self.serverName ?? self.serverTitle
-//      )
-//      transfer.downloadCallback = callback
-//      transfer.progressCallback = progressCallback
-//      AppState.shared.transfers.append(transfer)
-//
-//      if let destination {
-//        fileClient.start(to: destination)
-//      } else {
-//        fileClient.start()
-//      }
-//    }
-//  }
-
-  /// Modern async/await file download using HotlineFileDownloadClientNew
-  ///
-  /// This is a cleaner implementation that uses the new async/await download client.
-  /// Unlike the old version, it doesn't use delegates and returns the file URL directly.
+  /// Download a file from the server.
   ///
   /// - Parameters:
   ///   - fileName: Name of the file to download
@@ -955,8 +906,6 @@ class HotlineState: Equatable {
         guard self != nil else { return }
 
         do {
-          let fileURL: URL
-
           // Download file with progress tracking
           let location: HotlineDownloadLocation = if let destination {
             .url(destination)
@@ -964,10 +913,9 @@ class HotlineState: Equatable {
             .downloads(fileName)
           }
 
-          fileURL = try await downloadClient.download(to: location) { progress in
+          let fileURL: URL = try await downloadClient.download(to: location) { progress in
             switch progress {
-            case .preparing:
-              break
+            case .preparing: break
             case .unconnected, .connected, .connecting:
               transfer.progressCallback?(transfer)
             case .transfer(name: _, size: _, total: _, progress: let progress, speed: let speed, estimate: let estimate):
@@ -982,20 +930,21 @@ class HotlineState: Equatable {
               transfer.fileURL = url
             }
           }
-
+          
           // Mark as completed
           transfer.progress = 1.0
-
+          
           // Call completion callback
           transfer.downloadCallback?(transfer)
-          
           fileURL.notifyDownloadFinished()
 
           print("HotlineState: Download complete - \(fileURL.path)")
 
         } catch is CancellationError {
           // Download was cancelled
+          transfer.cancelled = true
           print("HotlineState: Download cancelled")
+          
         } catch {
           // Mark as failed
           transfer.failed = true
@@ -1006,66 +955,11 @@ class HotlineState: Equatable {
       }
 
       // Store the task in AppState so it can be cancelled later
-      AppState.shared.registerTransferTask(downloadTask, transferID: transfer.id)
+      AppState.shared.registerTransferTask(downloadTask, transferID: transfer.id, client: downloadClient)
     }
   }
 
-  /// Cancel all downloads for this server only
-//  @MainActor
-//  func cancelAllDownloads() {
-//    let myTransfers = self.transfers
-//    for transfer in myTransfers {
-//      AppState.shared.cancelDownload(transfer.id)
-//    }
-//  }
-
-//  @MainActor
-//  func downloadFolder(_ folderName: String, path: [String], complete callback: ((TransferInfo) -> Void)? = nil) {
-//    guard let client = self.client else { return }
-//
-//    var fullPath: [String] = []
-//    if path.count > 1 {
-//      fullPath = Array(path[0..<path.count-1])
-//    }
-//
-//    Task { @MainActor in
-//      guard let result = try? await client.downloadFolder(name: folderName, path: fullPath),
-//            let server = self.server,
-//            let address = server.address as String?,
-//            let port = server.port as Int?
-//      else {
-//        return
-//      }
-//
-//      let folderClient = HotlineFolderDownloadClient(
-//        address: address,
-//        port: UInt16(port),
-//        reference: result.referenceNumber,
-//        size: UInt32(result.transferSize),
-//        itemCount: result.itemCount
-//      )
-//      folderClient.delegate = self
-//      self.downloads.append(folderClient)
-//
-//      let transfer = TransferInfo(
-//        id: result.referenceNumber,
-//        title: folderName,
-//        size: UInt(result.transferSize),
-//        serverID: self.id,
-//        serverName: self.serverName ?? self.serverTitle
-//      )
-//      transfer.isFolder = true
-//      transfer.downloadCallback = callback
-//      AppState.shared.transfers.append(transfer)
-//
-//      folderClient.start()
-//    }
-//  }
-
-  /// Modern async/await folder download using HotlineFolderDownloadClientNew
-  ///
-  /// This is a cleaner implementation that uses the new async/await download client.
-  /// Unlike the old version, it doesn't use delegates and returns the folder URL directly.
+  /// Download a folder and its contents from the server.
   ///
   /// - Parameters:
   ///   - folderName: Name of the folder to download

@@ -12,7 +12,12 @@ class TransferInfo: Identifiable, Equatable, Hashable {
   var timeRemaining: TimeInterval? = nil
   var completed: Bool = false
   var failed: Bool = false
+  var cancelled: Bool = false
   var isFolder: Bool = false
+  
+  var done: Bool {
+    self.completed || self.failed || self.cancelled
+  }
 
   // Server association - tracks which HotlineState this transfer belongs to
   var serverID: UUID

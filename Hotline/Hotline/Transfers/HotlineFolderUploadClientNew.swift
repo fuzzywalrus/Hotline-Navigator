@@ -16,7 +16,7 @@ private struct FolderItem {
 }
 
 @MainActor
-public class HotlineFolderUploadClientNew {
+public class HotlineFolderUploadClientNew: @MainActor HotlineTransferClient {
   // MARK: - Configuration
 
   public struct Configuration: Sendable {
@@ -176,7 +176,7 @@ public class HotlineFolderUploadClientNew {
         // Wait for server to send .nextFile action
         let action = try await self.readAction(socket: socket)
         guard action == .nextFile else {
-          throw HotlineFileClientError.failedToTransfer
+          throw HotlineTransferClientError.failedToTransfer
         }
 
         // Check if we have more items to send
@@ -192,7 +192,7 @@ public class HotlineFolderUploadClientNew {
       case .sendingItemHeader:
         // Send item header to server
         guard let item = currentItem else {
-          throw HotlineFileClientError.failedToTransfer
+          throw HotlineTransferClientError.failedToTransfer
         }
 
         // Encode and send item header
@@ -212,7 +212,7 @@ public class HotlineFolderUploadClientNew {
       case .waitingForFileAction:
         // Wait for server action after file header (.sendFile, .nextFile, .resumeFile)
         guard currentItem != nil else {
-          throw HotlineFileClientError.failedToTransfer
+          throw HotlineTransferClientError.failedToTransfer
         }
 
         let action = try await self.readAction(socket: socket)
@@ -246,7 +246,7 @@ public class HotlineFolderUploadClientNew {
       case .uploadingFile:
         // Upload file data
         guard let item = currentItem else {
-          throw HotlineFileClientError.failedToTransfer
+          throw HotlineTransferClientError.failedToTransfer
         }
 
         // Notify item progress
@@ -365,7 +365,7 @@ public class HotlineFolderUploadClientNew {
     let actionData = try await socket.read(2)
     guard let rawAction = actionData.readUInt16(at: 0),
           let action = HotlineFolderAction(rawValue: rawAction) else {
-      throw HotlineFileClientError.failedToTransfer
+      throw HotlineTransferClientError.failedToTransfer
     }
     return action
   }
@@ -383,15 +383,15 @@ public class HotlineFolderUploadClientNew {
 
     // Get file metadata
     guard let infoFork = HotlineFileInfoFork(file: fileURL) else {
-      throw HotlineFileClientError.failedToTransfer
+      throw HotlineTransferClientError.failedToTransfer
     }
 
     guard let header = HotlineFileHeader(file: fileURL) else {
-      throw HotlineFileClientError.failedToTransfer
+      throw HotlineTransferClientError.failedToTransfer
     }
 
     guard let forkSizes = try? FileManager.default.getFileForkSizes(fileURL) else {
-      throw HotlineFileClientError.failedToTransfer
+      throw HotlineTransferClientError.failedToTransfer
     }
 
     let infoForkData = infoFork.data()
@@ -400,7 +400,7 @@ public class HotlineFolderUploadClientNew {
 
     // Calculate total flattened file size
     guard let flattenedSize = FileManager.default.getFlattenedFileSize(fileURL) else {
-      throw HotlineFileClientError.failedToTransfer
+      throw HotlineTransferClientError.failedToTransfer
     }
     let totalFileSize = Int(flattenedSize)
 

@@ -2,9 +2,20 @@ import Foundation
 import Network
 import UniformTypeIdentifiers
 
-enum HotlineFileClientError: Error {
+protocol HotlineTransferClient {
+//  var serverAddress: NWEndpoint.Host { get }
+//  var serverPort: NWEndpoint.Port { get }
+//  var referenceNumber: UInt32 { get }
+//  var status: HotlineTransferStatus { get set }
+  
+//  func start()
+  func cancel()
+}
+
+enum HotlineTransferClientError: Error {
   case failedToConnect
   case failedToTransfer
+  case cancelled
 }
 
 enum HotlineFileFork {
@@ -22,7 +33,7 @@ enum HotlineTransferStatus: Equatable {
   case progress(Double)
   case completing
   case completed
-  case failed(HotlineFileClientError)
+  case failed(HotlineTransferClientError)
 }
 
 enum HotlineFileForkType: UInt32 {
@@ -38,17 +49,6 @@ public enum HotlineFolderAction: UInt16 {
   case resumeFile = 2
   case nextFile = 3
 }
-
-protocol HotlineTransferClient {
-  var serverAddress: NWEndpoint.Host { get }
-  var serverPort: NWEndpoint.Port { get }
-  var referenceNumber: UInt32 { get }
-  var status: HotlineTransferStatus { get set }
-  
-  func start()
-  func cancel()
-}
-
 
 struct HotlineFileHeader {
   static let DataSize: Int = 4 + 2 + 16 + 2

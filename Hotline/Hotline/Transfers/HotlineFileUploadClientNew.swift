@@ -2,7 +2,7 @@ import Foundation
 import Network
 
 @MainActor
-public class HotlineFileUploadClientNew {
+public class HotlineFileUploadClientNew: @MainActor HotlineTransferClient {
   // MARK: - Configuration
 
   public struct Configuration: Sendable {
@@ -126,15 +126,15 @@ public class HotlineFileUploadClientNew {
 
     // Get file metadata
     guard let infoFork = HotlineFileInfoFork(file: fileURL) else {
-      throw HotlineFileClientError.failedToTransfer
+      throw HotlineTransferClientError.failedToTransfer
     }
 
     guard let header = HotlineFileHeader(file: fileURL) else {
-      throw HotlineFileClientError.failedToTransfer
+      throw HotlineTransferClientError.failedToTransfer
     }
 
     guard let forkSizes = try? FileManager.default.getFileForkSizes(fileURL) else {
-      throw HotlineFileClientError.failedToTransfer
+      throw HotlineTransferClientError.failedToTransfer
     }
 
     let infoForkData = infoFork.data()

@@ -24,6 +24,8 @@ final class AppState {
   /// All active transfers across all servers
   /// Transfers persist even if you disconnect from the server
   var transfers: [TransferInfo] = []
+  
+  @ObservationIgnored private var transferClients: [UUID: HotlineTransferClient] = [:]
 
   /// Track download tasks by reference number for cancellation
   @ObservationIgnored private var transferTasks: [UUID: Task<Void, Never>] = [:]
@@ -46,6 +48,11 @@ final class AppState {
       task.cancel()
       self.transferTasks.removeValue(forKey: id)
     }
+    
+    if let client = self.transferClients[id] {
+      client.cancel()
+      self.transferClients.removeValue(forKey: id)
+    }
 
     // Remove from transfers list
     self.transfers.remove(at: transferIndex)
@@ -58,9 +65,24 @@ final class AppState {
       task.cancel()
     }
     self.transferTasks.removeAll()
+    
+    for (_, client) in self.transferClients {
+      client.cancel()
+    }
+    self.transferClients.removeAll()
 
     // Clear transfers
     self.transfers.removeAll()
+  }
+  
+  /// Remove all completed transfers
+  @MainActor
+  func sweepTransfers() {
+    for t in self.transfers {
+      if t.done {
+        self.cancelTransfer(id: t.id)
+      }
+    }
   }
 
   /// Register a transfer task
@@ -69,9 +91,16 @@ final class AppState {
     self.transferTasks[transferID] = task
   }
   
+  @MainActor
+  func registerTransferTask(_ task: Task<Void, Never>, transferID: UUID, client: HotlineTransferClient) {
+    self.transferTasks[transferID] = task
+    self.transferClients[transferID] = client
+  }
+  
   /// Unregister a download task (called on completion/failure)
   @MainActor
   func unregisterTransferTask(for transferID: UUID) {
     self.transferTasks.removeValue(forKey: transferID)
+    self.transferClients.removeValue(forKey: transferID)
   }
 }

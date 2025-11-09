@@ -9,7 +9,7 @@ public struct HotlineFolderItemProgress: Sendable {
 }
 
 @MainActor
-public class HotlineFolderDownloadClientNew {
+public class HotlineFolderDownloadClientNew: @MainActor HotlineTransferClient {
   // MARK: - Properties
 
   private let serverAddress: String
@@ -155,7 +155,7 @@ public class HotlineFolderDownloadClientNew {
       totalBytesTransferred += 2 + headerLen
 
       guard let (itemType, pathComponents) = parseItemHeaderPath(headerData) else {
-        throw HotlineFileClientError.failedToTransfer
+        throw HotlineTransferClientError.failedToTransfer
       }
 
       let joinedPath = pathComponents.joined(separator: "/")
@@ -313,7 +313,7 @@ public class HotlineFolderDownloadClientNew {
     // Read file header
     let headerData = try await socket.read(HotlineFileHeader.DataSize)
     guard let header = HotlineFileHeader(from: headerData) else {
-      throw HotlineFileClientError.failedToTransfer
+      throw HotlineTransferClientError.failedToTransfer
     }
     bytesRead += HotlineFileHeader.DataSize
 
@@ -337,7 +337,7 @@ public class HotlineFolderDownloadClientNew {
       // Read fork header
       let forkHeaderData = try await socket.read(HotlineFileForkHeader.DataSize)
       guard let forkHeader = HotlineFileForkHeader(from: forkHeaderData) else {
-        throw HotlineFileClientError.failedToTransfer
+        throw HotlineTransferClientError.failedToTransfer
       }
       bytesRead += HotlineFileForkHeader.DataSize
 
@@ -356,7 +356,7 @@ public class HotlineFolderDownloadClientNew {
         self.folderProgress?.completedUnitCount = Int64(totalBytesNow)
 
         guard let info = HotlineFileInfoFork(from: infoData) else {
-          throw HotlineFileClientError.failedToTransfer
+          throw HotlineTransferClientError.failedToTransfer
         }
 
         // Create parent folders
@@ -378,7 +378,7 @@ public class HotlineFolderDownloadClientNew {
         print("HotlineFolderDownloadClientNew[\(referenceNumber)]: Reading DATA fork (\(forkHeader.dataSize) bytes)")
 
         guard let fh = fileHandle else {
-          throw HotlineFileClientError.failedToTransfer
+          throw HotlineTransferClientError.failedToTransfer
         }
 
         fileDataForkSize = Int(forkHeader.dataSize)
@@ -439,7 +439,7 @@ public class HotlineFolderDownloadClientNew {
     fileHandle = nil
 
     guard let finalPath = filePath else {
-      throw HotlineFileClientError.failedToTransfer
+      throw HotlineTransferClientError.failedToTransfer
     }
 
     // Write resource fork if present

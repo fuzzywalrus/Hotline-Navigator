@@ -6,7 +6,6 @@ public enum HotlineDownloadLocation: Sendable {
   case downloads(String)  // filename
 }
 
-
 public enum HotlineTransferProgress: Sendable {
   case error(Error) // An error occurred
   case unconnected // Initial state
@@ -19,7 +18,7 @@ public enum HotlineTransferProgress: Sendable {
 
 /// Modern async/await file download client for Hotline protocol
 @MainActor
-public class HotlineFileDownloadClientNew {
+public class HotlineFileDownloadClientNew: @MainActor HotlineTransferClient {
   // MARK: - Configuration
 
   public struct Configuration: Sendable {
@@ -61,11 +60,11 @@ public class HotlineFileDownloadClientNew {
     self.transferProgress = Progress(totalUnitCount: Int64(self.transferTotal))
   }
 
-  // MARK: - Public API
+  // MARK: - API
 
   public func download(
     to location: HotlineDownloadLocation,
-    progress progressHandler: (@Sendable (HotlineTransferProgress) -> Void)? = nil
+    progress progressHandler: (@Sendable (HotlineTransferProgress) throws -> Void)? = nil
   ) async throws -> URL {
     self.downloadTask?.cancel()
     
@@ -78,49 +77,50 @@ public class HotlineFileDownloadClientNew {
       let url = try await task.value
       self.downloadTask = nil
       return url
-    } catch {
-      print("FAILED TO DOWNLOAD!", error)
+    }
+    catch {
       self.downloadTask = nil
-      progressHandler?(.error(error))
+      try? progressHandler?(.error(error))
       throw error
     }
   }
 
   /// Cancel the current download
   public func cancel() {
-    downloadTask?.cancel()
-    downloadTask = nil
-
-    if let socket = socket {
-      Task {
-        await socket.close()
-      }
-    }
+    self.downloadTask?.cancel()
+    self.downloadTask = nil
   }
 
   // MARK: - Private Implementation
   
-  private func updateProgress(sent: Int) {
+  private func updateProgress(sent: Int) throws {
     self.transferSize = sent
     self.transferProgress.completedUnitCount = Int64(sent)
+    try self.checkCancelled()
+  }
+  
+  private func checkCancelled() throws {
+    if Task.isCancelled {
+      throw CancellationError()
+    }
     
     // People can cancel a transfer from the file icon in the Finder.
     // This code handles that.
     if self.transferProgress.isCancelled {
-      self.cancel()
+      throw CancellationError()
     }
   }
 
   private func performDownload(
     to destination: HotlineDownloadLocation,
-    progressHandler: (@Sendable (HotlineTransferProgress) -> Void)?
+    progressHandler: (@Sendable (HotlineTransferProgress) throws -> Void)?
   ) async throws -> URL {
     
     let fm = FileManager.default
     var fileHandle: FileHandle?
     var resourceForkData: Data?
     
-    progressHandler?(.preparing)
+    try progressHandler?(.preparing)
     
     // Determine the download name
     // Determine destination URL based on location
@@ -137,12 +137,16 @@ public class HotlineFileDownloadClientNew {
       destinationFilename = destinationURL.lastPathComponent
     }
 
-    progressHandler?(.connecting)
+    try self.checkCancelled()
+    try progressHandler?(.connecting)
     
     // Connect to transfer server
     let socket = try await connectToTransferServer()
     self.socket = socket
-    defer {Task { await socket.close() } }
+    defer { Task { await socket.close() } }
+    
+    // See if we've been cancelled
+    try self.checkCancelled()
     
     // Send magic header
     try await socket.write(Data(endian: .big) {
@@ -155,11 +159,11 @@ public class HotlineFileDownloadClientNew {
     // Read file header
     let headerData = try await socket.read(HotlineFileHeader.DataSize)
     guard let header = HotlineFileHeader(from: headerData) else {
-      throw HotlineFileClientError.failedToTransfer
+      throw HotlineTransferClientError.failedToTransfer
     }
     
     // Connected
-    progressHandler?(.connected)
+    try progressHandler?(.connected)
 
     do {
       // Process each fork
@@ -167,7 +171,7 @@ public class HotlineFileDownloadClientNew {
         // Read fork header
         let forkHeaderData = try await socket.read(HotlineFileForkHeader.DataSize)
         guard let forkHeader = HotlineFileForkHeader(from: forkHeaderData) else {
-          throw HotlineFileClientError.failedToTransfer
+          throw HotlineTransferClientError.failedToTransfer
         }
 
         // Handle whichever fork is being sent.
@@ -175,7 +179,7 @@ public class HotlineFileDownloadClientNew {
           // Read info fork
           let infoData = try await socket.read(Int(forkHeader.dataSize))
           guard let info = HotlineFileInfoFork(from: infoData) else {
-            throw HotlineFileClientError.failedToTransfer
+            throw HotlineTransferClientError.failedToTransfer
           }
           self.transferSize += infoData.count
 
@@ -191,35 +195,35 @@ public class HotlineFileDownloadClientNew {
           self.transferProgress.publish()
 
           // Update progress
-          self.updateProgress(sent: infoData.count)
+          try self.updateProgress(sent: infoData.count)
         }
         else if forkHeader.isDataFork {
           guard let fh = fileHandle else {
-            throw HotlineFileClientError.failedToTransfer
+            throw HotlineTransferClientError.failedToTransfer
           }
 
           // Stream data fork to disk
           let updates = await socket.receiveFile(to: fh, length: Int(forkHeader.dataSize))
           for try await p in updates {
-            self.updateProgress(sent: p.sent)
-            progressHandler?(.transfer(name: destinationFilename, size: self.transferSize, total: self.transferTotal, progress: self.transferProgress.fractionCompleted, speed: p.bytesPerSecond, estimate: p.estimatedTimeRemaining))
+            try self.updateProgress(sent: p.sent)
+            try progressHandler?(.transfer(name: destinationFilename, size: self.transferSize, total: self.transferTotal, progress: self.transferProgress.fractionCompleted, speed: p.bytesPerSecond, estimate: p.estimatedTimeRemaining))
           }
         }
         else if forkHeader.isResourceFork {
           // Read resource fork into memory
           let rsrcData = try await socket.read(Int(forkHeader.dataSize))
           resourceForkData = rsrcData
-          self.updateProgress(sent: Int(rsrcData.count))
+          try self.updateProgress(sent: Int(rsrcData.count))
 
         } else {
           // Skip unsupported fork
           let dataSize = Int(forkHeader.dataSize)
           try await socket.skip(dataSize)
           
-          self.updateProgress(sent: dataSize)
+          try self.updateProgress(sent: dataSize)
         }
         
-        progressHandler?(.transfer(name: destinationFilename, size: self.transferSize, total: self.transferTotal, progress: self.transferProgress.fractionCompleted, speed: nil, estimate: nil))
+        try progressHandler?(.transfer(name: destinationFilename, size: self.transferSize, total: self.transferTotal, progress: self.transferProgress.fractionCompleted, speed: nil, estimate: nil))
       }
       
       self.transferProgress.unpublish()
@@ -232,18 +236,22 @@ public class HotlineFileDownloadClientNew {
       if let rsrcData = resourceForkData, !rsrcData.isEmpty {
         try writeResourceFork(data: rsrcData, to: destinationURL)
       }
+      
+      // See if we've been cancelled
+      try self.checkCancelled()
 
-      progressHandler?(.completed(url: destinationURL))
+      try progressHandler?(.completed(url: destinationURL))
 
       return destinationURL
 
-    } catch {
+    }
+    catch {
       // Cleanup on failure
       try? fileHandle?.close()
       try? fm.removeItem(at: destinationURL)
       self.transferProgress.unpublish()
       
-      progressHandler?(.error(error))
+      try? progressHandler?(.error(error))
 
       throw error
     }
@@ -289,3 +297,4 @@ public class HotlineFileDownloadClientNew {
     print("HotlineFileDownloadClientNew[\(referenceNumber)]: Wrote resource fork (\(data.count) bytes)")
   }
 }
+

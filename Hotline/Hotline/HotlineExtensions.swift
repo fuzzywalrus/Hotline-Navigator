@@ -432,11 +432,11 @@ extension FileManager {
     attributes[.modificationDate] = infoFork.modifiedDate as NSDate
 
     guard self.createFile(atPath: url.path, contents: nil, attributes: attributes) else {
-      throw HotlineFileClientError.failedToTransfer
+      throw HotlineTransferClientError.failedToTransfer
     }
 
     guard let handle = FileHandle(forWritingAtPath: url.path) else {
-      throw HotlineFileClientError.failedToTransfer
+      throw HotlineTransferClientError.failedToTransfer
     }
 
     return handle
