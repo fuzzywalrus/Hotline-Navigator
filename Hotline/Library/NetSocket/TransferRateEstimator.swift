@@ -70,6 +70,7 @@ public struct TransferRateEstimator {
     self.minSamples = minSamples
   }
   
+  @discardableResult
   public mutating func update(total: Int) -> NetSocket.FileProgress {
     return self.update(bytes: max(0, total - self.transferred))
   }
@@ -80,6 +81,7 @@ public struct TransferRateEstimator {
   ///
   /// - Parameter bytes: Number of bytes transferred in this sample
   /// - Returns: Current progress with speed and ETA estimates
+  @discardableResult
   public mutating func update(bytes: Int) -> NetSocket.FileProgress {
     let clock = ContinuousClock()
     let now = clock.now
@@ -127,6 +129,7 @@ public struct TransferRateEstimator {
     return NetSocket.FileProgress(
       sent: self.transferred,
       total: self.total,
+      now: bytes,
       bytesPerSecond: haveEstimate ? self.emaBytesPerSecond : nil,
       estimatedTimeRemaining: eta
     )

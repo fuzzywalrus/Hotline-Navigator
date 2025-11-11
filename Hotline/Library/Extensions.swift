@@ -147,6 +147,11 @@ extension URL {
     
     return filePath
   }
+  
+  func generateUniqueFileURL(filename base: String) -> URL {
+    let filePath = self.generateUniqueFilePath(filename: base)
+    return URL(filePath: filePath)
+  }
 }
 
 // MARK: -

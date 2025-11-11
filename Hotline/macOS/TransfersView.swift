@@ -70,58 +70,70 @@ struct TransfersView: View {
     .listStyle(.inset)
     .environment(\.defaultMinListRowHeight, 56)
     .contextMenu(forSelectionType: TransferInfo.self) { items in
-      if items.allSatisfy(\.completed) {
-        let fileURLs: [URL] = items.compactMap(\.fileURL)
-        
-        Button("Remove Transfer\(items.count > 1 ? "s" : "")", systemImage: "xmark") {
-          self.appState.cancelTransfers(ids: items.map(\.id))
-          self.selectedTransfers = []
-        }
-        
-        Divider()
-        
-        Button("Open", systemImage: "arrow.up.right.square") {
-          for fileURL in fileURLs {
-            NSWorkspace.shared.open(fileURL)
-          }
-        }
-        
-        self.openWithMenu(for: fileURLs)
-        
-        Button("Show in Finder", systemImage: "finder") {
-          NSWorkspace.shared.activateFileViewerSelecting(fileURLs)
-        }
-        
-        Divider()
-        
-        Button("Move to Trash", systemImage: "trash") {
-          self.appState.cancelTransfers(ids: items.map(\.id))
-          NSWorkspace.shared.recycle(fileURLs)
-          self.selectedTransfers = []
-        }
-      }
-      else {
-        Button("Remove Transfer\(items.count > 1 ? "s" : "")", systemImage: "xmark") {
-          self.appState.cancelTransfers(ids: items.map(\.id))
-          self.selectedTransfers = []
-        }
-        
-        Divider()
-        
-        Button("Move to Trash", systemImage: "trash") {
-          self.appState.cancelTransfers(ids: items.map(\.id))
-          
-          let fileURLs: [URL] = items.compactMap(\.fileURL)
-          if !fileURLs.isEmpty {
-            NSWorkspace.shared.recycle(fileURLs)
-          }
-          
-          self.selectedTransfers = []
-        }
-      }
+      self.contextMenuForItems(items)
     } primaryAction: { items in
-      if let fileURL = items.first?.fileURL {
-        NSWorkspace.shared.open(fileURL)
+      self.performPrimaryAction(for: items)
+    }
+  }
+  
+  // MARK: - Double Click
+  
+  private func performPrimaryAction(for items: Set<TransferInfo>) {
+    if let fileURL = items.first?.fileURL {
+      NSWorkspace.shared.open(fileURL)
+    }
+  }
+  
+  // MARK: - Context Menu
+  
+  @ViewBuilder
+  private func contextMenuForItems(_ items: Set<TransferInfo>) -> some View {
+    if items.allSatisfy(\.completed) {
+      let fileURLs: [URL] = items.compactMap(\.fileURL)
+      
+      Button("Remove Transfer\(items.count > 1 ? "s" : "")", systemImage: "xmark") {
+        self.appState.cancelTransfers(ids: items.map(\.id))
+        self.selectedTransfers = []
+      }
+      
+      Divider()
+      
+      Button("Open", systemImage: "arrow.up.right.square") {
+        for fileURL in fileURLs {
+          NSWorkspace.shared.open(fileURL)
+        }
+      }
+      
+      self.openWithMenu(for: fileURLs)
+      
+      Button("Show in Finder", systemImage: "finder") {
+        NSWorkspace.shared.activateFileViewerSelecting(fileURLs)
+      }
+      
+      Divider()
+      
+      Button("Move to Trash", systemImage: "trash") {
+        self.appState.cancelTransfers(ids: items.map(\.id))
+        NSWorkspace.shared.recycle(fileURLs)
+        self.selectedTransfers = []
+      }
+    } else {
+      Button("Remove Transfer\(items.count > 1 ? "s" : "")", systemImage: "xmark") {
+        self.appState.cancelTransfers(ids: items.map(\.id))
+        self.selectedTransfers = []
+      }
+      
+      Divider()
+      
+      Button("Move to Trash", systemImage: "trash") {
+        self.appState.cancelTransfers(ids: items.map(\.id))
+        
+        let fileURLs: [URL] = items.compactMap(\.fileURL)
+        if !fileURLs.isEmpty {
+          NSWorkspace.shared.recycle(fileURLs)
+        }
+        
+        self.selectedTransfers = []
       }
     }
   }
@@ -250,6 +262,7 @@ struct TransfersView: View {
       }
     }
   }
+  
 }
 
 // MARK: - Transfer Row
@@ -259,58 +272,14 @@ struct TransferRow: View {
   
   @Bindable var transfer: TransferInfo
   
-  private var statsView: some View {
-    HStack(spacing: 8) {
-      // Progress percentage
-      //      Text("\(Int(self.transfer.progress * 100))%")
-      
-      // Speed
-      if let speed = self.transfer.speed {
-        // TODO: Use arrow.up for uploads.
-        Label(self.formatSpeed(speed), systemImage: "arrow.down")
-//        Text(self.formatSpeed(speed))
-      }
-      
-      // Time remaining
-      if let timeRemaining = self.transfer.timeRemaining {
-        Label(self.formatTimeRemaining(timeRemaining), systemImage: "clock")
-//        Text(self.formatTimeRemaining(timeRemaining))
-      }
-      
-      // File size
-      Label(self.formatSize(self.transfer.size), systemImage: "document")
-//      Text(self.formatSize(self.transfer.size))
-    }
-    .font(.subheadline)
-    .foregroundStyle(.secondary)
-    .monospacedDigit()
-  }
-  
-  private var fileIconView: some View {
-    FileIconView(filename: self.transfer.title, fileType: nil)
-      .frame(width: 32, height: 32)
-      .overlay(alignment: .bottomTrailing) {
-        if self.transfer.cancelled || self.transfer.failed {
-          Image(systemName: "exclamationmark.triangle.fill")
-            .resizable()
-            .symbolRenderingMode(.multicolor)
-            .scaledToFit()
-            .frame(width: 16, height: 16)
-        }
-        else if self.transfer.completed {
-          Image(systemName: "checkmark.circle.fill")
-            .resizable()
-            .symbolRenderingMode(.palette)
-            .foregroundStyle(.white, .fileComplete)
-            .scaledToFit()
-            .frame(width: 16, height: 16)
-        }
-      }
-  }
-  
   var body: some View {
     HStack(alignment: .center, spacing: 8) {
-      self.fileIconView
+      if self.transfer.isFolder {
+        self.folderIconView
+      }
+      else {
+        self.fileIconView
+      }
       
       VStack(alignment: .leading, spacing: 2) {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -349,6 +318,79 @@ struct TransferRow: View {
         }
       }
     }
+  }
+  
+  // MARK: -
+  
+  private var statsView: some View {
+    HStack(spacing: 8) {
+      // Progress percentage
+      //      Text("\(Int(self.transfer.progress * 100))%")
+      
+      // Speed
+      if let speed = self.transfer.speed {
+        Label(self.formatSpeed(speed), systemImage: self.transfer.isUpload ? "arrow.up" : "arrow.down")
+      }
+      
+      // Time remaining
+      if let timeRemaining = self.transfer.timeRemaining {
+        Label(self.formatTimeRemaining(timeRemaining), systemImage: "clock")
+      }
+      
+      // File size
+      Label(self.formatSize(self.transfer.size), systemImage: "document")
+    }
+    .font(.subheadline)
+    .foregroundStyle(.secondary)
+    .monospacedDigit()
+  }
+  
+  private var folderIconView: some View {
+    FolderIconView()
+      .frame(width: 32, height: 32)
+      .overlay(alignment: .bottomTrailing) {
+        if self.transfer.cancelled || self.transfer.failed {
+          Image(systemName: "exclamationmark.triangle.fill")
+            .resizable()
+            .symbolRenderingMode(.multicolor)
+            .scaledToFit()
+            .frame(width: 16, height: 16)
+        }
+        else if self.transfer.completed {
+          Image(systemName: "checkmark.circle.fill")
+            .resizable()
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(.white, .fileComplete)
+            .scaledToFit()
+            .frame(width: 16, height: 16)
+        }
+        else {
+          FileIconView(filename: self.transfer.title, fileType: nil)
+            .frame(width: 16, height: 16)
+        }
+      }
+  }
+  
+  private var fileIconView: some View {
+    FileIconView(filename: self.transfer.title, fileType: nil)
+      .frame(width: 32, height: 32)
+      .overlay(alignment: .bottomTrailing) {
+        if self.transfer.cancelled || self.transfer.failed {
+          Image(systemName: "exclamationmark.triangle.fill")
+            .resizable()
+            .symbolRenderingMode(.multicolor)
+            .scaledToFit()
+            .frame(width: 16, height: 16)
+        }
+        else if self.transfer.completed {
+          Image(systemName: "checkmark.circle.fill")
+            .resizable()
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(.white, .fileComplete)
+            .scaledToFit()
+            .frame(width: 16, height: 16)
+        }
+      }
   }
   
   // MARK: - Formatting

@@ -12,14 +12,27 @@ public extension NetSocket {
     public let sent: Int
     /// Total file size (may be nil if unknown)
     public let total: Int?
+    /// Size of most recent packet
+    public let now: Int
+    /// Total progress so far (0.0 to 1.0)
+    public let progress: Double
     /// Smoothed transfer rate in bytes per second (EMA), if enough samples collected
     public let bytesPerSecond: Double?
     /// Estimated time remaining (seconds) based on smoothed rate, if available
     public let estimatedTimeRemaining: TimeInterval?
     
-    public init(sent: Int, total: Int?, bytesPerSecond: Double? = nil, estimatedTimeRemaining: TimeInterval? = nil) {
+    public init(sent: Int, total: Int?, now: Int = 0, bytesPerSecond: Double? = nil, estimatedTimeRemaining: TimeInterval? = nil) {
       self.sent = sent
       self.total = total
+      self.now = now
+      
+      if let t = total {
+        self.progress = max(0.0, min(1.0, Double(sent) / Double(t)))
+      }
+      else {
+        self.progress = 0.0
+      }
+      
       self.bytesPerSecond = bytesPerSecond
       self.estimatedTimeRemaining = estimatedTimeRemaining
     }

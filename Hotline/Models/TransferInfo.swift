@@ -7,23 +7,35 @@ class TransferInfo: Identifiable, Equatable, Hashable {
   var referenceNumber: UInt32
   var title: String
   var size: UInt
-  var progress: Double = 0.0
-  var speed: Double? = nil
-  var timeRemaining: TimeInterval? = nil
+  
+  // Status
   var completed: Bool = false
   var failed: Bool = false
   var cancelled: Bool = false
-  var isFolder: Bool = false
-  
   var done: Bool {
     self.completed || self.failed || self.cancelled
   }
+  
+  var progress: Double = 0.0
+  var speed: Double? = nil
+  var timeRemaining: TimeInterval? = nil
+  
+  var isUpload: Bool = false
+  var isDownload: Bool {
+    get { !self.isUpload }
+    set { self.isUpload = !newValue }
+  }
+  
+  // Folder transfers
+  var isFolder: Bool = false
+  var folderName: String? = nil
+  var fileName: String? = nil
 
   // Server association - tracks which HotlineState this transfer belongs to
   var serverID: UUID
   var serverName: String?
 
-  // For file based transfers (i.e. not previews)
+  // For file based transfers
   var fileURL: URL? = nil
 
   var progressCallback: ((TransferInfo) -> Void)? = nil

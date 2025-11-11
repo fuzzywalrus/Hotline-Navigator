@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct FolderIconView: View {
-  private func folderIcon() -> Image {
+  private var folderIcon: Image {
 #if os(iOS)
     return Image(systemName: "folder.fill")
 #elseif os(macOS)
@@ -11,7 +11,7 @@ struct FolderIconView: View {
   }
   
   var body: some View {
-    folderIcon()
+    self.folderIcon
       .resizable()
       .scaledToFit()
   }
@@ -22,7 +22,7 @@ struct FileIconView: View {
   let fileType: String?
   
   #if os(iOS)
-  private func fileIcon() -> Image {
+  private var fileIcon: Image {
     let fileExtension = (self.filename as NSString).pathExtension
     if let fileType = UTType(filenameExtension: fileExtension) {
       if fileType.isSubtype(of: .movie) {
@@ -45,7 +45,7 @@ struct FileIconView: View {
     return Image(systemName: "doc")
   }
   #elseif os(macOS)
-  private func fileIcon() -> Image {
+  private var fileIcon: Image {
     let fileExtension = (self.filename as NSString).pathExtension
     
     if !fileExtension.isEmpty,
@@ -60,14 +60,12 @@ struct FileIconView: View {
     else {
       return Image(nsImage: NSWorkspace.shared.icon(for: UTType.data))
     }
-    
-//    Image(nsImage: NSWorkspace.shared.icon(for: UTType(filenameExtension: (filename as NSString).pathExtension) ?? UTType.content))
   }
   #endif
 
   
   var body: some View {
-    fileIcon()
+    self.fileIcon
       .resizable()
       .scaledToFit()
   }

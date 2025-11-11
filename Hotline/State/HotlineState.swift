@@ -895,6 +895,7 @@ class HotlineState: Equatable {
         serverID: self.id,
         serverName: self.serverName ?? self.serverTitle
       )
+      transfer.isUpload = false
       transfer.downloadCallback = callback
       transfer.progressCallback = progressCallback
       AppState.shared.addTransfer(transfer)
@@ -980,7 +981,7 @@ class HotlineState: Equatable {
     path: [String],
     to destination: URL? = nil,
     progress progressCallback: ((TransferInfo) -> Void)? = nil,
-    itemProgress itemProgressCallback: ((TransferInfo, String, Int, Int) -> Void)? = nil,
+//    itemProgress itemProgressCallback: ((TransferInfo, String, Int, Int) -> Void)? = nil,
     complete callback: ((TransferInfo) -> Void)? = nil
   ) {
     guard let client = self.client else { return }
@@ -1013,6 +1014,8 @@ class HotlineState: Equatable {
         serverName: self.serverName ?? self.serverTitle
       )
       transfer.isFolder = true
+      transfer.folderName = folderName
+      transfer.isUpload = false
       transfer.downloadCallback = callback
       transfer.progressCallback = progressCallback
       AppState.shared.addTransfer(transfer)
@@ -1031,8 +1034,6 @@ class HotlineState: Equatable {
         guard self != nil else { return }
 
         do {
-          let folderURL: URL
-
           // Download folder with progress tracking
           let location: HotlineDownloadLocation = if let destination {
             .url(destination)
@@ -1040,7 +1041,7 @@ class HotlineState: Equatable {
             .downloads(folderName)
           }
 
-          folderURL = try await downloadClient.download(to: location, progress: { progress in
+          let folderURL = try await downloadClient.download(to: location, progress: { progress in
             switch progress {
             case .preparing:
               break
@@ -1057,14 +1058,14 @@ class HotlineState: Equatable {
               transfer.completed = true
               transfer.fileURL = url
             }
-          }, itemProgress: { itemInfo in
-            // Update transfer title with current file being downloaded
-            transfer.title = "\(itemInfo.fileName) (\(itemInfo.itemNumber)/\(itemInfo.totalItems))"
-            itemProgressCallback?(transfer, itemInfo.fileName, itemInfo.itemNumber, itemInfo.totalItems)
+          }, items: { item in
+            transfer.title = item.fileName
+            transfer.fileName = item.fileName
           })
 
           // Mark as completed
           transfer.progress = 1.0
+          transfer.fileName = nil
           transfer.title = folderName // Reset title to folder name
 
           // Call completion callback
@@ -1174,6 +1175,7 @@ class HotlineState: Equatable {
         serverName: self.serverName ?? self.serverTitle
       )
       transfer.isFolder = true
+      transfer.isUpload = true
       transfer.uploadCallback = callback
       transfer.progressCallback = progressCallback
       AppState.shared.addTransfer(transfer)
@@ -1294,6 +1296,7 @@ class HotlineState: Equatable {
         serverID: self.id,
         serverName: self.serverName ?? self.serverTitle
       )
+      transfer.isUpload = true
       transfer.uploadCallback = callback
       AppState.shared.addTransfer(transfer)
 
