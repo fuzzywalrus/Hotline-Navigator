@@ -47,7 +47,7 @@
 		DA5268A52EB0743000DCB941 /* FileItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA5268A42EB0743000DCB941 /* FileItemView.swift */; platformFilters = (macos, ); };
 		DA5268AB2EB11EA300DCB941 /* ColorArt.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA5268AA2EB11EA300DCB941 /* ColorArt.swift */; };
 		DA5268AD2EB12FE200DCB941 /* ServerState.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA5268AC2EB12FE200DCB941 /* ServerState.swift */; };
-		DA5268AF2EB2682B00DCB941 /* HotlineClientNew.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA5268AE2EB2682B00DCB941 /* HotlineClientNew.swift */; };
+		DA5268AF2EB2682B00DCB941 /* HotlineClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA5268AE2EB2682B00DCB941 /* HotlineClient.swift */; };
 		DA5268B12EB2708E00DCB941 /* HotlineState.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA5268B02EB2708E00DCB941 /* HotlineState.swift */; };
 		DA5268B32EB6806E00DCB941 /* HotlineFileDownloadClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA5268B22EB6806E00DCB941 /* HotlineFileDownloadClient.swift */; };
 		DA5268B52EB6840A00DCB941 /* TransfersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA5268B42EB6840A00DCB941 /* TransfersView.swift */; };
@@ -160,7 +160,7 @@
 		DA5268A42EB0743000DCB941 /* FileItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileItemView.swift; sourceTree = "<group>"; };
 		DA5268AA2EB11EA300DCB941 /* ColorArt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorArt.swift; sourceTree = "<group>"; };
 		DA5268AC2EB12FE200DCB941 /* ServerState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerState.swift; sourceTree = "<group>"; };
-		DA5268AE2EB2682B00DCB941 /* HotlineClientNew.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotlineClientNew.swift; sourceTree = "<group>"; };
+		DA5268AE2EB2682B00DCB941 /* HotlineClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotlineClient.swift; sourceTree = "<group>"; };
 		DA5268B02EB2708E00DCB941 /* HotlineState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotlineState.swift; sourceTree = "<group>"; };
 		DA5268B22EB6806E00DCB941 /* HotlineFileDownloadClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotlineFileDownloadClient.swift; sourceTree = "<group>"; };
 		DA5268B42EB6840A00DCB941 /* TransfersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransfersView.swift; sourceTree = "<group>"; };
@@ -471,7 +471,7 @@
 		DABFCC262B1530AE009F40D2 /* Hotline */ = {
 			isa = PBXGroup;
 			children = (
-				DA5268AE2EB2682B00DCB941 /* HotlineClientNew.swift */,
+				DA5268AE2EB2682B00DCB941 /* HotlineClient.swift */,
 				DA9CAFCA2B126E3300CDA197 /* HotlineTrackerClient.swift */,
 				DA3429B12EBA73730010784E /* Transfers */,
 				DA4F2BF72B16A17200D8ADDC /* HotlineProtocol.swift */,
@@ -652,7 +652,7 @@
 				11F8288B2BF9428100216BA0 /* AccountManagerView.swift in Sources */,
 				DAC6B2E42EAFE92F004E2CBA /* SpinningGlobeView.swift in Sources */,
 				DADDB28D2B22B5920024040D /* Server.swift in Sources */,
-				DA5268AF2EB2682B00DCB941 /* HotlineClientNew.swift in Sources */,
+				DA5268AF2EB2682B00DCB941 /* HotlineClient.swift in Sources */,
 				DABE8C042B57940B00884D28 /* DAKeychain.swift in Sources */,
 				DA55AC772BE589F700034857 /* AboutView.swift in Sources */,
 				DA72A0E22B4DAA4000A0F48A /* NewsArticle.swift in Sources */,
