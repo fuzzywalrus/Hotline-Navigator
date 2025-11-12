@@ -835,6 +835,15 @@ class HotlineState: Equatable {
 
     return try await client.getFileInfo(name: fileName, path: fullPath)
   }
+  
+  @MainActor
+  func newFolder(name: String, parentPath: [String]) async throws -> Bool {
+    guard let client = self.client else {
+      throw HotlineClientError.notConnected
+    }
+    
+    return try await client.newFolder(name: name, path: parentPath)
+  }
 
   @MainActor
   func deleteFile(_ fileName: String, path: [String]) async throws -> Bool {

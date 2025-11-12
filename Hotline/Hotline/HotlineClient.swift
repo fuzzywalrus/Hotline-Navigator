@@ -152,15 +152,6 @@ public actor HotlineClient {
   // Keep-alive timer
   private var keepAliveTask: Task<Void, Never>?
 
-  // MARK: - Static Handshake
-
-  private static let handshakeData = Data(endian: .big, {
-    "TRTP".fourCharCode() // 'TRTP' protocol ID
-    "HOTL".fourCharCode() // 'HOTL' sub-protocol ID
-    UInt16(0x0001) // Version
-    UInt16(0x0002) // Sub-version
-  })
-  
   // Transaction IDs
   private var nextTransactionID: UInt32 = 1
   private func generateTransactionID() -> UInt32 {
@@ -199,7 +190,12 @@ public actor HotlineClient {
 
     // Perform handshake
     print("HotlineClient.connect(): Sending handshake...")
-    try await socket.write(handshakeData)
+    try await socket.write(Data(endian: .big, {
+      "TRTP".fourCharCode() // 'TRTP' protocol ID
+      "HOTL".fourCharCode() // 'HOTL' sub-protocol ID
+      UInt16(0x0001) // Version
+      UInt16(0x0002) // Sub-version
+    }))
     let handshakeResponse = try await socket.read(8)
     print("HotlineClient.connect(): Handshake response received")
 
@@ -628,40 +624,82 @@ public actor HotlineClient {
 
     return files
   }
-
-  /// Request to download a file
+  
+  /// Get detailed information about a file
   ///
   /// - Parameters:
   ///   - name: File name
   ///   - path: Directory path containing the file
-  ///   - preview: Request preview/thumbnail instead of full file
-  /// - Returns: Transfer info (reference number, size, waiting count)
-  public func downloadFile(
-    name: String,
-    path: [String],
-    preview: Bool = false
-  ) async throws -> (referenceNumber: UInt32, size: Int, fileSize: Int?, waitingCount: Int?) {
-    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .downloadFile)
+  /// - Returns: File details or nil if not found
+  public func getFileInfo(name: String, path: [String]) async throws -> FileDetails? {
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .getFileInfo)
     transaction.setFieldString(type: .fileName, val: name)
     transaction.setFieldPath(type: .filePath, val: path)
 
-    if preview {
-      transaction.setFieldUInt32(type: .fileTransferOptions, val: 2)
-    }
-
-    let reply = try await self.sendTransaction(transaction)
+    let reply = try await sendTransaction(transaction)
 
     guard
-      let transferSize = reply.getField(type: .transferSize)?.getInteger(),
-      let referenceNumber = reply.getField(type: .referenceNumber)?.getUInt32()
+      let fileName = reply.getField(type: .fileName)?.getString(),
+      let fileCreator = reply.getField(type: .fileCreatorString)?.getString(),
+      let fileType = reply.getField(type: .fileTypeString)?.getString(),
+      let fileCreateDate = reply.getField(type: .fileCreateDate)?.data.readDate(at: 0),
+      let fileModifyDate = reply.getField(type: .fileModifyDate)?.data.readDate(at: 0)
     else {
-      throw HotlineClientError.invalidResponse
+      return nil
     }
 
-    let fileSize = reply.getField(type: .fileSize)?.getInteger()
-    let waitingCount = reply.getField(type: .waitingCount)?.getInteger()
+    // Size field is not included in server reply for folders
+    let fileSize = reply.getField(type: .fileSize)?.getInteger() ?? 0
+    let fileComment = reply.getField(type: .fileComment)?.getString() ?? ""
 
-    return (referenceNumber, transferSize, fileSize, waitingCount)
+    return FileDetails(
+      name: fileName,
+      path: path,
+      size: fileSize,
+      comment: fileComment,
+      type: fileType,
+      creator: fileCreator,
+      created: fileCreateDate,
+      modified: fileModifyDate
+    )
+  }
+
+  /// Delete a file or folder
+  ///
+  /// - Parameters:
+  ///   - name: File or folder name
+  ///   - path: Directory path containing the item
+  /// - Returns: True if deletion succeeded
+  public func deleteFile(name: String, path: [String]) async throws -> Bool {
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .deleteFile)
+    transaction.setFieldString(type: .fileName, val: name)
+    transaction.setFieldPath(type: .filePath, val: path)
+
+    do {
+      try await self.sendTransaction(transaction)
+      return true
+    } catch {
+      return false
+    }
+  }
+  
+  /// Create a folder
+  ///
+  /// - Parameters:
+  ///   - name: New folder name
+  ///   - path: Directory path for the new folder
+  /// - Returns: True if creation succeeded
+  public func newFolder(name: String, path: [String]) async throws -> Bool {
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .newFolder)
+    transaction.setFieldString(type: .fileName, val: name)
+    transaction.setFieldPath(type: .filePath, val: path)
+
+    do {
+      try await self.sendTransaction(transaction)
+      return true
+    } catch {
+      return false
+    }
   }
 
   // MARK: - News
@@ -785,66 +823,6 @@ public actor HotlineClient {
     transaction.setFieldString(type: .data, val: text, encoding: .macOSRoman)
 
     try await self.socket.send(transaction, endian: .big)
-  }
-
-  // MARK: - File Operations
-
-  /// Get detailed information about a file
-  ///
-  /// - Parameters:
-  ///   - name: File name
-  ///   - path: Directory path containing the file
-  /// - Returns: File details or nil if not found
-  public func getFileInfo(name: String, path: [String]) async throws -> FileDetails? {
-    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .getFileInfo)
-    transaction.setFieldString(type: .fileName, val: name)
-    transaction.setFieldPath(type: .filePath, val: path)
-
-    let reply = try await sendTransaction(transaction)
-
-    guard
-      let fileName = reply.getField(type: .fileName)?.getString(),
-      let fileCreator = reply.getField(type: .fileCreatorString)?.getString(),
-      let fileType = reply.getField(type: .fileTypeString)?.getString(),
-      let fileCreateDate = reply.getField(type: .fileCreateDate)?.data.readDate(at: 0),
-      let fileModifyDate = reply.getField(type: .fileModifyDate)?.data.readDate(at: 0)
-    else {
-      return nil
-    }
-
-    // Size field is not included in server reply for folders
-    let fileSize = reply.getField(type: .fileSize)?.getInteger() ?? 0
-    let fileComment = reply.getField(type: .fileComment)?.getString() ?? ""
-
-    return FileDetails(
-      name: fileName,
-      path: path,
-      size: fileSize,
-      comment: fileComment,
-      type: fileType,
-      creator: fileCreator,
-      created: fileCreateDate,
-      modified: fileModifyDate
-    )
-  }
-
-  /// Delete a file or folder
-  ///
-  /// - Parameters:
-  ///   - name: File or folder name
-  ///   - path: Directory path containing the item
-  /// - Returns: True if deletion succeeded
-  public func deleteFile(name: String, path: [String]) async throws -> Bool {
-    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .deleteFile)
-    transaction.setFieldString(type: .fileName, val: name)
-    transaction.setFieldPath(type: .filePath, val: path)
-
-    do {
-      try await self.sendTransaction(transaction)
-      return true
-    } catch {
-      return false
-    }
   }
 
   // MARK: - Administration

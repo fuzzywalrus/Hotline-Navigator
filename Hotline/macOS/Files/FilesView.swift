@@ -2,9 +2,36 @@ import SwiftUI
 import UniformTypeIdentifiers
 import AppKit
 
-
-
-
+struct NewFolderSheet: View {
+  @Environment(\.dismiss) private var dismiss
+  
+  let action: ((String) -> Void)?
+  
+  @State private var folderName: String = "Untitled"
+  
+  var body: some View {
+    Form {
+      TextField(text: self.$folderName) {
+        Text("Folder Name")
+      }
+    }
+    .formStyle(.grouped)
+    .fixedSize(horizontal: false, vertical: true)
+    .toolbar {
+      ToolbarItem(placement: .confirmationAction) {
+        Button("New Folder") {
+          self.dismiss()
+          self.action?(self.folderName)
+        }
+      }
+      ToolbarItem(placement: .cancellationAction) {
+        Button("Cancel") {
+          self.dismiss()
+        }
+      }
+    }
+  }
+}
 
 struct FilesView: View {
   @Environment(HotlineState.self) private var model: HotlineState
@@ -16,6 +43,8 @@ struct FilesView: View {
   @State private var searchText: String = ""
   @State private var isSearching: Bool = false
   @State private var dragOver: Bool = false
+  @State private var deleteConfirmationDisplayed: Bool = false
+  @State private var newFolderSheetDisplayed: Bool = false
   
   var body: some View {
     NavigationStack {
@@ -98,13 +127,9 @@ struct FilesView: View {
           Divider()
           
           Button {
-            if let s = selectedFile {
-              Task {
-                await deleteFile(s)
-              }
-            }
+            self.deleteConfirmationDisplayed = true
           } label: {
-            Label("Delete", systemImage: "trash")
+            Label("Delete...", systemImage: "trash")
           }
           .disabled(selectedFile == nil)
         }
@@ -154,38 +179,44 @@ struct FilesView: View {
       .searchable(text: $searchText, isPresented: $isSearching, placement: .automatic, prompt: "Search")
       .background(Button("", action: { isSearching = true }).keyboardShortcut("f").hidden())
       .toolbar {
-        ToolbarItemGroup(placement: .automatic) {
+        ToolbarItem {
           Button {
             if let selectedFile = selection, selectedFile.isPreviewable {
-              previewFile(selectedFile)
+              self.previewFile(selectedFile)
             }
           } label: {
             Label("Preview", systemImage: "eye")
           }
           .help("Preview")
           .disabled(selection == nil || selection?.isPreviewable != true)
-
+        }
+        
+        ToolbarItem {
           Button {
             if let selectedFile = selection {
-              getFileInfo(selectedFile)
+              self.getFileInfo(selectedFile)
             }
           } label: {
             Label("Get Info", systemImage: "info.circle")
           }
           .help("Get Info")
           .disabled(selection == nil)
-
+        }
+        
+        ToolbarItem {
           Button {
-            uploadFileSelectorDisplayed = true
+            self.uploadFileSelectorDisplayed = true
           } label: {
             Label("Upload", systemImage: "arrow.up")
           }
           .help("Upload")
           .disabled(model.access?.contains(.canUploadFiles) != true)
-
+        }
+        
+        ToolbarItem {
           Button {
             if let selectedFile = selection {
-              downloadFile(selectedFile)
+              self.downloadFile(selectedFile)
             }
           } label: {
             Label("Download", systemImage: "arrow.down")
@@ -193,9 +224,48 @@ struct FilesView: View {
           .help("Download")
           .disabled(selection == nil || model.access?.contains(.canDownloadFiles) != true)
         }
+        
+        if #available(macOS 26.0, *) {
+          ToolbarSpacer()
+        }
+        
+        ToolbarItem {
+          Button {
+            self.newFolderSheetDisplayed = true
+          } label: {
+            Label("New Folder", systemImage: "folder.badge.plus")
+          }
+          .help("New Folder")
+        }
+        
+        ToolbarItem {
+          Button {
+            self.deleteConfirmationDisplayed = true
+          } label: {
+            Label("Delete", systemImage: "trash")
+          }
+          .disabled(self.selection == nil)
+          .help("Delete")
+        }
       }
     }
-    .sheet(item: $fileDetails ) { item in
+    .alert("Are you sure you want to permanently delete \"\(self.selection?.name ?? "this file")\"?", isPresented: self.$deleteConfirmationDisplayed, actions: {
+      Button("Delete", role: .destructive) {
+        if let s = self.selection {
+          Task {
+            await self.deleteFile(s)
+          }
+        }
+      }
+    }, message: {
+      Text("You cannot undo this action.")
+    })
+    .sheet(isPresented: self.$newFolderSheetDisplayed) {
+      NewFolderSheet { folderName in
+        self.newFolder(name: folderName, parent: self.selection)
+      }
+    }
+    .sheet(item: $fileDetails) { item in
       FileDetailsView(fd: item)
     }
     .fileImporter(isPresented: $uploadFileSelectorDisplayed, allowedContentTypes: [.data, .folder], allowsMultipleSelection: false, onCompletion: { results in
@@ -385,6 +455,20 @@ struct FilesView: View {
     }
   }
   
+  @MainActor private func newFolder(name: String, parent: FileInfo?) {
+    Task {
+      var parentFolder: FileInfo? = nil
+      if parent?.isFolder == true {
+        parentFolder = parent
+      }
+      
+      let path: [String] = parentFolder?.path ?? []
+      if try await self.model.newFolder(name: name, parentPath: path) == true {
+        try await self.model.getFileList(path: path)
+      }
+    }
+  }
+  
   @MainActor private func getFileInfo(_ file: FileInfo) {
     Task {
       if let fileInfo = try? await model.getFileDetails(file.name, path: file.path) {
@@ -405,10 +489,10 @@ struct FilesView: View {
   }
   
   @MainActor private func uploadFile(file fileURL: URL, to path: [String]) {
-    model.uploadFile(url: fileURL, path: path) { info in
+    self.model.uploadFile(url: fileURL, path: path) { info in
       Task {
         // Refresh file listing to display newly uploaded file.
-        let _ = try? await model.getFileList(path: path)
+        try? await self.model.getFileList(path: path)
       }
     }
   }
