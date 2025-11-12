@@ -425,6 +425,7 @@ struct ServerTransferRow: View {
   @Environment(HotlineState.self) private var model: HotlineState
   @State private var hovered: Bool = false
   @State private var buttonHovered: Bool = false
+  @State private var detailsShown: Bool = false
   
   var body: some View {
     HStack(alignment: .center, spacing: 5) {
@@ -508,6 +509,7 @@ struct ServerTransferRow: View {
       withAnimation(.snappy(duration: 0.25, extraBounce: 0.3)) {
         self.hovered = hovered
       }
+      self.detailsShown = hovered
     }
     .onTapGesture(count: 2) {
       guard transfer.completed, let url = transfer.fileURL else {
@@ -516,7 +518,31 @@ struct ServerTransferRow: View {
       
       NSWorkspace.shared.activateFileViewerSelecting([url])
     }
-    .help(self.formattedProgressHelp)
+    .popover(isPresented: .constant(self.detailsShown && !self.transfer.done), arrowEdge: .trailing) {
+      let rows: [(String, String)] = [
+        ("document", self.transfer.title),
+        ("info", self.transfer.displaySize),
+        (self.transfer.isUpload ? "arrow.up" : "arrow.down", self.transfer.displaySpeed ?? "--"),
+        ("clock", self.transfer.displayTimeRemaining ?? "--")
+      ]
+      
+      Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 8) {
+        ForEach(rows, id: \.0) { imageName, label in
+          GridRow {
+            Image(systemName: imageName)
+              .resizable()
+              .scaledToFit()
+              .frame(width: 16, height: 16)
+              .gridColumnAlignment(.trailing)
+            Text(label)
+              .monospacedDigit()
+              .gridColumnAlignment(.leading)
+          }
+        }
+      }
+      .frame(minWidth: 200, maxWidth: 350, alignment: .leading)
+      .padding()
+    }
   }
   
   private var formattedProgressHelp: String {

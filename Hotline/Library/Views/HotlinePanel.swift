@@ -22,7 +22,10 @@ class HotlinePanel: NSPanel {
 
     // Don't delete panel state when it's closed.
     self.isReleasedWhenClosed = false
-    
+
+    // Disable state restoration for this utility panel
+    self.isRestorable = false
+
     self.standardWindowButton(.closeButton)?.isHidden = false
     self.standardWindowButton(.zoomButton)?.isHidden = true
     self.standardWindowButton(.miniaturizeButton)?.isHidden = true

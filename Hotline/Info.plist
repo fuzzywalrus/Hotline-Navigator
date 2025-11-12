@@ -7,11 +7,13 @@
 		<dict>
 			<key>CFBundleTypeName</key>
 			<string>Hotline Bookmark</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
 			<key>LSHandlerRank</key>
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>'HTbm'</string>
+				<string>&apos;HTbm&apos;</string>
 			</array>
 		</dict>
 	</array>
@@ -19,7 +21,7 @@
 	<array>
 		<dict>
 			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
+			<string>Editor</string>
 			<key>CFBundleURLName</key>
 			<string>co.goodmake.hotline</string>
 			<key>CFBundleURLSchemes</key>
@@ -29,7 +31,7 @@
 		</dict>
 		<dict>
 			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
+			<string>Editor</string>
 			<key>CFBundleURLName</key>
 			<string>co.goodmake.hotline</string>
 			<key>CFBundleURLSchemes</key>
@@ -46,7 +48,7 @@
 			<key>UTTypeIconFiles</key>
 			<array/>
 			<key>UTTypeIdentifier</key>
-			<string>'HTbm'</string>
+			<string>&apos;HTbm&apos;</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>

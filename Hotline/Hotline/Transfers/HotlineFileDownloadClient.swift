@@ -125,9 +125,7 @@ public class HotlineFileDownloadClient: @MainActor HotlineTransferClient {
       destinationURL = url.resolvingSymlinksInPath()
       destinationFilename = destinationURL.lastPathComponent
     case .downloads(let filename):
-      var downloadsURL = fm.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-      downloadsURL = downloadsURL.resolvingSymlinksInPath()
-      destinationURL = URL(filePath: downloadsURL.generateUniqueFilePath(filename: filename))
+      destinationURL = URL.downloadsDirectory.resolvingSymlinksInPath().generateUniqueFileURL(filename: filename)
       destinationFilename = destinationURL.lastPathComponent
     }
 
