@@ -312,9 +312,17 @@ struct TransferRow: View {
             .foregroundStyle(.fileComplete)
         }
         else {
-          ProgressView(value: self.transfer.progress, total: 1.0)
-            .progressViewStyle(.linear)
-            .controlSize(.large)
+          if self.transfer.progress == 0 {
+            ProgressView()
+              .progressViewStyle(.linear)
+              .controlSize(.large)
+          }
+          else {
+            ProgressView(value: self.transfer.progress, total: 1.0)
+              .progressViewStyle(.linear)
+              .controlSize(.large)
+          }
+          
         }
       }
     }
@@ -328,17 +336,17 @@ struct TransferRow: View {
       //      Text("\(Int(self.transfer.progress * 100))%")
       
       // Speed
-      if let speed = self.transfer.speed {
-        Label(self.formatSpeed(speed), systemImage: self.transfer.isUpload ? "arrow.up" : "arrow.down")
+      if let speed = self.transfer.displaySpeed {
+        Label(speed, systemImage: self.transfer.isUpload ? "arrow.up" : "arrow.down")
       }
       
       // Time remaining
-      if let timeRemaining = self.transfer.timeRemaining {
-        Label(self.formatTimeRemaining(timeRemaining), systemImage: "clock")
+      if let timeRemaining = self.transfer.displayTimeRemaining {
+        Label(timeRemaining, systemImage: "clock")
       }
       
       // File size
-      Label(self.formatSize(self.transfer.size), systemImage: "document")
+      Label(self.transfer.displaySize, systemImage: "document")
     }
     .font(.subheadline)
     .foregroundStyle(.secondary)
@@ -391,36 +399,6 @@ struct TransferRow: View {
             .frame(width: 16, height: 16)
         }
       }
-  }
-  
-  // MARK: - Formatting
-  
-  private func formatSize(_ bytes: UInt) -> String {
-    let formatter = ByteCountFormatter()
-    formatter.countStyle = .file
-    formatter.allowedUnits = [.useKB, .useMB, .useGB]
-    return formatter.string(fromByteCount: Int64(bytes))
-  }
-  
-  private func formatSpeed(_ bytesPerSecond: Double) -> String {
-    let formatter = ByteCountFormatter()
-    formatter.countStyle = .file
-    formatter.allowedUnits = [.useKB, .useMB, .useGB]
-    return "\(formatter.string(fromByteCount: Int64(bytesPerSecond)))/s"
-  }
-  
-  private func formatTimeRemaining(_ seconds: TimeInterval) -> String {
-    if seconds < 60 {
-      return "\(Int(seconds))s"
-    } else if seconds < 3600 {
-      let minutes = Int(seconds / 60)
-      let secs = Int(seconds.truncatingRemainder(dividingBy: 60))
-      return "\(minutes)m \(secs)s"
-    } else {
-      let hours = Int(seconds / 3600)
-      let minutes = Int((seconds.truncatingRemainder(dividingBy: 3600)) / 60)
-      return "\(hours)h \(minutes)m"
-    }
   }
 }
 

@@ -58,4 +58,47 @@ class TransferInfo: Identifiable, Equatable, Hashable {
   func hash(into hasher: inout Hasher) {
     hasher.combine(self.id)
   }
+  
+//  var formatSize(_ bytes: UInt) -> String {
+//    let formatter = ByteCountFormatter()
+//    formatter.countStyle = .file
+//    formatter.allowedUnits = [.useKB, .useMB, .useGB]
+//    return formatter.string(fromByteCount: Int64(bytes))
+//  }
+  
+  var displaySize: String {
+    let formatter = ByteCountFormatter()
+    formatter.countStyle = .file
+    formatter.allowedUnits = [.useKB, .useMB, .useGB]
+    return formatter.string(fromByteCount: Int64(self.size))
+  }
+  
+  var displaySpeed: String? {
+    guard let speed = self.speed else {
+      return nil
+    }
+    
+    let formatter = ByteCountFormatter()
+    formatter.countStyle = .file
+    formatter.allowedUnits = [.useKB, .useMB, .useGB]
+    return "\(formatter.string(fromByteCount: Int64(speed)))/s"
+  }
+  
+  var displayTimeRemaining: String? {
+    guard let timeRemaining = self.timeRemaining else {
+      return nil
+    }
+    
+    if timeRemaining < 60 {
+      return "\(Int(timeRemaining))s"
+    } else if timeRemaining < 3600 {
+      let minutes = Int(timeRemaining / 60)
+      let secs = Int(timeRemaining.truncatingRemainder(dividingBy: 60))
+      return "\(minutes)m \(secs)s"
+    } else {
+      let hours = Int(timeRemaining / 3600)
+      let minutes = Int((timeRemaining.truncatingRemainder(dividingBy: 3600)) / 60)
+      return "\(hours)h \(minutes)m"
+    }
+  }
 }

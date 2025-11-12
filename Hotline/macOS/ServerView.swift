@@ -107,13 +107,10 @@ struct ServerView: View {
       if self.model.status == .disconnected {
         VStack(alignment: .center) {
           Spacer()
-//          if self.connectionDisplayed {
-            self.connectForm
-//          }
+          self.connectForm
           Spacer()
         }
         .navigationTitle("Connect to Server")
-//        .animation(.default.delay(0.25), value: self.connectionDisplayed)
       }
       else if self.model.status.isLoggingIn {
         HStack {
@@ -281,7 +278,7 @@ struct ServerView: View {
   
   var transfersSection: some View {
     ForEach(model.transfers) { transfer in
-      TransferItemView(transfer: transfer)
+      ServerTransferRow(transfer: transfer)
     }
   }
   
@@ -421,7 +418,7 @@ struct ServerView: View {
   
 }
 
-struct TransferItemView: View {
+struct ServerTransferRow: View {
   let transfer: TransferInfo
     
   @Environment(\.controlActiveState) private var controlActiveState
@@ -429,29 +426,11 @@ struct TransferItemView: View {
   @State private var hovered: Bool = false
   @State private var buttonHovered: Bool = false
   
-  private func formattedProgressHelp() -> String {
-    if self.transfer.completed {
-      return "File transfer complete"
-    }
-    else if self.transfer.failed {
-      return "File transfer failed"
-    }
-    else if self.transfer.progress > 0.0 {
-      if let estimate = self.transfer.timeRemaining, estimate > 0.0 {
-        return "\(round(self.transfer.progress * 100.0))% – \(estimate) seconds left"
-      }
-      else {
-        return "\(round(self.transfer.progress * 100.0))% complete"
-      }
-    }
-    return ""
-  }
-  
   var body: some View {
     HStack(alignment: .center, spacing: 5) {
       HStack(spacing: 0) {
         Spacer()
-        if transfer.isFolder {
+        if self.transfer.isFolder {
           Image("Folder")
             .resizable()
             .scaledToFit()
@@ -467,11 +446,26 @@ struct TransferItemView: View {
       }
       .frame(width: 20)
       
-      Text(transfer.title)
+      Text(self.transfer.folderName ?? self.transfer.title)
         .lineLimit(1)
         .truncationMode(.middle)
       
-      Spacer()
+      Spacer(minLength: 0)
+      
+      if !self.transfer.done {
+        if self.transfer.progress == 0.0 {
+          ProgressView()
+            .progressViewStyle(.linear)
+            .controlSize(.extraLarge)
+            .frame(maxWidth: 40)
+        }
+        else {
+          ProgressView(value: self.transfer.progress, total: 1.0)
+            .progressViewStyle(.linear)
+            .controlSize(.extraLarge)
+            .frame(maxWidth: 40)
+        }
+      }
       
       if self.hovered {
         Button {
@@ -509,19 +503,9 @@ struct TransferItemView: View {
           .frame(width: 16, height: 16)
           .opacity(controlActiveState == .inactive ? 0.5 : 1.0)
       }
-      else if transfer.progress == 0.0 {
-        ProgressView()
-          .progressViewStyle(.circular)
-          .controlSize(.small)
-      }
-      else {
-        ProgressView(value: transfer.progress, total: 1.0)
-          .progressViewStyle(.circular)
-          .controlSize(.small)
-      }
     }
     .onHover { hovered in
-      withAnimation(.easeOut(duration: 0.25)) {
+      withAnimation(.snappy(duration: 0.25, extraBounce: 0.3)) {
         self.hovered = hovered
       }
     }
@@ -529,9 +513,37 @@ struct TransferItemView: View {
       guard transfer.completed, let url = transfer.fileURL else {
         return
       }
-
+      
       NSWorkspace.shared.activateFileViewerSelecting([url])
     }
-    .help(formattedProgressHelp())
+    .help(self.formattedProgressHelp)
+  }
+  
+  private var formattedProgressHelp: String {
+    if self.transfer.completed {
+      return "File transfer complete"
+    }
+    else if self.transfer.failed {
+      return "File transfer failed"
+    }
+    else if self.transfer.cancelled {
+      return "File transfer cancelled"
+    }
+    else if self.transfer.progress > 0.0 {
+      var parts: [String] = []
+      
+      if let speed = self.transfer.displaySpeed {
+        parts.append(speed)
+      }
+      
+      if let timeRemaining = self.transfer.displayTimeRemaining {
+        parts.append(timeRemaining)
+      }
+      
+      if parts.count > 0 {
+        return parts.joined(separator: " • ")
+      }
+    }
+    return ""
   }
 }
