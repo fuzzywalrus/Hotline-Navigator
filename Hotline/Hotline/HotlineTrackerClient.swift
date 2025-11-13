@@ -57,7 +57,7 @@ class HotlineTrackerClient {
   
   private func fetchServersInternal(address: String, port: Int, continuation: AsyncThrowingStream<HotlineServer, Error>.Continuation) async {
     do {
-      try await withTimeout(seconds: 30) {
+      try await Task.withTimeout(seconds: 30) {
         try await self.doFetch(address: address, port: port, continuation: continuation)
       }
     } catch {
@@ -159,24 +159,5 @@ class HotlineTrackerClient {
     
     print("HotlineTrackerClient: Completed - parsed \(totalEntriesParsed)/\(totalExpectedEntries) entries, yielded \(totalYielded) servers")
     continuation.finish()
-  }
-  
-  private func withTimeout<T>(seconds: TimeInterval, operation: @escaping () async throws -> T) async throws -> T {
-    try await withThrowingTaskGroup(of: T.self) { group in
-      group.addTask {
-        try await operation()
-      }
-      
-      group.addTask {
-        try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-        throw NSError(domain: "HotlineTracker", code: 2, userInfo: [
-          NSLocalizedDescriptionKey: "Tracker request timed out after \(seconds) seconds"
-        ])
-      }
-      
-      let result = try await group.next()!
-      group.cancelAll()
-      return result
-    }
   }
 }

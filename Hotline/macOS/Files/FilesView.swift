@@ -12,8 +12,8 @@ struct FilesView: View {
   @State private var searchText: String = ""
   @State private var isSearching: Bool = false
   @State private var dragOver: Bool = false
-  @State private var deleteConfirmationDisplayed: Bool = false
-  @State private var newFolderSheetDisplayed: Bool = false
+  @State private var confirmDeleteShown: Bool = false
+  @State private var newFolderShown: Bool = false
   
   var body: some View {
     NavigationStack {
@@ -96,7 +96,7 @@ struct FilesView: View {
           Divider()
           
           Button {
-            self.deleteConfirmationDisplayed = true
+            self.confirmDeleteShown = true
           } label: {
             Label("Delete...", systemImage: "trash")
           }
@@ -200,16 +200,21 @@ struct FilesView: View {
         
         ToolbarItem {
           Button {
-            self.newFolderSheetDisplayed = true
+            self.newFolderShown = true
           } label: {
             Label("New Folder", systemImage: "folder.badge.plus")
           }
           .help("New Folder")
+          .popover(isPresented: self.$newFolderShown, arrowEdge: .bottom) {
+            NewFolderPopover { folderName in
+              self.newFolder(name: folderName, parent: self.selection)
+            }
+          }
         }
         
         ToolbarItem {
           Button {
-            self.deleteConfirmationDisplayed = true
+            self.confirmDeleteShown = true
           } label: {
             Label("Delete", systemImage: "trash")
           }
@@ -218,7 +223,7 @@ struct FilesView: View {
         }
       }
     }
-    .alert("Are you sure you want to permanently delete \"\(self.selection?.name ?? "this file")\"?", isPresented: self.$deleteConfirmationDisplayed, actions: {
+    .alert("Are you sure you want to permanently delete \"\(self.selection?.name ?? "this file")\"?", isPresented: self.$confirmDeleteShown, actions: {
       Button("Delete", role: .destructive) {
         if let s = self.selection {
           Task {
@@ -229,11 +234,6 @@ struct FilesView: View {
     }, message: {
       Text("You cannot undo this action.")
     })
-    .sheet(isPresented: self.$newFolderSheetDisplayed) {
-      NewFolderSheet { folderName in
-        self.newFolder(name: folderName, parent: self.selection)
-      }
-    }
     .sheet(item: self.$fileDetails) { item in
       FileDetailsSheet(fd: item)
     }
@@ -441,9 +441,7 @@ struct FilesView: View {
   @MainActor private func getFileInfo(_ file: FileInfo) {
     Task {
       if let fileInfo = try? await model.getFileDetails(file.name, path: file.path) {
-        Task { @MainActor in
-          self.fileDetails = fileInfo
-        }
+        self.fileDetails = fileInfo
       }
     }
   }

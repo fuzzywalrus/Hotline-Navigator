@@ -13,8 +13,14 @@ struct FileDetailsSheet: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       HStack(alignment: .center, spacing: 16){
-        FileIconView(filename: fd.name, fileType: nil)
-          .frame(width: 32, height: 32)
+        if self.fd.type == "Folder" {
+          FolderIconView()
+            .frame(width: 32, height: 32)
+        }
+        else {
+          FileIconView(filename: fd.name, fileType: nil)
+            .frame(width: 32, height: 32)
+        }
         TextField("", text: $filename)
           .disabled(!self.canRename())
       }

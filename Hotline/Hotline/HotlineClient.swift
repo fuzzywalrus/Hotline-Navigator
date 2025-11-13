@@ -142,10 +142,6 @@ public actor HotlineClient {
   // Transaction tracking for request/reply pattern
   private var pendingTransactions: [UInt32: CheckedContinuation<HotlineTransaction, Error>] = [:]
 
-  private enum TransactionWaitError: Error {
-    case timeout
-  }
-
   // Receive loop task
   private var receiveTask: Task<Void, Never>?
 
@@ -427,10 +423,10 @@ public actor HotlineClient {
     try await self.socket.send(transaction, endian: .big)
 
     do {
-      return try await withTimeout(seconds: timeout) {
+      return try await Task.withTimeout(seconds: timeout) {
         try await self.awaitReply(for: transactionID)
       }
-    } catch is TransactionWaitError {
+    } catch is TaskTimeoutError {
       throw HotlineClientError.timeout
     } catch let error as HotlineClientError {
       throw error
@@ -464,32 +460,6 @@ public actor HotlineClient {
     self.pendingTransactions.removeAll()
     for (_, continuation) in continuations {
       continuation.resume(throwing: error)
-    }
-  }
-
-  private func withTimeout<T>(seconds: TimeInterval, operation: @escaping @Sendable () async throws -> T) async throws -> T {
-    if seconds <= 0 {
-      throw TransactionWaitError.timeout
-    }
-
-    return try await withThrowingTaskGroup(of: T.self) { group in
-      group.addTask {
-        try await operation()
-      }
-
-      group.addTask {
-        try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-        throw TransactionWaitError.timeout
-      }
-
-      do {
-        let value = try await group.next()!
-        group.cancelAll()
-        return value
-      } catch {
-        group.cancelAll()
-        throw error
-      }
     }
   }
 
@@ -841,7 +811,7 @@ public actor HotlineClient {
       accounts.append(data.getAcccount())
     }
 
-    accounts.sort { $0.login < $1.login }
+    accounts.sort { $0.name < $1.name }
 
     return accounts
   }
@@ -893,7 +863,11 @@ public actor HotlineClient {
     // - other: Set new password
     if password == nil {
       transaction.setFieldUInt8(type: .userPassword, val: 0)
-    } else if password != "" {
+    }
+    else if password == "" {
+      // Don't add password to transaction (password will be removed)
+    }
+    else {
       transaction.setFieldEncodedString(type: .userPassword, val: password!)
     }
 

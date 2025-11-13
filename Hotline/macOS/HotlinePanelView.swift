@@ -114,7 +114,8 @@ struct HotlinePanelView: View {
 
         if self.activeHotline?.access?.contains(.canOpenUsers) == true {
           Button {
-            self.activeServerState?.selection = .accounts
+//            self.activeServerState?.selection = .accounts
+            self.activeServerState?.accountsShown = true
           }
           label: {
             Image("Section Users")
@@ -124,7 +125,7 @@ struct HotlinePanelView: View {
           .buttonStyle(.plain)
           .frame(width: 20, height: 20)
           .disabled(self.activeServerState == nil)
-          .help("Administration")
+          .help("Manage Server")
         }
         
         Button {

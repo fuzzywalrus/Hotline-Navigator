@@ -7,6 +7,8 @@ enum LineEnding {
   case cr // Classic Mac-style (\r)
 }
 
+// MARK: -
+
 extension URL {
   func urlForResourceFork() -> URL {
     self.appendingPathComponent("..namedfork/rsrc")
@@ -31,6 +33,40 @@ extension URL {
 #endif
 }
 
+// MARK: -
+
+public struct TaskTimeoutError: Error {}
+
+extension Task where Success == Never, Failure == Never {
+  public static func withTimeout<T>(seconds: TimeInterval, operation: @escaping @Sendable () async throws -> T) async throws -> T {
+    if seconds <= 0 {
+      throw TaskTimeoutError()
+    }
+
+    return try await withThrowingTaskGroup(of: T.self) { group in
+      group.addTask {
+        try await operation()
+      }
+
+      group.addTask {
+        try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+        throw TaskTimeoutError()
+      }
+
+      do {
+        let value = try await group.next()!
+        group.cancelAll()
+        return value
+      } catch {
+        group.cancelAll()
+        throw error
+      }
+    }
+  }
+}
+
+// MARK: -
+
 extension String {
   func convertingLineEndings(to targetEnding: LineEnding) -> String {
     let lf = "\n"
@@ -38,16 +74,16 @@ extension String {
     let cr = "\r"
     
     // Normalize all line endings to LF (\n)
-    let normalizedString = self.replacingOccurrences(of: cr, with: lf).replacingOccurrences(of: crlf, with: lf)
+    let normalizedString = self.replacing(cr, with: lf).replacing(crlf, with: lf)
     
     // Replace normalized LF (\n) line endings with the target line ending
     switch targetEnding {
     case .lf:
       return normalizedString
     case .crlf:
-      return normalizedString.replacingOccurrences(of: lf, with: crlf)
+      return normalizedString.replacing(lf, with: crlf)
     case .cr:
-      return normalizedString.replacingOccurrences(of: lf, with: cr)
+      return normalizedString.replacing(lf, with: cr)
     }
   }
   
@@ -66,6 +102,8 @@ extension String {
     return self.utf16.reduce(0, {$0 << 8 + FourCharCode($1)})
   }
 }
+
+// MARK: -
 
 extension FileManager {
   static var extensionToHFSCreator: [String: UInt32] = [

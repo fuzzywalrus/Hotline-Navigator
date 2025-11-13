@@ -144,12 +144,13 @@ final class AppUpdate {
           self.releaseNotesCombined = nil
           self.isDownloading = false
           if trigger == .manual {
-            self.message = AppUpdateMessage(
-              title: "Hotline is up to date",
-              detail: "You're running the latest and greatest.",
-              kind: .success
-            )
-            self.showWindow = true
+            self.showUpToDateAlert()
+//            self.message = AppUpdateMessage(
+//              title: "Hotline is up to date",
+//              detail: "You're running the latest and greatest.",
+//              kind: .success
+//            )
+//            self.showWindow = true
           } else {
             self.message = nil
             self.showWindow = false
@@ -173,6 +174,13 @@ final class AppUpdate {
         }
       }
     }
+  }
+  
+  private func showUpToDateAlert() {
+    let alert = NSAlert()
+    alert.messageText = "No Update Available"
+    alert.informativeText = "You are already using the latest version of Hotline!"
+    alert.runModal()
   }
   
   private func fetchNewerReleases() async throws -> [UpdateReleaseInfo] {

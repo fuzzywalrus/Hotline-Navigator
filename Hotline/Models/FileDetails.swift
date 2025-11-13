@@ -1,7 +1,7 @@
 import UniformTypeIdentifiers
 
-public struct FileDetails:Identifiable {
-  public let id = UUID()
+public struct FileDetails: Identifiable {
+  public let id: UUID = UUID()
   var name: String
   var path: [String]
   var size: Int

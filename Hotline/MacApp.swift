@@ -277,11 +277,11 @@ struct Application: App {
         if activeHotline?.access?.contains(.canOpenUsers) == true {
           Divider()
           
-          Button("Accounts") {
-            activeServerState?.selection = .accounts
+          Button("Manage Server...") {
+            activeServerState?.accountsShown = true
           }
           .disabled(activeHotline?.status != .loggedIn || activeHotline?.access?.contains(.canOpenUsers) != true  )
-          .keyboardShortcut(.init("5"), modifiers: .command)
+//          .keyboardShortcut(.init("5"), modifiers: .command)
         }
       }
     }

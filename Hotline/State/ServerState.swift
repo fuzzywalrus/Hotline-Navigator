@@ -5,6 +5,7 @@ class ServerState: Equatable {
   var id: UUID = UUID()
   var selection: ServerNavigationType
   var serverName: String? = nil
+  var accountsShown: Bool = false
 //  var serverBanner: NSImage? = nil
 //  var bannerBackgroundColor: Color? = nil
 
@@ -28,8 +29,8 @@ enum ServerNavigationType: Identifiable, Hashable, Equatable {
       return "Board"
     case .files:
       return "Files"
-    case .accounts:
-      return "Accounts"
+//    case .accounts:
+//      return "Accounts"
     case .user(let userID):
       return String(userID)
     }
@@ -39,6 +40,6 @@ enum ServerNavigationType: Identifiable, Hashable, Equatable {
   case news
   case board
   case files
-  case accounts
+//  case accounts
   case user(userID: UInt16)
 }

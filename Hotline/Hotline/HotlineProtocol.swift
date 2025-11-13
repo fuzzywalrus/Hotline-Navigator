@@ -233,18 +233,20 @@ public struct HotlineAccount: Identifiable {
   public let id: UUID = UUID()
   var name: String = ""
   var login: String = ""
-  var password: String? = nil
-  var persisted: Bool = true
+  var password: String = ""
+  var persisted: Bool = false
   var access: HotlineUserAccessOptions = HotlineUserAccessOptions()
   var fields: [HotlineTransactionField] = []
 
   init(from data: [UInt8]) {
     self.decodeFields(from: data)
+    self.persisted = true
   }
   
   init(_ name: String, _ login: String, _ access: HotlineUserAccessOptions) {
     self.name = name
     self.login = login
+    self.password = HotlineAccount.randomPassword()
     self.access = access
     self.persisted = false
   }

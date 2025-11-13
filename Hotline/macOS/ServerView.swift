@@ -87,13 +87,14 @@ struct ServerView: View {
   @State private var connectLogin: String = ""
   @State private var connectPassword: String = ""
   @State private var connectionDisplayed: Bool = false
+//  @State private var accountsShown: Bool = false
   
   static var menuItems: [ServerMenuItem] = [
     ServerMenuItem(type: .chat, name: "Chat", image: "Section Chat"),
     ServerMenuItem(type: .board, name: "Board", image: "Section Board"),
     ServerMenuItem(type: .news, name: "News", image: "Section News"),
     ServerMenuItem(type: .files, name: "Files", image: "Section Files"),
-    ServerMenuItem(type: .accounts, name: "Accounts", image: "Section Users"),
+//    ServerMenuItem(type: .accounts, name: "Accounts", image: "Section Users"),
   ]
   
   static var classicMenuItems: [ServerMenuItem] = [
@@ -110,7 +111,7 @@ struct ServerView: View {
           self.connectForm
           Spacer()
         }
-        .navigationTitle("Connect to Server")
+        .navigationTitle("New Connection")
       }
       else if self.model.status.isLoggingIn {
         HStack {
@@ -130,7 +131,7 @@ struct ServerView: View {
         }
         .frame(maxWidth: 300)
         .padding()
-        .navigationTitle("Connecting to Server")
+        .navigationTitle("New Connection")
       }
       else if self.model.status == .loggedIn {
         self.serverView
@@ -152,6 +153,12 @@ struct ServerView: View {
           }
           .onChange(of: Prefs.shared.automaticMessage) {
             Task { try? await self.model.sendUserPreferences() }
+          }
+          .sheet(isPresented: self.$state.accountsShown) {
+            AccountManagerView()
+              .environment(self.model)
+              .frame(width: 400, height: 450)
+              .presentationSizing(.fitted)
           }
           .toolbar {
             if #available(macOS 26.0, *) {
@@ -232,11 +239,11 @@ struct ServerView: View {
         if menuItem.type == .chat {
           ListItemView(icon: menuItem.image, title: menuItem.name, unread: model.unreadPublicChat).tag(menuItem.type)
         }
-        else if menuItem.type == .accounts {
-          if model.access?.contains(.canOpenUsers) == true {
-            ListItemView(icon: menuItem.image, title: menuItem.name, unread: false).tag(menuItem.type)
-          }
-        }
+//        else if menuItem.type == .accounts {
+//          if model.access?.contains(.canOpenUsers) == true {
+//            ListItemView(icon: menuItem.image, title: menuItem.name, unread: false).tag(menuItem.type)
+//          }
+//        }
         else if menuItem.type == .files {
           ListItemView(icon: menuItem.image, title: menuItem.name, unread: false).tag(menuItem.type)
             .overlay(alignment: .trailing) {
@@ -320,39 +327,51 @@ struct ServerView: View {
     NavigationSplitView {
       self.navigationList
         .frame(maxWidth: .infinity)
-        .navigationSplitViewColumnWidth(min: 150, ideal: 200, max: 500)
+        .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 500)
+        .toolbar {
+          if self.model.access?.contains(.canOpenUsers) == true {
+            ToolbarItem {
+              Button {
+                self.state.accountsShown = true
+              } label: {
+                Label("Manage Server", systemImage: "gear")
+              }
+              .help("Manage Server")
+            }
+          }
+        }
     } detail: {
         switch state.selection {
         case .chat:
           ChatView()
             .navigationTitle(model.serverTitle)
-            .navigationSubtitle("Public Chat")
+//            .navigationSubtitle("Public Chat")
             .navigationSplitViewColumnWidth(min: 250, ideal: 500)
         case .news:
           NewsView()
             .navigationTitle(model.serverTitle)
-            .navigationSubtitle("Newsgroups")
+//            .navigationSubtitle("Newsgroups")
             .navigationSplitViewColumnWidth(min: 250, ideal: 500)
         case .board:
           MessageBoardView()
             .navigationTitle(model.serverTitle)
-            .navigationSubtitle("Message Board")
+//            .navigationSubtitle("Message Board")
             .navigationSplitViewColumnWidth(min: 250, ideal: 500)
         case .files:
           FilesView()
             .navigationTitle(model.serverTitle)
-            .navigationSubtitle("Shared Files")
+//            .navigationSubtitle("Shared Files")
             .navigationSplitViewColumnWidth(min: 250, ideal: 500)
-        case .accounts:
-            AccountManagerView()
-              .navigationTitle(model.serverTitle)
-              .navigationSubtitle("Accounts")
-              .navigationSplitViewColumnWidth(min: 250, ideal: 500)
+//        case .accounts:
+//            AccountManagerView()
+//              .navigationTitle(model.serverTitle)
+////              .navigationSubtitle("Accounts")
+//              .navigationSplitViewColumnWidth(min: 250, ideal: 500)
         case .user(let userID):
-          let user = model.users.first(where: { $0.id == userID })
+//          let user = model.users.first(where: { $0.id == userID })
           MessageView(userID: userID)
             .navigationTitle(model.serverTitle)
-            .navigationSubtitle(user?.name ?? "Private Message")
+//            .navigationSubtitle(user?.name ?? "Private Message")
             .navigationSplitViewColumnWidth(min: 250, ideal: 500)
             .onAppear {
               model.markInstantMessagesAsRead(userID: userID)

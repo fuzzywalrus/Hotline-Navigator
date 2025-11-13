@@ -1,402 +1,418 @@
 import SwiftUI
 
+fileprivate let DEFAULT_ACCOUNT_NAME = "Untitled Account"
+fileprivate let PASSWORD_PLACEHOLDER = "xxxxxxxxxxxxxxxxxx"
+
 struct AccountManagerView: View {
   @Environment(HotlineState.self) private var model: HotlineState
+  @Environment(\.dismiss) private var dismiss
   
   @State private var accounts: [HotlineAccount] = []
   @State private var selection: HotlineAccount?
   @State private var loading: Bool = true
   
-  @State private var pendingName: String = ""
-  @State private var pendingLogin: String = ""
-  @State private var pendingPassword: String = ""
-  @State private var pendingAccess = HotlineUserAccessOptions.defaultAccess
+  @State private var creatorShown: Bool = false
+  @State private var deleteConfirm: Bool = false
+  @State private var accountToEdit: HotlineAccount? = nil
+  @State private var accountToDelete: HotlineAccount? = nil
   
-  @State private var toDelete: HotlineAccount?
+  private func newAccount() {
+    self.creatorShown = true
+  }
   
-  let placeholderPassword = "xxxxxxxxxxxxxxxxxx"
+  private func editAccount(_ account: HotlineAccount) {
+    // Always get the latest version from the array to avoid stale data
+    if let currentAccount = self.accounts.first(where: { $0.id == account.id }) {
+      self.accountToEdit = currentAccount
+    }
+  }
+  
+  private func deleteAccount(_ account: HotlineAccount) {
+    self.accountToDelete = account
+    self.deleteConfirm = true
+  }
   
   var body: some View {
-    HStack(spacing: 0) {
-      ZStack {
-        accountList
-        if loading {
-          ProgressView()
+    VStack(spacing: 8) {
+      HStack(alignment: .firstTextBaseline) {
+        Text("Accounts")
+          .font(.headline)
+        
+        Spacer()
+        
+        HStack {
+          Button {
+            self.newAccount()
+          } label: {
+            Image(systemName: "plus")
+              .padding(4)
+          }
+          .buttonBorderShape(.circle)
+          .help("New Account")
+          
+          Button {
+            if let account = self.selection {
+              self.editAccount(account)
+            }
+          } label: {
+            Image(systemName: "pencil")
+              .padding(4)
+          }
+          .buttonBorderShape(.circle)
+          .disabled(self.selection == nil)
+          .help("Edit Account")
+          
+          Button {
+            if let account = self.selection {
+              self.deleteAccount(account)
+            }
+          } label: {
+            Image(systemName: "trash")
+              .padding(4)
+          }
+          .tint(.hotlineRed)
+          .buttonBorderShape(.circle)
+          .disabled(self.selection == nil)
+          .help("Delete Account")
         }
       }
-      if selection != nil {
-        accountDetails
-      }
-      else {
-        ZStack(alignment: .center) {
-          Text("No Account Selected")
-            .font(.title)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
-            .padding()
-        }
-        .frame(maxWidth: .infinity)
-      }
+      .padding(.horizontal, 16)
+      .padding(.top, 24)
+      
+      self.accountList
+//        .overlay {
+//          if self.loading {
+//            ProgressView()
+//              .progressViewStyle(.linear)
+//              .controlSize(.extraLarge)
+//              .frame(width: 100)
+//          }
+//        }
     }
     .environment(\.defaultMinListRowHeight, 34)
     .listStyle(.inset)
     .alternatingRowBackgrounds(.enabled)
     .task {
-      if loading {
-        accounts = (try? await model.getAccounts()) ?? []
-        loading = false
+      if self.loading {
+        do {
+          self.accounts = try await self.model.getAccounts()
+        }
+        catch {
+          self.dismiss()
+        }
+        
+        self.loading = false
       }
     }
     .toolbar {
-      ToolbarItem(placement: .primaryAction) {
-        Button {
-          let newAccount = HotlineAccount("unnamed", "unnamed", HotlineUserAccessOptions.defaultAccess)
-          
-          pendingPassword = HotlineAccount.randomPassword()
-          accounts.append(newAccount)
-          selection = newAccount
-        } label: {
-          Label("New Account", systemImage: "plus")
+      if self.loading {
+        ToolbarItem {
+          ProgressView()
+            .controlSize(.small)
         }
-        .help("Create a new account")
-        .disabled(model.access?.contains(.canCreateUsers) != true)
       }
       
-      ToolbarItem(placement: .destructiveAction) {
+      ToolbarItem(placement: .confirmationAction) {
         Button {
-          toDelete = selection
+          self.dismiss()
         } label: {
-          Label("Delete Account", systemImage: "trash")
+          Text("OK")
         }
-        .help("Delete account")
-        .disabled(selection == nil || model.access?.contains(.canDeleteUsers) != true)
       }
     }
   }
   
-  var accountDetails: some View {
-    VStack(alignment: .center, spacing: 0) {
-      ScrollView(.vertical) {
-        Form {
-          Section {
-            TextField(text: $pendingName) {
-              Text("Name")
-            }
-            TextField("Login", text: $pendingLogin)
-              .disabled(selection?.persisted == true)
-            if selection?.persisted == true {
-              SecureField("Password", text: $pendingPassword)
-            } else {
-              TextField("Password", text: $pendingPassword)
-            }
-          }
-          .textFieldStyle(.roundedBorder)
-          .controlSize(.large)
-          
-          Section("File System Maintenance") {
-            Toggle("Can Download Files", isOn: $pendingAccess.bind(.canDownloadFiles))
-              .disabled(model.access?.contains(.canDownloadFiles) == false)
-            Toggle("Can Download Folders", isOn: $pendingAccess.bind(.canDownloadFolders))
-              .disabled(model.access?.contains(.canDownloadFolders) == false)
-            Toggle("Can Upload Files", isOn: $pendingAccess.bind(.canUploadFiles))
-              .disabled(model.access?.contains(.canUploadFiles) == false)
-            Toggle("Can Upload Folders", isOn: $pendingAccess.bind(.canUploadFolders))
-              .disabled(model.access?.contains(.canUploadFolders) == false)
-            Toggle("Can Upload Anywhere", isOn: $pendingAccess.bind(.canUploadAnywhere))
-              .disabled(model.access?.contains(.canUploadAnywhere) == false)
-            Toggle("Can Delete Files", isOn: $pendingAccess.bind(.canDeleteFiles))
-              .disabled(model.access?.contains(.canDeleteFiles) == false)
-            Toggle("Can Rename Files", isOn: $pendingAccess.bind(.canRenameFiles))
-              .disabled(model.access?.contains(.canRenameFiles) == false)
-            Toggle("Can Move Files", isOn: $pendingAccess.bind(.canMoveFiles))
-              .disabled(model.access?.contains(.canMoveFiles) == false)
-            Toggle("Can Comment Files", isOn: $pendingAccess.bind(.canSetFileComment))
-              .disabled(model.access?.contains(.canSetFileComment) == false)
-            Toggle("Can Create Folders", isOn: $pendingAccess.bind(.canCreateFolders))
-              .disabled(model.access?.contains(.canCreateFolders) == false)
-            Toggle("Can Delete Folders", isOn: $pendingAccess.bind(.canDeleteFolders))
-              .disabled(model.access?.contains(.canDeleteFolders) == false)
-            Toggle("Can Rename Folders", isOn: $pendingAccess.bind(.canRenameFolders))
-              .disabled(model.access?.contains(.canRenameFolders) == false)
-            Toggle("Can Move Folders", isOn: $pendingAccess.bind(.canMoveFolders))
-              .disabled(model.access?.contains(.canMoveFolders) == false)
-            Toggle("Can Comment Folders", isOn: $pendingAccess.bind(.canSetFolderComment))
-              .disabled(model.access?.contains(.canSetFolderComment) == false)
-            Toggle("Can View Drop Boxes", isOn: $pendingAccess.bind(.canViewDropBoxes))
-              .disabled(model.access?.contains(.canViewDropBoxes) == false)
-            Toggle("Can Make Aliases", isOn: $pendingAccess.bind(.canMakeAliases))
-              .disabled(model.access?.contains(.canMakeAliases) == false)
-          }
-          
-          Section("User Maintenance") {
-            Toggle("Can Create Accounts", isOn: $pendingAccess.bind(.canCreateUsers))
-              .disabled(model.access?.contains(.canCreateUsers) == false)
-            Toggle("Can Delete Accounts", isOn: $pendingAccess.bind(.canDeleteUsers))
-              .disabled(model.access?.contains(.canDeleteUsers) == false)
-            Toggle("Can Read Accounts", isOn: $pendingAccess.bind(.canOpenUsers))
-              .disabled(model.access?.contains(.canOpenUsers) == false)
-            Toggle("Can Modify Accounts", isOn: $pendingAccess.bind(.canModifyUsers))
-              .disabled(model.access?.contains(.canModifyUsers) == false)
-            Toggle("Can Get User Info", isOn: $pendingAccess.bind(.canGetClientInfo))
-              .disabled(model.access?.contains(.canGetClientInfo) == false)
-            
-            Toggle("Can Disconnect Users", isOn: $pendingAccess.bind(.canDisconnectUsers))
-              .disabled(model.access?.contains(.canDisconnectUsers) == false)
-            Toggle("Cannot be Disconnected", isOn: $pendingAccess.bind(.cantBeDisconnected))
-              .disabled(model.access?.contains(.cantBeDisconnected) == false)
-          }
-          
-          Section("Messaging") {
-            Toggle("Can Send Messages", isOn: $pendingAccess.bind(.canSendMessages))
-              .disabled(model.access?.contains(.canSendMessages) == false)
-            Toggle("Can Broadcast", isOn: $pendingAccess.bind(.canBroadcast))
-              .disabled(model.access?.contains(.canBroadcast) == false)
-          }
-          
-          Section("News") {
-            Toggle("Can Read Articles", isOn: $pendingAccess.bind(.canReadMessageBoard))
-              .disabled(model.access?.contains(.canReadMessageBoard) == false)
-            Toggle("Can Post Articles", isOn: $pendingAccess.bind(.canPostMessageBoard))
-              .disabled(model.access?.contains(.canPostMessageBoard) == false)
-            Toggle("Can Delete Articles", isOn: $pendingAccess.bind(.canDeleteNewsArticles))
-              .disabled(model.access?.contains(.canDeleteNewsArticles) == false)
-            Toggle("Can Create Categories", isOn: $pendingAccess.bind(.canCreateNewsCategories))
-              .disabled(model.access?.contains(.canCreateNewsCategories) == false)
-            Toggle("Can Delete Categories", isOn: $pendingAccess.bind(.canDeleteNewsCategories))
-              .disabled(model.access?.contains(.canDeleteNewsCategories) == false)
-            Toggle("Can Create News Bundles", isOn: $pendingAccess.bind(.canCreateNewsFolders))
-              .disabled(model.access?.contains(.canCreateNewsFolders) == false)
-            Toggle("Can Delete News Bundles", isOn: $pendingAccess.bind(.canDeleteNewsFolders))
-              .disabled(model.access?.contains(.canDeleteNewsFolders) == false)
-          }
-          
-          Section("Chat") {
-            Toggle("Can Initiate Private Chat", isOn: $pendingAccess.bind(.canCreateChat))
-              .disabled(model.access?.contains(.canCreateChat) == false)
-            Toggle("Can Read Chat", isOn: $pendingAccess.bind(.canReadChat))
-              .disabled(model.access?.contains(.canReadChat) == false)
-            Toggle("Can Send Chat", isOn: $pendingAccess.bind(.canSendChat))
-              .disabled(model.access?.contains(.canSendChat) == false)
-          }
-          
-          Section("Miscellaneous") {
-            Toggle("Can Use Any Name", isOn: $pendingAccess.bind(.canUseAnyName))
-              .disabled(model.access?.contains(.canUseAnyName) == false)
-            Toggle("Don't Show Agreement", isOn: $pendingAccess.bind(.canSkipAgreement))
-              .disabled(model.access?.contains(.canSkipAgreement) == false)
-          }
-        }
-        .disabled(model.access?.contains(.canModifyUsers) == false)
-        .formStyle(.grouped)
-        .onChange(of: selection) {
-          if let selection {
-            pendingName = selection.name
-            pendingLogin = selection.login
-            pendingAccess = selection.access
-            
-            if selection.persisted {
-              if selection.password == nil {
-                pendingPassword = ""
-              } else {
-                pendingPassword = placeholderPassword
-              }
-            }
-          }
-        }
-        .onAppear() {
-          if let selection {
-            pendingName = selection.name
-            pendingLogin = selection.login
-            pendingAccess = selection.access
-            
-            if selection.persisted {
-              if selection.password == nil {
-                pendingPassword = ""
-              } else {
-                pendingPassword = placeholderPassword
-              }
-            } else {
-              pendingPassword =  HotlineAccount.randomPassword()
-            }
-          }
-        }
+  private var accountList: some View {
+    List(self.accounts, id: \.self, selection: self.$selection) { account in
+      HStack(spacing: 5) {
+        Image(account.access.contains(.canDisconnectUsers) ? "User Admin" : "User")
+          .frame(width: 16, height: 16)
+          .opacity((account.access.rawValue == 0) ? 0.5 : 1.0)
+        Text(account.name)
+          .foregroundStyle(account.access.contains(.canDisconnectUsers) ? Color.hotlineRed : ((account.access.rawValue == 0) ? Color.secondary : Color.primary))
+        
+        Spacer()
+        
+        Text(account.login)
+          .lineLimit(1)
+          .foregroundStyle(.secondary)
       }
-      .frame(maxWidth: .infinity)
+    }
+    .contextMenu(forSelectionType: HotlineAccount.self) { items in
+      Button {
+        if let item = items.first {
+          self.editAccount(item)
+        }
+      } label: {
+        Label("Edit Account...", systemImage: "pencil")
+      }
+      .disabled(items.isEmpty)
       
       Divider()
       
-      HStack() {
-        Button("Revert") {
-          if let selection {
-            pendingAccess = selection.access
-            pendingName = selection.name
-            pendingLogin = selection.login
-            
-            if selection.password != nil {
-              pendingPassword = selection.password!
-            }
-          }
+      Button(role: .destructive) {
+        if let item = items.first {
+          self.deleteAccount(item)
         }
-        .controlSize(.large)
-        .frame(minWidth: 75)
-        .disabled(!self.isSaveable())
-//        .padding()
+      } label: {
+        Label("Delete Account...", systemImage: "trash")
+      }
+      .disabled(items.isEmpty)
+    } primaryAction: { items in
+      if let account = items.first {
+        self.editAccount(account)
+      }
+    }
+    .alert("Are you sure you want to delete the \"\(self.accountToDelete?.name ?? "unknown")\" account?", isPresented: self.$deleteConfirm, actions: {
+      Button("Delete", role: .destructive) {
+        guard let account = self.accountToDelete else {
+          return
+        }
         
-        Spacer()
-
-        Button(action: {
-          guard let selection else {
-            return
+        self.accountToDelete = nil
+        
+        Task {
+          self.selection = nil
+          
+          if account.persisted {
+            try await self.model.deleteUser(login: account.login)
           }
-
-          // Update existing account
-          if selection.persisted == true {
-
-            if pendingPassword == placeholderPassword {
-              Task { @MainActor in
-                try? await model.setUser(name: pendingName, login: pendingLogin, newLogin: nil, password: nil, access: pendingAccess.rawValue)
-              }
-            } else {
-              Task { @MainActor in
-                try? await model.setUser(name: pendingName, login: pendingLogin, newLogin: nil, password: pendingPassword, access: pendingAccess.rawValue)
-              }
-            }
-
-          } else {
-            // Create new existing account
-            Task { @MainActor in
-              try? await model.createUser(name: pendingName, login: pendingLogin, password: pendingPassword, access: pendingAccess.rawValue)
-            }
-            self.selection?.password = pendingPassword
-            pendingPassword = placeholderPassword
-          }
-
-          var account = HotlineAccount(pendingName, pendingLogin, pendingAccess)
-          account.persisted = true
-          account.password = placeholderPassword
-
-          accounts = accounts.filter { $0.persisted == true && $0.login != selection.login }
-
-          // Add new account to list
-          accounts.append(account)
-
-          // Re-sort accounts
-          accounts.sort { $0.login < $1.login }
-          self.selection = account
-        }, label: {
-          Text("Save")
-        })
-        .controlSize(.large)
-        .frame(minWidth: 75)
-        .keyboardShortcut(.defaultAction)
-        .disabled(!self.isSaveable())
+          
+          self.accounts = self.accounts.filter { $0.id != account.id }
+          self.deleteConfirm = false
+        }
       }
-      .padding()
+    }, message: {
+      Text("You cannot undo this action.")
+    })
+    .sheet(item: self.$accountToEdit) { account in
+      AccountDetailsView(account: account) { editedAccount in
+        if let i = self.accounts.firstIndex(of: editedAccount) {
+          self.accounts.remove(at: i)
+          self.accounts.insert(editedAccount, at: i)
+        }
+        self.accounts.sort { $0.name < $1.name }
+        self.selection = editedAccount
+        self.accountToEdit = nil
+      }
+      .id(account.id)
+      .environment(self.model)
+      .frame(width: 480)
+      .frame(minHeight: 300, idealHeight: 400)
+      .presentationSizing(.fitted)
     }
-    
+    .sheet(isPresented: self.$creatorShown) {
+      AccountDetailsView { newAccount in
+        self.accounts.append(newAccount)
+        self.accounts.sort { $0.name < $1.name }
+        self.selection = newAccount
+      }
+      .environment(self.model)
+      .frame(width: 480)
+      .frame(minHeight: 300, idealHeight: 400)
+      .presentationSizing(.fitted)
+    }
   }
+}
+
+
+struct AccountDetailsView: View {
+  @Environment(HotlineState.self) private var model: HotlineState
+  @Environment(\.dismiss) private var dismiss
   
-  var accountList: some View {
-    List(accounts, id: \.self, selection: $selection) { account in
-      HStack(spacing: 5) {
-        if account.access.contains(.canDisconnectUsers) {
-          Image("User Admin")
-            .frame(width: 16, height: 16)
-            .opacity(account.persisted ? 1.0 : 0.25)
-          //                .padding(.leading, 4)
-          Text(account.login)
-            .foregroundStyle(Color.hotlineRed)
-        }
-        else if account.access.rawValue == 0 {
-          Image("User")
-            .frame(width: 16, height: 16)
-          //                .padding(.leading, 4)
-          Text(account.login)
-            .foregroundStyle(.secondary)
-        }
-        //            else if account.persisted == false {
-        //              HStack {
-        //                Image("User")
-        //                  .frame(width: 16, height: 16)
-        ////                  .padding(.leading, 4)
-        //                Text(account.login)
-        //                  .italic()
-        //              }
-        //            }
-        else {
-          Image("User")
-            .frame(width: 16, height: 16)
-            .opacity(account.persisted ? 1.0 : 0.5)
-          //                .padding(.leading, 4)
-          Text(account.login)
+  @State var account: HotlineAccount = HotlineAccount("Untitled Account", "", HotlineUserAccessOptions.defaultAccess)
+  
+  let saved: ((HotlineAccount) -> Void)?
+  
+  @State private var password: String = ""
+  @State private var saving: Bool = false
+  
+  var body: some View {
+    self.accountDetails
+      .onAppear {
+        // Display a placeholder for accounts that have been saved to the server
+        // because we don't have the account password on hand to display.
+        if self.account.persisted {
+          self.password = PASSWORD_PLACEHOLDER
         }
       }
-    }
-    .frame(width: 250)
-    .sheet(item: $toDelete) { item in
-      Form {
-        HStack{
-          Image(systemName: "exclamationmark.triangle")
-            .font(.system(size: 30))
-          Text("Delete account \"\(item.name)\" and all associated files?")
-            .lineSpacing(4)
-        }
-      }
-      .frame(minWidth: 300, idealWidth: 450, maxWidth: .infinity, minHeight: 100, idealHeight: 100, maxHeight: .infinity)
       .toolbar {
-        ToolbarItem(placement: .cancellationAction) {
-          Button("Cancel") {
-            toDelete = nil
+        if self.saving {
+          ToolbarItem {
+            ProgressView()
+              .controlSize(.small)
           }
         }
         
-        ToolbarItem(placement: .primaryAction) {
-          Button(action: {
-            guard let userToDelete = toDelete else {
-              return
-            }
-
-            self.toDelete = nil
-            self.selection = nil
-
-            if userToDelete.persisted {
-              Task { @MainActor in
-                try? await model.deleteUser(login: userToDelete.login)
+        ToolbarItem(placement: .cancellationAction) {
+          Button {
+            self.dismiss()
+          } label: {
+            Text("Cancel")
+          }
+        }
+        
+        ToolbarItem(placement: .confirmationAction) {
+          Button {
+            Task {
+              do {
+                try await self.save()
+                self.dismiss()
+              }
+              catch {
+                print("ERROR SAVING ACCOUNT: \(error)")
               }
             }
-
-            accounts = accounts.filter { $0.login != userToDelete.login }
-
-          }, label: {
-            Text("Delete")
-          })
+          } label: {
+            Text(self.account.persisted ? "Save" : "Create")
+          }
+          .disabled(self.saving)
         }
       }
-    }
   }
   
+  private func save() async throws {
+    self.saving = true
+    defer { self.saving = false }
+    
+    var accountName: String = self.account.name
+    if accountName.isBlank {
+      accountName = DEFAULT_ACCOUNT_NAME
+    }
+    
+    // Update existing account
+    if self.account.persisted {
+      if self.password == PASSWORD_PLACEHOLDER {
+        try await self.model.setUser(name: accountName, login: self.account.login, newLogin: nil, password: nil, access: self.account.access.rawValue)
+      } else {
+        try await model.setUser(name: accountName, login: self.account.login, newLogin: nil, password: self.password, access: self.account.access.rawValue)
+      }
+      
+    } else {
+      // Create new existing account
+      try await model.createUser(name: accountName, login: self.account.login, password: self.password, access: self.account.access.rawValue)
+      
+//      self.password = PASSWORD_PLACEHOLDER
+      self.account.persisted = true
+    }
+    
+    self.account.name = accountName
+    self.saved?(self.account)
+  }
   
-  private func isSaveable() -> Bool {
-    guard let selection else {
-      return false
+  var accountDetails: some View {
+    Form {
+      Section {
+        TextField(text: self.$account.name, prompt: Text(DEFAULT_ACCOUNT_NAME)) {
+          Text("Account")
+        }
+      }
+      
+      Section {
+        TextField("Login", text: self.$account.login, prompt: Text("Required"))
+          .disabled(self.account.persisted)
+        
+        if self.account.persisted {
+          SecureField("Password", text: self.$password, prompt: Text("Optional"))
+        } else {
+          TextField("Password", text: self.$password, prompt: Text("Optional"))
+        }
+      }
+      
+      Section("Files") {
+        Toggle("Download Files", isOn: self.$account.access.bind(.canDownloadFiles))
+          .disabled(self.model.access?.contains(.canDownloadFiles) == false)
+        Toggle("Download Folders", isOn: self.$account.access.bind(.canDownloadFolders))
+          .disabled(model.access?.contains(.canDownloadFolders) == false)
+        Toggle("Upload Files", isOn: self.$account.access.bind(.canUploadFiles))
+          .disabled(model.access?.contains(.canUploadFiles) == false)
+        Toggle("Upload Folders", isOn: self.$account.access.bind(.canUploadFolders))
+          .disabled(model.access?.contains(.canUploadFolders) == false)
+        Toggle("Upload Anywhere", isOn: self.$account.access.bind(.canUploadAnywhere))
+          .disabled(model.access?.contains(.canUploadAnywhere) == false)
+        Toggle("Delete Files", isOn: self.$account.access.bind(.canDeleteFiles))
+          .disabled(model.access?.contains(.canDeleteFiles) == false)
+        Toggle("Rename Files", isOn: self.$account.access.bind(.canRenameFiles))
+          .disabled(model.access?.contains(.canRenameFiles) == false)
+        Toggle("Move Files", isOn: self.$account.access.bind(.canMoveFiles))
+          .disabled(model.access?.contains(.canMoveFiles) == false)
+        Toggle("Comment Files", isOn: self.$account.access.bind(.canSetFileComment))
+          .disabled(model.access?.contains(.canSetFileComment) == false)
+        Toggle("Create Folders", isOn: self.$account.access.bind(.canCreateFolders))
+          .disabled(model.access?.contains(.canCreateFolders) == false)
+        Toggle("Delete Folders", isOn: self.$account.access.bind(.canDeleteFolders))
+          .disabled(model.access?.contains(.canDeleteFolders) == false)
+        Toggle("Rename Folders", isOn: self.$account.access.bind(.canRenameFolders))
+          .disabled(model.access?.contains(.canRenameFolders) == false)
+        Toggle("Move Folders", isOn: self.$account.access.bind(.canMoveFolders))
+          .disabled(model.access?.contains(.canMoveFolders) == false)
+        Toggle("Comment Folders", isOn: self.$account.access.bind(.canSetFolderComment))
+          .disabled(model.access?.contains(.canSetFolderComment) == false)
+        Toggle("View Drop Boxes", isOn: self.$account.access.bind(.canViewDropBoxes))
+          .disabled(model.access?.contains(.canViewDropBoxes) == false)
+        Toggle("Make Aliases", isOn: self.$account.access.bind(.canMakeAliases))
+          .disabled(model.access?.contains(.canMakeAliases) == false)
+      }
+      
+      Section("User Maintenance") {
+        Toggle("Create Accounts", isOn: self.$account.access.bind(.canCreateUsers))
+          .disabled(model.access?.contains(.canCreateUsers) == false)
+        Toggle("Delete Accounts", isOn: self.$account.access.bind(.canDeleteUsers))
+          .disabled(model.access?.contains(.canDeleteUsers) == false)
+        Toggle("Read Accounts", isOn: self.$account.access.bind(.canOpenUsers))
+          .disabled(model.access?.contains(.canOpenUsers) == false)
+        Toggle("Modify Accounts", isOn: self.$account.access.bind(.canModifyUsers))
+          .disabled(model.access?.contains(.canModifyUsers) == false)
+        Toggle("Get User Info", isOn: self.$account.access.bind(.canGetClientInfo))
+          .disabled(model.access?.contains(.canGetClientInfo) == false)
+        
+        Toggle("Disconnect Users", isOn: self.$account.access.bind(.canDisconnectUsers))
+          .disabled(model.access?.contains(.canDisconnectUsers) == false)
+        Toggle("Cannot be Disconnected", isOn: self.$account.access.bind(.cantBeDisconnected))
+          .disabled(model.access?.contains(.cantBeDisconnected) == false)
+      }
+      
+      Section("Messaging") {
+        Toggle("Send Messages", isOn: self.$account.access.bind(.canSendMessages))
+          .disabled(model.access?.contains(.canSendMessages) == false)
+        Toggle("Broadcast", isOn: self.$account.access.bind(.canBroadcast))
+          .disabled(model.access?.contains(.canBroadcast) == false)
+      }
+      
+      Section("News") {
+        Toggle("Read Articles", isOn: self.$account.access.bind(.canReadMessageBoard))
+          .disabled(model.access?.contains(.canReadMessageBoard) == false)
+        Toggle("Post Articles", isOn: self.$account.access.bind(.canPostMessageBoard))
+          .disabled(model.access?.contains(.canPostMessageBoard) == false)
+        Toggle("Delete Articles", isOn: self.$account.access.bind(.canDeleteNewsArticles))
+          .disabled(model.access?.contains(.canDeleteNewsArticles) == false)
+        Toggle("Create Categories", isOn: self.$account.access.bind(.canCreateNewsCategories))
+          .disabled(model.access?.contains(.canCreateNewsCategories) == false)
+        Toggle("Delete Categories", isOn: self.$account.access.bind(.canDeleteNewsCategories))
+          .disabled(model.access?.contains(.canDeleteNewsCategories) == false)
+        Toggle("Create News Bundles", isOn: self.$account.access.bind(.canCreateNewsFolders))
+          .disabled(model.access?.contains(.canCreateNewsFolders) == false)
+        Toggle("Delete News Bundles", isOn: self.$account.access.bind(.canDeleteNewsFolders))
+          .disabled(model.access?.contains(.canDeleteNewsFolders) == false)
+      }
+      
+      Section("Chat") {
+        Toggle("Initiate Private Chat", isOn: self.$account.access.bind(.canCreateChat))
+          .disabled(model.access?.contains(.canCreateChat) == false)
+        Toggle("Read Chat", isOn: self.$account.access.bind(.canReadChat))
+          .disabled(model.access?.contains(.canReadChat) == false)
+        Toggle("Send Chat", isOn: self.$account.access.bind(.canSendChat))
+          .disabled(model.access?.contains(.canSendChat) == false)
+      }
+      
+      Section("Miscellaneous") {
+        Toggle("Use Any Name", isOn: self.$account.access.bind(.canUseAnyName))
+          .disabled(model.access?.contains(.canUseAnyName) == false)
+        Toggle("Don't Show Agreement", isOn: self.$account.access.bind(.canSkipAgreement))
+          .disabled(model.access?.contains(.canSkipAgreement) == false)
+      }
     }
-    
-    // Disable save if login field is cleared
-    if pendingLogin == "" {
-      return false
-    }
-    
-    // If the account initial has a password and it was updated
-    if selection.password != nil && pendingPassword != placeholderPassword {
-      return true
-    }
-    
-    // If the account initial has no password, but was updated to have one
-    if selection.password == nil && pendingPassword != "" {
-      return true
-    }
-    
-    // If the access bits or user name have been changed
-    return pendingAccess.rawValue != selection.access.rawValue || selection.name != pendingName
+    .disabled(self.model.access?.contains(.canModifyUsers) == false)
+    .formStyle(.grouped)
   }
 }

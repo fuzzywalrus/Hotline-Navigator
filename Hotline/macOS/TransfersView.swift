@@ -163,7 +163,7 @@ struct TransfersView: View {
     let result: [(name: String, url: URL)] = intersection.compactMap { url in
       let appName = FileManager.default
         .displayName(atPath: url.path)
-        .replacingOccurrences(of: ".app", with: "")
+        .replacing(".app", with: "")
       return (name: appName, url: url)
     }.sorted { $0.name < $1.name }
     
@@ -178,7 +178,7 @@ struct TransfersView: View {
     if fileURLs.count == 1, let url = NSWorkspace.shared.urlForApplication(toOpen: fileURLs[0]) {
       let name = FileManager.default
         .displayName(atPath: url.path)
-        .replacingOccurrences(of: ".app", with: "")
+        .replacing(".app", with: "")
       return (name, url)
     }
     
@@ -213,7 +213,7 @@ struct TransfersView: View {
        defaultCounts[bestByMajority, default: 0] > 0 {
       let name = FileManager.default
         .displayName(atPath: bestByMajority.path)
-        .replacingOccurrences(of: ".app", with: "")
+        .replacing(".app", with: "")
       return (name, bestByMajority)
     }
     
