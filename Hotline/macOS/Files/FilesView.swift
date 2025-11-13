@@ -432,7 +432,7 @@ struct FilesView: View {
       }
       
       let path: [String] = parentFolder?.path ?? []
-      if try await self.model.newFolder(name: name, parentPath: path) == true {
+      if try await self.model.newFolder(name: name, parentPath: path) {
         try await self.model.getFileList(path: path)
       }
     }

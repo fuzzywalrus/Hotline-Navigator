@@ -666,17 +666,11 @@ public actor HotlineClient {
   ///   - name: New folder name
   ///   - path: Directory path for the new folder
   /// - Returns: True if creation succeeded
-  public func newFolder(name: String, path: [String]) async throws -> Bool {
+  public func newFolder(name: String, path: [String]) async throws {
     var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .newFolder)
     transaction.setFieldString(type: .fileName, val: name)
     transaction.setFieldPath(type: .filePath, val: path)
-
-    do {
-      try await self.sendTransaction(transaction)
-      return true
-    } catch {
-      return false
-    }
+    try await self.sendTransaction(transaction)
   }
 
   // MARK: - News

@@ -852,11 +852,22 @@ class HotlineState: Equatable {
       throw HotlineClientError.notConnected
     }
     
-    return try await client.newFolder(name: name, path: parentPath)
+    do {
+      try await client.newFolder(name: name, path: parentPath)
+      self.invalidateFileListCache(for: parentPath, includingAncestors: true)
+      return true
+    }
+    catch let error as HotlineClientError {
+      self.errorMessage = error.userMessage
+      self.errorDisplayed = true
+    }
+    
+    return false
   }
 
+  @discardableResult
   @MainActor
-  func deleteFile(_ fileName: String, path: [String]) async throws {
+  func deleteFile(_ fileName: String, path: [String]) async throws -> Bool {
     guard let client = self.client else {
       throw HotlineClientError.notConnected
     }
@@ -869,12 +880,14 @@ class HotlineState: Equatable {
     do {
       try await client.deleteFile(name: fileName, path: fullPath)
       self.invalidateFileListCache(for: fullPath, includingAncestors: true)
+      return true
     }
     catch let error as HotlineClientError {
       self.errorMessage = error.userMessage
       self.errorDisplayed = true
-      return
     }
+    
+    return false
   }
 
   /// Download a file from the server.
@@ -896,9 +909,19 @@ class HotlineState: Equatable {
 
     Task { @MainActor [weak self] in
       guard let self else { return }
-
+      
       // Request download from server
-      guard let result = try? await client.downloadFile(name: fileName, path: fullPath),
+      let result: (referenceNumber: UInt32, transferSize: Int, fileSize: Int, waitingCount: Int)?
+      do {
+        result = try await client.downloadFile(name: fileName, path: fullPath)
+      }
+      catch let error as HotlineClientError {
+        self.errorMessage = error.userMessage
+        self.errorDisplayed = true
+        return
+      }
+      
+      guard let result,
             let server = self.server,
             let address = server.address as String?,
             let port = server.port as Int?

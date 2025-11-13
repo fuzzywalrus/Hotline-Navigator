@@ -338,18 +338,19 @@ struct ServerView: View {
       self.navigationList
         .frame(maxWidth: .infinity)
         .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 500)
-        .toolbar {
-          if self.model.access?.contains(.canOpenUsers) == true {
-            ToolbarItem {
-              Button {
-                self.state.accountsShown = true
-              } label: {
-                Label("Manage Accounts", systemImage: "gear")
-              }
-              .help("Manage Accounts")
-            }
-          }
-        }
+        .toolbar(removing: .sidebarToggle)
+//        .toolbar {
+//          if self.model.access?.contains(.canOpenUsers) == true {
+//            ToolbarItem(placement: .primaryAction) {
+//              Button {
+//                self.state.accountsShown = true
+//              } label: {
+//                Label("Manage Accounts", systemImage: "gear")
+//              }
+//              .help("Manage Accounts")
+//            }
+//          }
+//        }
     } detail: {
         switch state.selection {
         case .chat:
@@ -388,7 +389,9 @@ struct ServerView: View {
             }
         }
     }
-    .toolbar(removing: .sidebarToggle)
+    .background {
+      Color.red
+    }
   }
   
   // MARK: -
