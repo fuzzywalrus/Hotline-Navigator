@@ -8,16 +8,14 @@ struct MessageBoardView: View {
   
   var body: some View {
     NavigationStack {
-      if self.model.access?.contains(.canReadMessageBoard) != false {
-        if self.model.messageBoardLoaded && self.model.messageBoard.isEmpty {
-          self.emptyBoardView
-        }
-        else {
-          self.messageBoardView
-        }
+      if self.model.access?.contains(.canReadMessageBoard) != true {
+        self.disabledBoardView
+      }
+      else if self.model.messageBoardLoaded && self.model.messageBoard.isEmpty {
+        self.emptyBoardView
       }
       else {
-        self.disabledBoardView
+        self.messageBoardView
       }
     }
     .sheet(isPresented: $composerDisplayed) {
@@ -32,7 +30,7 @@ struct MessageBoardView: View {
         } label: {
           Image(systemName: "square.and.pencil")
         }
-        .disabled(self.model.access?.contains(.canPostMessageBoard) == false)
+        .disabled((self.model.access?.contains(.canPostMessageBoard) != true) || (self.model.access?.contains(.canReadMessageBoard) != true))
         .help("Post to Message Board")
       }
     }
@@ -45,9 +43,9 @@ struct MessageBoardView: View {
   
   private var disabledBoardView: some View {
     ContentUnavailableView {
-      Label("Message Board Disabled", systemImage: "quote.bubble")
+      Label("No Message Board", systemImage: "quote.bubble")
     } description: {
-      Text("This server has turned off the message board")
+      Text("This server has turned off their message board")
     }
   }
   

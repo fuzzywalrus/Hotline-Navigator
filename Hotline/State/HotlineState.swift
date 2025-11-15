@@ -324,10 +324,10 @@ class HotlineState: Equatable {
       print("HotlineState.login(): Getting server info...")
       if let serverInfo = await client.server {
         self.serverVersion = serverInfo.version
-        if !serverInfo.name.isEmpty {
-          self.serverName = serverInfo.name
+        if let name = serverInfo.name {
+          self.serverName = name
         }
-        print("HotlineState.login(): Server info retrieved: \(serverInfo.name) v\(serverInfo.version)")
+        print("HotlineState.login(): Server info retrieved: \(self.serverTitle) v\(serverInfo.version)")
       }
 
       self.status = .connected
@@ -336,7 +336,7 @@ class HotlineState: Equatable {
       // Request initial data before starting event loop
       print("HotlineState.login(): Requesting user list...")
       try await self.getUserList()
-
+      
       self.status = .loggedIn
       print("HotlineState.login(): Status set to loggedIn")
 
@@ -398,7 +398,6 @@ class HotlineState: Equatable {
   }
 
   /// Disconnect from the server (user-initiated)
-  @MainActor
   func disconnect() async {
     print("HotlineState.disconnect(): Called")
     guard let client = self.client else {
@@ -424,7 +423,6 @@ class HotlineState: Equatable {
   }
 
   /// Handle connection closure (server-initiated or after user disconnect)
-  @MainActor
   private func handleConnectionClosed() {
     print("HotlineState: handleConnectionClosed() entered")
     guard self.client != nil else {
@@ -830,8 +828,7 @@ class HotlineState: Equatable {
       return try await client.getClientInfoText(for: userID)
     }
     catch let error as HotlineClientError {
-      self.errorMessage = error.userMessage
-      self.errorDisplayed = true
+      self.displayError(error, message: error.userMessage)
     }
     
     return nil
@@ -846,25 +843,33 @@ class HotlineState: Equatable {
       try await client.disconnectUser(userID: userID, options: options)
     }
     catch let error as HotlineClientError {
-      self.errorMessage = error.userMessage
-      self.errorDisplayed = true
+      self.displayError(error, message: error.userMessage)
     }
   }
 
   // MARK: - Files
   
   @discardableResult
-  func getFileList(path: [String] = [], suppressErrors: Bool = false, preferCache: Bool = false) async throws -> [FileInfo] {
+  func getFileList(path: [String] = [], suppressErrors: Bool = false, preferCache: Bool = false) async throws -> [FileInfo]? {
     guard let client = self.client else {
       throw HotlineClientError.notConnected
     }
-
+    
     // Check cache first if preferred
     if preferCache, let cached = self.cachedFileList(for: path, ttl: self.fileSearchConfig.cacheTTL, allowStale: false) {
       return cached.items
     }
-
-    let hotlineFiles = try await client.getFileList(path: path)
+    
+    let hotlineFiles: [HotlineFile]
+    do {
+      hotlineFiles = try await client.getFileList(path: path)
+    }
+    catch let error as HotlineClientError {
+      self.displayError(error, message: error.userMessage)
+      self.filesLoaded = true
+      return nil
+    }
+    
     let newFiles = hotlineFiles.map { FileInfo(hotlineFile: $0) }
 
     // Update UI state
@@ -908,8 +913,7 @@ class HotlineState: Equatable {
       return true
     }
     catch let error as HotlineClientError {
-      self.errorMessage = error.userMessage
-      self.errorDisplayed = true
+      self.displayError(error, message: error.userMessage)
     }
     
     return false
@@ -927,8 +931,7 @@ class HotlineState: Equatable {
       return true
     }
     catch let error as HotlineClientError {
-      self.errorMessage = error.userMessage
-      self.errorDisplayed = true
+      self.displayError(error, message: error.userMessage)
     }
     
     return false
@@ -952,8 +955,7 @@ class HotlineState: Equatable {
       return true
     }
     catch let error as HotlineClientError {
-      self.errorMessage = error.userMessage
-      self.errorDisplayed = true
+      self.displayError(error, message: error.userMessage)
     }
     
     return false
@@ -985,8 +987,7 @@ class HotlineState: Equatable {
         result = try await client.downloadFile(name: fileName, path: fullPath)
       }
       catch let error as HotlineClientError {
-        self.errorMessage = error.userMessage
-        self.errorDisplayed = true
+        self.displayError(error, message: error.userMessage)
         return
       }
       
@@ -1351,6 +1352,8 @@ class HotlineState: Equatable {
     guard let client = self.client else { return }
 
     let fileName = fileURL.lastPathComponent
+    
+    print("UPLOAD FILE: \(fileName) \(fileURL)")
 
     guard fileURL.isFileURL, !fileName.isEmpty else {
       print("HotlineState: Not a valid file URL")
@@ -1381,8 +1384,7 @@ class HotlineState: Equatable {
         referenceNumber = try await client.uploadFile(name: fileName, path: path)
       }
       catch let error as HotlineClientError {
-        self.errorMessage = error.userMessage
-        self.errorDisplayed = true
+        self.displayError(error, message: error.userMessage)
         return
       }
       

@@ -30,8 +30,14 @@ struct MessageView: View {
     }
     .background(Color(nsColor: .textBackgroundColor))
     .onAppear {
-      let user = self.model.users.first(where: { $0.id == userID })
+      self.model.markInstantMessagesAsRead(userID: self.userID)
+      
+      let user = self.model.users.first(where: { $0.id == self.userID })
       self.username = user?.name
+    }
+    
+    .onAppear {
+      self.model.markInstantMessagesAsRead(userID: userID)
     }
     .toolbar {
       if self.model.access?.contains(.canGetClientInfo) == true {

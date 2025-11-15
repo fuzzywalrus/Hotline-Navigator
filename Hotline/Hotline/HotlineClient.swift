@@ -82,10 +82,10 @@ public struct HotlineLogin: Sendable {
 
 /// Information about the connected server
 public struct HotlineServerInfo: Sendable {
-  let name: String
+  let name: String?
   let version: UInt16
 
-  public init(name: String, version: UInt16) {
+  public init(name: String?, version: UInt16) {
     self.name = name
     self.version = version
   }
@@ -242,7 +242,7 @@ public actor HotlineClient {
     print("HotlineClient.connect(): Starting keep-alive")
     await client.startKeepAlive()
 
-    print("HotlineClient.connect(): Connected to \(serverInfo.name) (v\(serverInfo.version))")
+    print("HotlineClient.connect(): Connected to \(serverInfo.name ?? "Server") (v\(serverInfo.version))")
 
     return client
   }
@@ -279,8 +279,12 @@ public actor HotlineClient {
       throw HotlineClientError.loginFailed(errorText)
     }
 
-    let serverName = reply.getField(type: .serverName)?.getString() ?? "Unknown"
-    let serverVersion = reply.getField(type: .versionNumber)?.getUInt16() ?? 0
+    // All servers send a server version.
+    let serverVersion = reply.getField(type: .versionNumber)?.getUInt16() ?? 123
+    
+    // Later clients send a name and banner ID.
+    let serverName = reply.getField(type: .serverName)?.getString()
+//    let serverBannerID = reply.getField(type: .communityBannerID)?.getInteger()
 
     return HotlineServerInfo(name: serverName, version: serverVersion)
   }

@@ -20,7 +20,7 @@ struct FolderItemView: View {
     self.model.uploadFile(url: fileURL, path: filePath) { info in
       Task {
         // Refresh file listing to display newly uploaded file.
-        let _ = try? await model.getFileList(path: filePath)
+        try? await model.getFileList(path: filePath)
       }
     }
   }

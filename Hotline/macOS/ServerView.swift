@@ -111,6 +111,7 @@ struct ServerView: View {
           self.connectForm
           Spacer()
         }
+        .presentedWindowToolbarStyle(.unified(showsTitle: false))
         .navigationTitle(self.model.serverTitle.isBlank ? "Hotline" : self.model.serverTitle)
       }
       else if self.model.status.isLoggingIn {
@@ -249,6 +250,11 @@ struct ServerView: View {
         if menuItem.type == .chat {
           ListItemView(icon: menuItem.image, title: menuItem.name, unread: model.unreadPublicChat).tag(menuItem.type)
         }
+//        else if menuItem.type == .board {
+//          if self.model.access?.contains(.canReadMessageBoard) == true {
+//            ListItemView(icon: menuItem.image, title: menuItem.name, unread: false).tag(menuItem.type)
+//          }
+//        }
 //        else if menuItem.type == .accounts {
 //          if model.access?.contains(.canOpenUsers) == true {
 //            ListItemView(icon: menuItem.image, title: menuItem.name, unread: false).tag(menuItem.type)
@@ -355,40 +361,17 @@ struct ServerView: View {
         switch state.selection {
         case .chat:
           ChatView()
-            .navigationTitle(model.serverTitle)
-//            .navigationSubtitle("Public Chat")
-//            .navigationSplitViewColumnWidth(min: 250, ideal: 500)
         case .news:
           NewsView()
-            .navigationTitle(model.serverTitle)
-//            .navigationSubtitle("Newsgroups")
-//            .navigationSplitViewColumnWidth(min: 250, ideal: 500)
         case .board:
           MessageBoardView()
-            .navigationTitle(model.serverTitle)
-//            .navigationSubtitle("Message Board")
-//            .navigationSplitViewColumnWidth(min: 250, ideal: 500)
         case .files:
           FilesView()
-            .navigationTitle(model.serverTitle)
-//            .navigationSubtitle("Shared Files")
-//            .navigationSplitViewColumnWidth(min: 250, ideal: 500)
-//        case .accounts:
-//            AccountManagerView()
-//              .navigationTitle(model.serverTitle)
-////              .navigationSubtitle("Accounts")
-//              .navigationSplitViewColumnWidth(min: 250, ideal: 500)
         case .user(let userID):
-//          let user = model.users.first(where: { $0.id == userID })
           MessageView(userID: userID)
-            .navigationTitle(model.serverTitle)
-//            .navigationSubtitle(user?.name ?? "Private Message")
-//            .navigationSplitViewColumnWidth(min: 250, ideal: 500)
-            .onAppear {
-              model.markInstantMessagesAsRead(userID: userID)
-            }
         }
     }
+    .navigationTitle(self.model.serverTitle)
   }
   
   // MARK: -
@@ -538,7 +521,7 @@ struct ServerTransferRow: View {
       withAnimation(.snappy(duration: 0.25, extraBounce: 0.3)) {
         self.hovered = hovered
       }
-      self.detailsShown = hovered
+//      self.detailsShown = hovered
     }
     .onTapGesture(count: 2) {
       guard transfer.completed, let url = transfer.fileURL else {

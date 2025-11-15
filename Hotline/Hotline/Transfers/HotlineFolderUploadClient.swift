@@ -380,7 +380,10 @@ public class HotlineFolderUploadClient: @MainActor HotlineTransferClient {
       throw HotlineTransferClientError.failedToTransfer
     }
 
-    let infoForkData = infoFork.data()
+    guard let infoForkData = infoFork.data() else {
+      throw HotlineTransferClientError.failedToTransfer
+    }
+    
     let dataForkSize = forkSizes.dataForkSize
     let resourceForkSize = forkSizes.resourceForkSize
 

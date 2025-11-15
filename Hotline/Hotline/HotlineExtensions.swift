@@ -490,7 +490,7 @@ extension FileManager {
       return nil
     }
     
-    guard let fileName = fileURL.lastPathComponent.data(using: .macOSRoman) else {
+    guard let fileName = fileURL.lastPathComponent.data(using: .macOSRoman, allowLossyConversion: true) else {
       return nil
     }
     
@@ -826,38 +826,11 @@ extension Array where Element == UInt8 {
   }
   
   func readString(at offset: Int, length: Int) -> String? {
-    guard let subdata: Data = self.readData(at: offset, length: length) else {
+    guard let data: Data = self.readData(at: offset, length: length) else {
       return nil
     }
     
-    if subdata.count == 0 {
-      return ""
-    }
-    
-    let allowedEncodings = [
-      NSUTF8StringEncoding,
-      NSShiftJISStringEncoding,
-      NSUnicodeStringEncoding,
-      NSWindowsCP1251StringEncoding
-    ]
-
-    var decodedNSString: NSString?
-    let rawValue = NSString.stringEncoding(for: subdata, encodingOptions: [.allowLossyKey: false], convertedString: &decodedNSString, usedLossyConversion: nil)
-    
-    if allowedEncodings.contains(rawValue) {
-      return decodedNSString as? String
-    }
-    
-    else if rawValue > 1 {
-      print("ENCODING FOUND \(rawValue)")
-    }
-    
-    var macStr = String(data: subdata, encoding: .macOSRoman)
-    if macStr == nil {
-      macStr = String(data: subdata, encoding: .nonLossyASCII)
-    }
-    
-    return macStr
+    return data.readString(at: 0, length: length)
   }
   
   func readPString(at offset: Int) -> (String?, Int) {
@@ -1158,36 +1131,39 @@ extension NetSocket {
     let length = try await read(UInt8.self)
     guard length > 0 else { return nil }
 
-    let data = try await read(Int(length))
+    let dataLength = Int(length)
+    let data = try await read(dataLength)
+    
+    return data.readString(at: 0, length: dataLength)
 
     // Try auto-detection with common encodings
-    let allowedEncodings = [
-      String.Encoding.utf8.rawValue,
-      String.Encoding.shiftJIS.rawValue,
-      String.Encoding.unicode.rawValue,
-      String.Encoding.windowsCP1251.rawValue
-    ]
-
-    var decodedString: NSString?
-    let detected = NSString.stringEncoding(
-      for: data,
-      encodingOptions: [.allowLossyKey: false],
-      convertedString: &decodedString,
-      usedLossyConversion: nil
-    )
-
-    if allowedEncodings.contains(detected), let str = decodedString as? String {
-      return str
-    }
-
-    // Fallback to MacRoman for classic Mac compatibility
-    guard let str = String(data: data, encoding: .macOSRoman) else {
-      throw NetSocketError.decodeFailed(NSError(
-        domain: "NetSocket",
-        code: -1,
-        userInfo: [NSLocalizedDescriptionKey: "Failed to decode pascal string with any known encoding"]
-      ))
-    }
-    return str
+//    let allowedEncodings = [
+//      String.Encoding.utf8.rawValue,
+//      String.Encoding.shiftJIS.rawValue,
+//      String.Encoding.unicode.rawValue,
+//      String.Encoding.windowsCP1251.rawValue
+//    ]
+//
+//    var decodedString: NSString?
+//    let detected = NSString.stringEncoding(
+//      for: data,
+//      encodingOptions: [.allowLossyKey: false],
+//      convertedString: &decodedString,
+//      usedLossyConversion: nil
+//    )
+//
+//    if allowedEncodings.contains(detected), let str = decodedString as? String {
+//      return str
+//    }
+//
+//    // Fallback to MacRoman for classic Mac compatibility
+//    guard let str = String(data: data, encoding: .macOSRoman) else {
+//      throw NetSocketError.decodeFailed(NSError(
+//        domain: "NetSocket",
+//        code: -1,
+//        userInfo: [NSLocalizedDescriptionKey: "Failed to decode pascal string with any known encoding"]
+//      ))
+//    }
+//    return str
   }
 }

@@ -260,8 +260,10 @@ struct HotlineFileInfoFork {
     return nil
   }
   
-  func data() -> Data {
-    let fileName = self.name.data(using: .macOSRoman)!
+  func data() -> Data? {
+    guard let fileName = self.name.data(using: .macOSRoman, allowLossyConversion: true) else {
+      return nil
+    }
     
     let data = Data(endian: .big) {
       self.platform

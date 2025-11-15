@@ -184,9 +184,11 @@ struct Application: App {
     } defaultValue: {
       Server(name: nil, description: nil, address: "")
     }
-    .modelContainer(self.modelContainer)
+    .windowToolbarStyle(.unified)
+//    .windowStyle(.hiddenTitleBar)
     .defaultSize(width: 780, height: 640)
     .defaultPosition(.center)
+    .modelContainer(self.modelContainer)
     .onChange(of: activeServerState) {
       AppState.shared.activeServerState = self.activeServerState
     }
