@@ -9,7 +9,7 @@ struct NewsView: View {
   
   @State private var selection: NewsInfo?
   @State private var articleText: String?
-  @State private var splitHidden = SideHolder(.bottom)
+  @State private var splitHidden: SideHolder = SideHolder(.bottom)
   @State private var splitFraction = FractionHolder.usingUserDefaults(0.25, key: "News Split Fraction")
   @State private var editorOpen: Bool = false
   @State private var replyOpen: Bool = false
@@ -20,19 +20,17 @@ struct NewsView: View {
       if model.serverVersion < 151 {
         disabledNewsView
       }
+      else if !model.newsLoaded {
+        loadingIndicator
+      }
+      else if model.news.isEmpty {
+        emptyNewsView
+      }
       else {
         NavigationStack {
           VSplit(
             top: {
-              if !model.newsLoaded {
-                loadingIndicator
-              }
-              else if model.news.isEmpty {
-                emptyNewsView
-              }
-              else {
-                newsBrowser
-              }
+              newsBrowser
             },
             bottom: {
               articleViewer
@@ -45,13 +43,13 @@ struct NewsView: View {
           .frame(maxWidth: .infinity, maxHeight: .infinity)
           .background(Color(nsColor: .textBackgroundColor))
         }
-        .task {
-          if !model.newsLoaded {
-            loading = true
-            try? await model.getNewsList()
-            loading = false
-          }
-        }
+      }
+    }
+    .task {
+      if !model.newsLoaded {
+        loading = true
+        try? await model.getNewsList()
+        loading = false
       }
     }
     .sheet(isPresented: $editorOpen) {
@@ -78,7 +76,7 @@ struct NewsView: View {
       }
     }
     .toolbar {
-      ToolbarItem(placement: .primaryAction) {
+      ToolbarItem {
         Button {
           if selection?.type == .category || selection?.type == .article {
             editorOpen = true
@@ -86,11 +84,11 @@ struct NewsView: View {
         } label: {
           Image(systemName: "square.and.pencil")
         }
-        .help("New Post")
+        .help("New post under current topic")
         .disabled(selection?.type != .category && selection?.type != .article)
       }
       
-      ToolbarItem(placement: .primaryAction) {
+      ToolbarItem {
         Button {
           if selection?.type == .article {
             replyOpen = true
@@ -98,11 +96,37 @@ struct NewsView: View {
         } label: {
           Image(systemName: "arrowshape.turn.up.left")
         }
-        .help("Reply to Post")
+        .help("Reply to selected post")
         .disabled(selection?.type != .article)
       }
       
-      ToolbarItem(placement: .primaryAction) {
+      if #available(macOS 26.0, *) {
+        ToolbarSpacer(.fixed)
+      }
+      
+      ToolbarItem {
+        Button {
+//          if selection?.type == .category || selection?.type == .article {
+//            editorOpen = true
+//          }
+        } label: {
+          Image(systemName: "newspaper")
+        }
+        .help("Create a new topic")
+      }
+      
+      ToolbarItem {
+        Button {
+//          if selection?.type == .category || selection?.type == .article {
+//            editorOpen = true
+//          }
+        } label: {
+          Image(systemName: "tray")
+        }
+        .help("Create a new category")
+      }
+      
+      ToolbarItem {
         Button {
           loading = true
           if let selectionPath = selection?.path {
@@ -120,7 +144,7 @@ struct NewsView: View {
         } label: {
           Image(systemName: "arrow.clockwise")
         }
-        .help("Reload News")
+        .help("Reload selected topic")
         .disabled(loading)
       }
     }
@@ -265,22 +289,18 @@ struct NewsView: View {
           }
         }
         else {
-          HStack(alignment: .center) {
-            Spacer()
-            HStack(alignment: .center, spacing: 8) {
-//              Image(systemName: "doc.append")
-//                .resizable()
-//                .scaledToFit()
+          EmptyView()
+//          HStack(alignment: .center) {
+//            Spacer()
+//            HStack(alignment: .center, spacing: 8) {
+//              Text("Select a news article to read")
 //                .foregroundStyle(.tertiary)
-//                .frame(width: 16, height: 16)
-              Text("Select a news post to read")
-                .foregroundStyle(.tertiary)
-                .font(.system(size: 13))
-            }
-            Spacer()
-          }
-          .padding()
-          .padding(.top, 48)
+//                .font(.subheadline)
+//            }
+//            Spacer()
+//          }
+//          .padding()
+//          .padding(.top, 48)
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)

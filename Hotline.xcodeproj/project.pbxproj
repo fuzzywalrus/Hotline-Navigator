@@ -72,6 +72,7 @@
 		DA72A0E22B4DAA4000A0F48A /* NewsArticle.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA72A0E12B4DAA4000A0F48A /* NewsArticle.swift */; };
 		DA77253F2B21176D006C5ABB /* NewsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA77253E2B21176D006C5ABB /* NewsView.swift */; platformFilter = ios; };
 		DA7725412B21435B006C5ABB /* ObservableScrollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7725402B21435B006C5ABB /* ObservableScrollView.swift */; };
+		DA81CA0E2ECBAA4200B198C5 /* App Icon.icon in Resources */ = {isa = PBXBuildFile; fileRef = DA81CA0D2ECBAA4200B198C5 /* App Icon.icon */; };
 		DA872B132BDDBF78008B1012 /* HotlinePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA872B122BDDBF78008B1012 /* HotlinePanel.swift */; platformFilters = (macos, ); };
 		DA872B152BDDEE1A008B1012 /* VisualEffectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA872B142BDDEE1A008B1012 /* VisualEffectView.swift */; platformFilters = (macos, ); };
 		DA99218E2C51AA5D0058FA6C /* HotlineDataBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA99218D2C51AA5D0058FA6C /* HotlineDataBuilder.swift */; };
@@ -188,6 +189,7 @@
 		DA72A0E12B4DAA4000A0F48A /* NewsArticle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewsArticle.swift; sourceTree = "<group>"; };
 		DA77253E2B21176D006C5ABB /* NewsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewsView.swift; sourceTree = "<group>"; };
 		DA7725402B21435B006C5ABB /* ObservableScrollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObservableScrollView.swift; sourceTree = "<group>"; };
+		DA81CA0D2ECBAA4200B198C5 /* App Icon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = "App Icon.icon"; sourceTree = "<group>"; };
 		DA872B122BDDBF78008B1012 /* HotlinePanel.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = HotlinePanel.swift; sourceTree = "<group>"; };
 		DA872B142BDDEE1A008B1012 /* VisualEffectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualEffectView.swift; sourceTree = "<group>"; };
 		DA99218D2C51AA5D0058FA6C /* HotlineDataBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotlineDataBuilder.swift; sourceTree = "<group>"; };
@@ -282,6 +284,7 @@
 		DA4B8F3C2EA6FDCE00CBFD53 /* Assets */ = {
 			isa = PBXGroup;
 			children = (
+				DA81CA0D2ECBAA4200B198C5 /* App Icon.icon */,
 				DABE8BF22B55DBFC00884D28 /* Sounds */,
 			);
 			path = Assets;
@@ -627,6 +630,7 @@
 				DABE8BFE2B55E69000884D28 /* error.aiff in Resources */,
 				DABE8BF42B55DC0A00884D28 /* transfer-complete.aiff in Resources */,
 				DABE8C002B55E69800884D28 /* server-message.aiff in Resources */,
+				DA81CA0E2ECBAA4200B198C5 /* App Icon.icon in Resources */,
 				DABE8C022B55E69D00884D28 /* new-news.aiff in Resources */,
 				DABE8BFC2B55DC6800884D28 /* user-logout.aiff in Resources */,
 				DABE8BF62B55DC2E00884D28 /* chat-message.aiff in Resources */,
