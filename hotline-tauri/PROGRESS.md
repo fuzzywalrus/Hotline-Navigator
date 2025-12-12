@@ -202,9 +202,9 @@ _No features currently in progress._
 - ✅ Handshake and login working
 - ✅ Server window opens and displays
 - ✅ Chat messages can be sent
-- ⏸️ Chat message receiving not yet implemented
+- ✅ Chat message receiving implemented (see next section)
 
-**Next task:** Implement chat message receiving with Tauri events
+**Next task:** ~~Implement chat message receiving with Tauri events~~ (Completed)
 
 ### 2025-12-11: Chat Message Receiving & Display
 
