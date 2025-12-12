@@ -40,7 +40,7 @@ export default function ServerHeader({
               'bg-gray-400'
             }`} title={connectionStatus} />
             <span className="text-xs text-gray-500 dark:text-gray-400 capitalize">
-              {connectionStatus === 'logged-in' ? 'Connected' :
+              {connectionStatus === 'logged-in' ? 'Logged in' :
                connectionStatus === 'logging-in' ? 'Logging in...' :
                connectionStatus === 'connecting' ? 'Connecting...' :
                connectionStatus === 'connected' ? 'Connected' :
