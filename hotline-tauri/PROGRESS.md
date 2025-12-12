@@ -36,8 +36,8 @@ This file tracks completed features and implementation notes for the Tauri port.
 - [ ] Transfer list window (active/completed transfers)
 
 ### Lower Priority Features
+- [x] Tracker server fetch (COMPLETED)
 - [ ] Bonjour/mDNS server discovery
-- [ ] Tracker server fetch
 - [ ] Bookmark import/export
 - [ ] Bookmark reordering (drag & drop)
 - [ ] Server agreement persistence (remember accepted agreements)
@@ -791,15 +791,106 @@ Created domain-specific components in proper folders:
 
 **Next task:** File uploads, server info display, or other features from porting guide
 
+### 2025-12-12: Tracker Support & UI Improvements
+
+**What was completed:**
+- **Tracker Protocol Implementation**: Complete HTRK (Hotline Tracker) protocol support in Rust
+- **Tracker Server Browsing**: Fetch and display servers from tracker bookmarks
+- **Tracker UI**: Expandable tracker list with nested server display, refresh functionality
+- **Default Tracker**: Auto-creates "Featured Servers" tracker (hltracker.com:5498) on first launch
+- **Bookmark Type Persistence**: Fixed bookmark type (server vs tracker) storage and retrieval
+- **UI Matching Screenshots**: Redesigned tracker and server windows to match Swift app design
+
+**Tracker Protocol Implementation:**
+- Created `TrackerClient` in Rust (`src-tauri/src/protocol/tracker.rs`)
+- Handles HTRK magic packet and version negotiation
+- Parses server information headers and decodes server entries
+- MacOS Roman encoding support for server names/descriptions
+- Filters out separator entries (e.g., "-------")
+- Returns `TrackerServer` structs with address, port, name, description, user count
+
+**Tracker UI Features:**
+- Tracker bookmarks display with expand/collapse chevron (▶/▼)
+- Tracker icon (16x16) and bold name
+- Refresh button (always visible) with loading spinner
+- Server count badge when expanded (e.g., "42 🌐")
+- Nested server list with indentation (34px) when expanded
+- Server entries show icon, name, description, user count with animated green dot
+- Click tracker servers to connect directly
+- No "Connect" button for tracker bookmarks (they're for browsing, not connecting)
+- Compact list style with alternating row backgrounds (34px row height)
+- Loading states and error handling for tracker fetch failures
+
+**Bookmark Type System:**
+- Added `BookmarkType` enum (Server, Tracker) to Rust types
+- Frontend uses `type: 'server' | 'tracker'` field
+- Fixed serde mapping: `#[serde(rename = "type")]` to match frontend
+- Auto-fixes lost bookmark types on load (restores default tracker type)
+- EditBookmarkDialog preserves type when updating bookmarks
+- Default tracker automatically created if missing
+
+**UI Redesign - Tracker Window:**
+- Compact list design matching Swift app (34px row height, alternating backgrounds)
+- Tracker icons (16x16) and Server icons (16x16) from Swift assets
+- Bookmark icon (11x11, 75% opacity) for saved server bookmarks
+- Chevron expand/collapse (10px, 50% opacity) for trackers
+- Refresh icon (16x16 SVG) for trackers
+- Header updated to "Servers" title with toolbar-style buttons
+- Clean, native macOS-style appearance
+
+**UI Redesign - Server Window:**
+- Tabs moved to left sidebar (200px width) with vertical layout
+- Tab icons (20x20) from Swift assets (Section Chat, Board, News, Files)
+- Users list moved below tabs in left sidebar (matching screenshot)
+- Divider between tabs and users
+- Active tab highlighted with blue background
+- Main content area on right
+- Removed top horizontal tab bar
+
+**Files created/modified:**
+- `src-tauri/src/protocol/tracker.rs` - NEW: TrackerClient implementation
+- `src-tauri/src/protocol/types.rs` - Added BookmarkType enum, TrackerServer struct
+- `src-tauri/src/state/mod.rs` - Added tracker type checks, default tracker creation, type restoration
+- `src-tauri/src/commands/mod.rs` - Added fetch_tracker_servers command
+- `src-tauri/src/lib.rs` - Registered fetch_tracker_servers command
+- `src-tauri/Cargo.toml` - Added encoding_rs dependency (already present)
+- `src/components/tracker/BookmarkList.tsx` - Complete UI redesign, tracker expansion, nested servers
+- `src/components/tracker/TrackerWindow.tsx` - Updated header, removed test button
+- `src/components/server/ServerWindow.tsx` - Moved tabs to left sidebar, users below tabs
+- `src/types/index.ts` - Added BookmarkType, TrackerBookmark, ServerBookmark types
+- `public/icons/tracker.png` - NEW: Tracker icon from Swift assets
+- `public/icons/server.png` - NEW: Server icon from Swift assets
+- `public/icons/section-*.png` - NEW: Section icons (Chat, Board, News, Files) from Swift assets
+
+**Implementation details:**
+- **Tracker Protocol**: HTRK magic (4 bytes) + version (2) + subversion (2) + server count (2) + server count 2 (2) + server entries
+- **Server Entry Format**: 2 bytes name length + name (MacOS Roman) + 2 bytes description length + description + address (32 bytes) + port (2) + users (2) + flags (2)
+- **Default Tracker**: Created automatically if missing, saved to disk, fixed if type is lost
+- **Type Persistence**: Frontend `type` field maps to Rust `bookmark_type` via serde rename
+- **UI Spacing**: Matches Swift exactly (34px rows, 10px chevron, 16x16 icons, 11x11 bookmark icon)
+
+**Testing status:**
+- ✅ Tracker protocol implementation complete
+- ✅ Default tracker auto-created on first launch
+- ✅ Tracker expansion and server browsing working
+- ✅ Bookmark types persist correctly across saves/edits
+- ✅ UI matches Swift app design and screenshots
+- ✅ Icons display correctly with fallbacks
+- ✅ Refresh functionality works for trackers
+- ✅ Nested server connection works
+- ⏸️ Needs testing with various tracker servers
+
+**Next task:** File uploads, connection status indicators, or server info display
+
 ---
 
 ### Future: Tracker Features
 
 **Todo (lower priority):**
+- [x] Tracker server fetch (COMPLETED - see above)
 - [ ] Import/export bookmarks (JSON file)
 - [ ] Bookmark reordering (drag & drop)
 - [ ] Bonjour/mDNS server discovery
-- [ ] Tracker server fetch
 
 ---
 
@@ -849,8 +940,7 @@ Created domain-specific components in proper folders:
 - [ ] Sound effects
 
 ### Advanced Features
-- [ ] Tracker server support and browsing
-- [ ] Server bookmarks cloud sync
+- [x] Tracker server support and browsing (COMPLETED)
 - [ ] Connection history tracking
 - [ ] Auto-reconnect on disconnect
 - [ ] Encrypted file transfers

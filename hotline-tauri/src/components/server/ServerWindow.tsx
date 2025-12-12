@@ -757,61 +757,111 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar - User list */}
-        <UserList
-          users={users}
-          unreadCounts={unreadCounts}
-          onUserClick={handleUserClick}
-        />
-
-        {/* Main area with tabs */}
-        <div className="flex-1 flex flex-col">
+        {/* Left sidebar - Tab navigation and Users */}
+        <div className="w-[200px] bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
           {/* Tab navigation */}
-          <div className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex">
+          <div className="flex flex-col gap-1 p-2">
             <button
               onClick={() => setActiveTab('chat')}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              className={`flex items-center gap-2 px-2 py-2 rounded transition-colors ${
                 activeTab === 'chat'
-                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                  ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200'
               }`}
+              title="Public Chat"
             >
-              Chat
+              <img 
+                src="/icons/section-chat.png" 
+                alt="Chat" 
+                className="w-5 h-5"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                }}
+              />
+              <span className="text-sm font-medium">Chat</span>
             </button>
             <button
               onClick={() => setActiveTab('board')}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              className={`flex items-center gap-2 px-2 py-2 rounded transition-colors ${
                 activeTab === 'board'
-                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                  ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200'
               }`}
+              title="Message Board"
             >
-              Board
+              <img 
+                src="/icons/section-board.png" 
+                alt="Board" 
+                className="w-5 h-5"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                }}
+              />
+              <span className="text-sm font-medium">Board</span>
             </button>
             <button
               onClick={() => setActiveTab('news')}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              className={`flex items-center gap-2 px-2 py-2 rounded transition-colors ${
                 activeTab === 'news'
-                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                  ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200'
               }`}
+              title="News"
             >
-              News
+              <img 
+                src="/icons/section-news.png" 
+                alt="News" 
+                className="w-5 h-5"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                }}
+              />
+              <span className="text-sm font-medium">News</span>
             </button>
             <button
               onClick={() => setActiveTab('files')}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              className={`flex items-center gap-2 px-2 py-2 rounded transition-colors ${
                 activeTab === 'files'
-                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                  ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200'
               }`}
+              title="Files"
             >
-              Files
+              <img 
+                src="/icons/section-files.png" 
+                alt="Files" 
+                className="w-5 h-5"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                }}
+              />
+              <span className="text-sm font-medium">Files</span>
             </button>
           </div>
 
-          {/* Chat view */}
-          {activeTab === 'chat' && (
+          {/* Divider */}
+          <div className="border-t border-gray-200 dark:border-gray-700 my-2"></div>
+
+          {/* User list below tabs */}
+          <div className="flex-1 overflow-auto">
+            <UserList
+              users={users}
+              unreadCounts={unreadCounts}
+              onUserClick={handleUserClick}
+            />
+          </div>
+        </div>
+
+        {/* Main area with content */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* Content area */}
+          <div className="flex-1 overflow-auto">
+            {/* Chat view */}
+            {activeTab === 'chat' && (
             <ChatTab
               serverName={serverName}
               messages={messages}
@@ -824,10 +874,10 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
               onAcceptAgreement={handleAcceptAgreement}
               onDeclineAgreement={handleDeclineAgreement}
             />
-          )}
+            )}
 
-          {/* Board view */}
-          {activeTab === 'board' && (
+            {/* Board view */}
+            {activeTab === 'board' && (
             <BoardTab
               boardPosts={boardPosts}
               loadingBoard={loadingBoard}
@@ -836,10 +886,10 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
               onBoardMessageChange={setBoardMessage}
               onPostBoard={handlePostBoard}
             />
-          )}
+            )}
 
-          {/* News view */}
-          {activeTab === 'news' && (
+            {/* News view */}
+            {activeTab === 'news' && (
             <NewsTab
               newsPath={newsPath}
               newsCategories={newsCategories}
@@ -860,10 +910,10 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
               onComposerBodyChange={setComposerBody}
               onPostNews={handlePostNews}
             />
-          )}
+            )}
 
-          {/* Files view */}
-          {activeTab === 'files' && (
+            {/* Files view */}
+            {activeTab === 'files' && (
             <FilesTab
               files={files}
               currentPath={currentPath}
@@ -871,7 +921,8 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
               onPathChange={setCurrentPath}
               onDownloadFile={handleDownloadFile}
             />
-          )}
+            )}
+          </div>
         </div>
       </div>
 

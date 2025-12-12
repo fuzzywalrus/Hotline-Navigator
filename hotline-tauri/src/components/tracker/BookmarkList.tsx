@@ -211,68 +211,106 @@ export default function BookmarkList({ bookmarks }: BookmarkListProps) {
 
   return (
     <>
-      <div className="divide-y divide-gray-200 dark:divide-gray-700">
-        {bookmarks.map((bookmark) => {
+      <div className="bg-white dark:bg-gray-900">
+        {bookmarks.map((bookmark, index) => {
           const isTracker = bookmark.type === 'tracker';
           const isExpanded = expandedTrackers.has(bookmark.id);
           const servers = trackerServers.get(bookmark.id) || [];
           const isLoading = loadingTrackers.has(bookmark.id);
+          const isEven = index % 2 === 0;
           
           return (
             <div key={bookmark.id}>
               {isTracker ? (
-                // Tracker display - expandable, no connect button
+                // Tracker display - compact, list-like
                 <>
                   <div
-                    className="px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer flex items-center gap-2 group"
+                    className={`h-[34px] px-2 flex items-center gap-1.5 cursor-pointer group ${
+                      isEven 
+                        ? 'bg-white dark:bg-gray-900' 
+                        : 'bg-gray-50 dark:bg-gray-800/50'
+                    } hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors`}
                     onClick={() => handleToggleTracker(bookmark.id)}
                   >
-                    {/* Chevron expand/collapse button */}
+                    {/* Chevron - 10px width, opacity 0.5 */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         handleToggleTracker(bookmark.id);
                       }}
-                      className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 flex-shrink-0 w-4 flex items-center justify-center text-xs font-bold"
+                      className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 flex-shrink-0 w-[10px] flex items-center justify-center text-[10px] font-bold opacity-50"
                       aria-label={isExpanded ? 'Collapse tracker' : 'Expand tracker'}
-                      title={isExpanded ? 'Collapse tracker' : 'Expand tracker'}
                     >
                       {isExpanded ? '▼' : '▶'}
                     </button>
                     
-                    {/* Tracker icon placeholder */}
-                    <div className="w-4 h-4 flex-shrink-0 bg-blue-500 rounded flex items-center justify-center">
-                      <span className="text-white text-[8px] font-bold">T</span>
+                    {/* Tracker icon - 16x16 */}
+                    <div className="w-4 h-4 flex-shrink-0 flex items-center justify-center">
+                      <img 
+                        src="/icons/tracker.png" 
+                        alt="Tracker" 
+                        className="w-4 h-4"
+                        onError={(e) => {
+                          // Fallback to SVG if image not found
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                          svg.setAttribute('class', 'w-4 h-4 text-blue-600 dark:text-blue-400');
+                          svg.setAttribute('viewBox', '0 0 16 16');
+                          svg.setAttribute('fill', 'currentColor');
+                          svg.innerHTML = '<path d="M8 0L0 4v8l8 4 8-4V4L8 0zm0 2.18l6 3v5.64l-6 3-6-3V5.18l6-3z"/><circle cx="8" cy="8" r="1.5"/>';
+                          target.parentNode?.appendChild(svg);
+                        }}
+                      />
                     </div>
                     
-                    {/* Tracker name */}
-                    <span className="text-sm font-semibold text-gray-900 dark:text-white flex-1">
-                      {bookmark.name}
+                    {/* Tracker name - bold */}
+                    <span className="text-sm font-semibold text-gray-900 dark:text-white flex-1 truncate">
+                  {bookmark.name}
                     </span>
                     
-                    {/* Loading indicator */}
+                    {/* Loading indicator - mini progress view */}
                     {isLoading && (
-                      <div className="flex-shrink-0 w-4 h-4">
-                        <div className="w-4 h-4 border-2 border-gray-300 dark:border-gray-600 border-t-blue-600 dark:border-t-blue-400 rounded-full animate-spin"></div>
+                      <div className="flex-shrink-0 w-3 h-3 mr-1">
+                        <div className="w-3 h-3 border border-gray-300 dark:border-gray-600 border-t-blue-600 dark:border-t-blue-400 rounded-full animate-spin"></div>
                       </div>
                     )}
                     
                     {/* Server count badge when expanded */}
                     {isExpanded && servers.length > 0 && !isLoading && (
-                      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-xs text-gray-600 dark:text-gray-400">
+                      <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs text-gray-500 dark:text-gray-400">
                         <span>{servers.length}</span>
                         <span className="text-[10px]">🌐</span>
-                      </div>
+              </div>
                     )}
                     
+                    {/* Refresh button - always visible for trackers */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRefreshTracker(bookmark.id);
+                      }}
+                      disabled={isLoading}
+                      className="text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 flex-shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      title="Refresh tracker servers"
+                    >
+                      {isLoading ? (
+                        <div className="w-4 h-4 border-2 border-gray-300 dark:border-gray-600 border-t-blue-600 dark:border-t-blue-400 rounded-full animate-spin"></div>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                      )}
+                    </button>
+                    
                     {/* Edit/Delete buttons on hover */}
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity mr-1">
+                <button
                         onClick={(e) => {
                           e.stopPropagation();
                           setEditingBookmark(bookmark);
                         }}
-                        className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 text-xs px-2 py-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/30"
+                        className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 text-xs px-1.5 py-0.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900/30"
                         title="Edit tracker"
                       >
                         Edit
@@ -282,7 +320,7 @@ export default function BookmarkList({ bookmarks }: BookmarkListProps) {
                           e.stopPropagation();
                           setDeletingId(bookmark.id);
                         }}
-                        className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-xs px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30"
+                        className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-xs px-1.5 py-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30"
                         title="Delete tracker"
                       >
                         Delete
@@ -290,125 +328,177 @@ export default function BookmarkList({ bookmarks }: BookmarkListProps) {
                     </div>
                   </div>
                   
-                  {/* Tracker servers list (when expanded) - nested with indentation */}
-                  {isExpanded && (
-                    <div className="ml-8">
-                      {isLoading ? (
-                        <div className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">
-                          Loading servers...
+                  {/* Tracker servers list (when expanded) - indented 34px */}
+                  {isExpanded && servers.map((server, serverIndex) => {
+                    const serverIsEven = (index + serverIndex + 1) % 2 === 0;
+                    return (
+                      <div
+                        key={server.id}
+                        className={`h-[34px] pl-[34px] pr-2 flex items-center gap-1.5 cursor-pointer group ${
+                          serverIsEven 
+                            ? 'bg-white dark:bg-gray-900' 
+                            : 'bg-gray-50 dark:bg-gray-800/50'
+                        } hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors`}
+                        onClick={() => handleConnectToTrackerServer(bookmark.id, server)}
+                      >
+                        {/* Server icon - 16x16 */}
+                        <div className="w-4 h-4 flex-shrink-0 flex items-center justify-center">
+                          <img 
+                            src="/icons/server.png" 
+                            alt="Server" 
+                            className="w-4 h-4"
+                            onError={(e) => {
+                              // Fallback to SVG if image not found
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                              const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                              svg.setAttribute('class', 'w-4 h-4 text-gray-600 dark:text-gray-400');
+                              svg.setAttribute('viewBox', '0 0 16 16');
+                              svg.setAttribute('fill', 'currentColor');
+                              svg.innerHTML = '<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1" fill="none"/><circle cx="8" cy="8" r="2"/>';
+                              target.parentNode?.appendChild(svg);
+                            }}
+                          />
                         </div>
-                      ) : servers.length === 0 ? (
-                        <div className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">
-                          No servers found
-                        </div>
-                      ) : (
-                        servers.map((server) => (
-                          <div
-                            key={server.id}
-                            className="px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer flex items-center gap-2 group"
-                            onClick={() => handleConnectToTrackerServer(bookmark.id, server)}
-                          >
-                            {/* Server icon */}
-                            <div className="w-4 h-4 flex-shrink-0 bg-gray-400 dark:bg-gray-600 rounded flex items-center justify-center">
-                              <span className="text-white text-[8px]">S</span>
-                            </div>
-                            
-                            {/* Server info */}
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm text-gray-900 dark:text-white truncate">
-                                {server.name}
-                              </div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                                {server.address}:{server.port}
-                                {server.description && ` • ${server.description}`}
-                                {server.users > 0 && ` • ${server.users} user${server.users !== 1 ? 's' : ''}`}
-                              </div>
-                            </div>
-                            
-                            {/* User count indicator */}
-                            {server.users > 0 && (
-                              <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
-                                <span>{server.users}</span>
-                                <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
-                              </div>
-                            )}
+                        
+                        {/* Server name */}
+                        <span className="text-sm text-gray-900 dark:text-white flex-1 truncate">
+                          {server.name}
+                        </span>
+                        
+                        {/* Server description if available */}
+                        {server.description && (
+                          <span className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[200px]">
+                            {server.description}
+                          </span>
+                        )}
+                        
+                        {/* User count with animated dot */}
+                        {server.users > 0 && (
+                          <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
+                            <span>{server.users}</span>
+                            <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
                           </div>
-                        ))
-                      )}
+                        )}
+                      </div>
+                    );
+                  })}
+                  
+                  {/* Loading/Empty states */}
+                  {isExpanded && isLoading && (
+                    <div className={`h-[34px] pl-[34px] pr-2 flex items-center ${
+                      (index + servers.length + 1) % 2 === 0 
+                        ? 'bg-white dark:bg-gray-900' 
+                        : 'bg-gray-50 dark:bg-gray-800/50'
+                    }`}>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">Loading servers...</span>
+                    </div>
+                  )}
+                  {isExpanded && !isLoading && servers.length === 0 && (
+                    <div className={`h-[34px] pl-[34px] pr-2 flex items-center ${
+                      (index + 1) % 2 === 0 
+                        ? 'bg-white dark:bg-gray-900' 
+                        : 'bg-gray-50 dark:bg-gray-800/50'
+                    }`}>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">No servers found</span>
                     </div>
                   )}
                 </>
               ) : (
-                // Regular server bookmark - with connect button
+                // Regular server bookmark - compact list style
                 <div
-                  className="px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group"
+                  className={`h-[34px] px-2 flex items-center gap-1.5 group ${
+                    isEven 
+                      ? 'bg-white dark:bg-gray-900' 
+                      : 'bg-gray-50 dark:bg-gray-800/50'
+                  } hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors`}
                 >
-                  <div className="flex flex-col">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1 flex items-center gap-2">
-                        {/* Server icon */}
-                        <div className="w-4 h-4 flex-shrink-0 bg-gray-400 dark:bg-gray-600 rounded flex items-center justify-center">
-                          <span className="text-white text-[8px]">S</span>
-                        </div>
-                        <div className="flex-1">
-                          <h3 className="text-sm font-medium text-gray-900 dark:text-white">
-                            {bookmark.name}
-                          </h3>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            {bookmark.address}:{bookmark.port} • {bookmark.login}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => setEditingBookmark(bookmark)}
-                          className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 text-sm font-medium px-2 py-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/30"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => setDeletingId(bookmark.id)}
-                          className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-sm font-medium px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30"
-                        >
-                          Delete
-                        </button>
-                        <button
-                          onClick={() => handleConnect(bookmark)}
-                          disabled={connectingId === bookmark.id}
-                          className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 text-sm font-medium px-3 py-1 rounded bg-blue-50 dark:bg-blue-900/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {connectingId === bookmark.id ? 'Connecting...' : 'Connect'}
-                        </button>
-                      </div>
-                    </div>
+                  {/* Bookmark icon - 11x11, opacity 0.75 
+                      This indicates it's a saved server bookmark (not a tracker).
+                      In the Swift app, server bookmarks show bookmark.fill before the server icon. */}
+                  <svg className="w-[11px] h-[11px] text-gray-400 dark:text-gray-500 opacity-75 flex-shrink-0" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M2 2v12l6-3 6 3V2H2zm0-1h12a1 1 0 0 1 1 1v12a1 1 0 0 1-0.515 0.877l-6-3a1 1 0 0 1-0.97 0l-6 3A1 1 0 0 1 0 14V2a1 1 0 0 1 1-1z"/>
+                  </svg>
+                  
+                  {/* Server icon - 16x16 */}
+                  <div className="w-4 h-4 flex-shrink-0 flex items-center justify-center">
+                    <img 
+                      src="/icons/server.png" 
+                      alt="Server" 
+                      className="w-4 h-4"
+                      onError={(e) => {
+                        // Fallback to SVG if image not found
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                        svg.setAttribute('class', 'w-4 h-4 text-gray-600 dark:text-gray-400');
+                        svg.setAttribute('viewBox', '0 0 16 16');
+                        svg.setAttribute('fill', 'currentColor');
+                        svg.innerHTML = '<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1" fill="none"/><circle cx="8" cy="8" r="2"/>';
+                        target.parentNode?.appendChild(svg);
+                      }}
+                    />
                   </div>
                   
-                  {/* Connection error message */}
-                  {connectionErrors.has(bookmark.id) && (
-                    <div className="mt-2 px-3 py-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md flex items-start justify-between gap-2">
-                      <div className="flex-1">
-                        <p className="text-xs text-red-800 dark:text-red-200 font-medium">
-                          {connectionErrors.get(bookmark.id)}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setConnectionErrors((prev) => {
-                            const next = new Map(prev);
-                            next.delete(bookmark.id);
-                            return next;
-                          });
-                        }}
-                        className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-200 text-xs font-medium"
-                        aria-label="Dismiss error"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  )}
+                  {/* Server name - not bold */}
+                  <span className="text-sm text-gray-900 dark:text-white flex-1 truncate">
+                    {bookmark.name}
+                  </span>
+                  
+                  {/* Edit/Delete/Connect buttons on hover */}
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => setEditingBookmark(bookmark)}
+                      className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 text-xs px-1.5 py-0.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900/30"
+                      title="Edit bookmark"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => setDeletingId(bookmark.id)}
+                      className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-xs px-1.5 py-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30"
+                      title="Delete bookmark"
+                >
+                  Delete
+                </button>
+                <button
+                  onClick={() => handleConnect(bookmark)}
+                  disabled={connectingId === bookmark.id}
+                      className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 text-xs px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Connect to server"
+                >
+                  {connectingId === bookmark.id ? 'Connecting...' : 'Connect'}
+                </button>
+              </div>
+            </div>
+              )}
+              
+              {/* Connection error message for servers */}
+              {!isTracker && connectionErrors.has(bookmark.id) && (
+                <div className={`px-2 py-1.5 bg-red-50 dark:bg-red-900/20 border-l-2 border-red-500 flex items-center justify-between gap-2 ${
+                  isEven 
+                    ? 'bg-red-50 dark:bg-red-900/20' 
+                    : 'bg-red-100 dark:bg-red-900/30'
+                }`}>
+                  <p className="text-xs text-red-800 dark:text-red-200 font-medium flex-1">
+                    {connectionErrors.get(bookmark.id)}
+                  </p>
+                  <button
+                    onClick={() => {
+                      setConnectionErrors((prev) => {
+                        const next = new Map(prev);
+                        next.delete(bookmark.id);
+                        return next;
+                      });
+                    }}
+                    className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-200 text-xs font-medium"
+                    aria-label="Dismiss error"
+                  >
+                    ✕
+                  </button>
                 </div>
               )}
-            </div>
+          </div>
           );
         })}
       </div>

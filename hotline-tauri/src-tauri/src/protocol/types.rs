@@ -21,7 +21,7 @@ pub struct Bookmark {
     pub icon: Option<u16>,
     #[serde(default)]
     pub auto_connect: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub bookmark_type: Option<BookmarkType>,
 }
 

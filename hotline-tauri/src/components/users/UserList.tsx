@@ -17,8 +17,8 @@ interface UserListProps {
 
 export default function UserList({ users, unreadCounts, onUserClick }: UserListProps) {
   return (
-    <div className="w-48 bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 p-4">
-      <h2 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">
+    <div className="p-2">
+      <h2 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2 px-2">
         Users ({users.length})
       </h2>
       <div className="space-y-1">

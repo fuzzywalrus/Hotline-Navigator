@@ -22,12 +22,14 @@ export default function EditBookmarkDialog({ bookmark, onClose }: EditBookmarkDi
     e.preventDefault();
 
     const updatedBookmark: Bookmark = {
-      ...bookmark,
+      ...bookmark, // Preserve all fields including 'type'
       name: formData.name || `${formData.address}:${formData.port}`,
       address: formData.address,
       port: parseInt(formData.port),
       login: formData.login,
       password: formData.password || undefined,
+      // Explicitly preserve the type field
+      type: bookmark.type,
     };
 
     try {

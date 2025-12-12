@@ -38,19 +38,35 @@ impl AppState {
     }
 
     fn load_bookmarks(path: &PathBuf) -> Result<Vec<Bookmark>, String> {
-        let mut bookmarks = if !path.exists() {
+        let mut bookmarks: Vec<Bookmark> = if !path.exists() {
             Vec::new()
         } else {
             let data = fs::read_to_string(path)
                 .map_err(|e| format!("Failed to read bookmarks: {}", e))?;
 
-            serde_json::from_str(&data)
+            serde_json::from_str::<Vec<Bookmark>>(&data)
                 .map_err(|e| format!("Failed to parse bookmarks: {}", e))?
         };
 
-        // Ensure default tracker bookmark exists
+        // Ensure default tracker bookmark exists and fix any that lost their type
         let default_tracker_address = "hltracker.com";
         let default_tracker_port = 5498u16;
+        
+        let mut needs_save = false;
+        
+        // Fix any existing default tracker that lost its type
+        for bookmark in bookmarks.iter_mut() {
+            if bookmark.id == "default-tracker-hltracker" 
+                || (bookmark.address == default_tracker_address && bookmark.port == default_tracker_port) {
+                // This is the default tracker - ensure it has the correct type
+                if !matches!(bookmark.bookmark_type, Some(crate::protocol::types::BookmarkType::Tracker)) {
+                    bookmark.bookmark_type = Some(crate::protocol::types::BookmarkType::Tracker);
+                    bookmark.id = "default-tracker-hltracker".to_string(); // Ensure correct ID
+                    bookmark.name = "Featured Servers".to_string(); // Ensure correct name
+                    needs_save = true;
+                }
+            }
+        }
         
         let has_default_tracker = bookmarks.iter().any(|b: &Bookmark| {
             b.address == default_tracker_address 
@@ -71,8 +87,11 @@ impl AppState {
                 bookmark_type: Some(crate::protocol::types::BookmarkType::Tracker),
             };
             bookmarks.insert(0, default_tracker);
-            
-            // Save updated bookmarks to disk
+            needs_save = true;
+        }
+        
+        // Save if we made any changes
+        if needs_save {
             let json = serde_json::to_string_pretty(&bookmarks)
                 .map_err(|e| format!("Failed to serialize bookmarks: {}", e))?;
             fs::write(path, json)
