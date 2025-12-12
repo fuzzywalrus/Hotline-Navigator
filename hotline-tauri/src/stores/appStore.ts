@@ -24,6 +24,7 @@ interface AppState {
 
   // Actions
   addBookmark: (bookmark: Bookmark) => void;
+  setBookmarks: (bookmarks: Bookmark[]) => void;
   removeBookmark: (id: string) => void;
   updateBookmark: (id: string, bookmark: Partial<Bookmark>) => void;
 
@@ -47,9 +48,17 @@ export const useAppStore = create<AppState>((set) => ({
   showAbout: false,
   showUpdate: false,
 
-  addBookmark: (bookmark) => set((state) => ({
-    bookmarks: [...state.bookmarks, bookmark],
-  })),
+  addBookmark: (bookmark) => set((state) => {
+    // Check if bookmark already exists to prevent duplicates
+    if (state.bookmarks.some((b) => b.id === bookmark.id)) {
+      return state;
+    }
+    return {
+      bookmarks: [...state.bookmarks, bookmark],
+    };
+  }),
+
+  setBookmarks: (bookmarks) => set({ bookmarks }),
 
   removeBookmark: (id) => set((state) => ({
     bookmarks: state.bookmarks.filter((b) => b.id !== id),

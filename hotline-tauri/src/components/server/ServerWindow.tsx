@@ -2,11 +2,23 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import MessageDialog from '../chat/MessageDialog';
+import UserInfoDialog from '../users/UserInfoDialog';
 import UserList from '../users/UserList';
 import ChatTab from '../chat/ChatTab';
 import BoardTab from '../board/BoardTab';
 import FilesTab from '../files/FilesTab';
 import NewsTab from '../news/NewsTab';
+
+// Hotline user flag bits
+const USER_FLAG_ADMIN = 0x0001;
+const USER_FLAG_IDLE = 0x0002;
+
+function parseUserFlags(flags: number) {
+  return {
+    isAdmin: (flags & USER_FLAG_ADMIN) !== 0,
+    isIdle: (flags & USER_FLAG_IDLE) !== 0,
+  };
+}
 
 interface ChatMessage {
   userId: number;
@@ -19,6 +31,9 @@ interface User {
   userId: number;
   userName: string;
   iconId: number;
+  flags: number;
+  isAdmin: boolean;
+  isIdle: boolean;
 }
 
 interface PrivateMessage {
@@ -84,6 +99,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
   const [composerBody, setComposerBody] = useState('');
   const [postingNews, setPostingNews] = useState(false);
   const [messageDialogUser, setMessageDialogUser] = useState<User | null>(null);
+  const [userInfoDialogUser, setUserInfoDialogUser] = useState<User | null>(null);
   const [unreadCounts, setUnreadCounts] = useState<Map<number, number>>(new Map());
   const [privateMessageHistory, setPrivateMessageHistory] = useState<Map<number, PrivateMessage[]>>(new Map());
 
@@ -170,7 +186,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
 
   // Listen for user events
   useEffect(() => {
-    const unlistenJoin = listen<{ userId: number; userName: string; iconId: number }>(
+    const unlistenJoin = listen<{ userId: number; userName: string; iconId: number; flags: number }>(
       `user-joined-${serverId}`,
       (event) => {
         setUsers((prev) => {
@@ -178,10 +194,14 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
           if (prev.some(u => u.userId === event.payload.userId)) {
             return prev;
           }
+          const { isAdmin, isIdle } = parseUserFlags(event.payload.flags);
           return [...prev, {
             userId: event.payload.userId,
             userName: event.payload.userName,
             iconId: event.payload.iconId,
+            flags: event.payload.flags,
+            isAdmin,
+            isIdle,
           }];
         });
       }
@@ -194,12 +214,20 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
       }
     );
 
-    const unlistenChange = listen<{ userId: number; userName: string; iconId: number }>(
+    const unlistenChange = listen<{ userId: number; userName: string; iconId: number; flags: number }>(
       `user-changed-${serverId}`,
       (event) => {
+        const { isAdmin, isIdle } = parseUserFlags(event.payload.flags);
         setUsers((prev) => prev.map(u =>
           u.userId === event.payload.userId
-            ? { userId: event.payload.userId, userName: event.payload.userName, iconId: event.payload.iconId }
+            ? {
+                userId: event.payload.userId,
+                userName: event.payload.userName,
+                iconId: event.payload.iconId,
+                flags: event.payload.flags,
+                isAdmin,
+                isIdle,
+              }
             : u
         ));
       }
@@ -264,6 +292,11 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
       unlisten.then((fn) => fn());
     };
   }, [serverId]);
+
+  const handleUserClick = (user: User) => {
+    // Open user info dialog
+    setUserInfoDialogUser(user);
+  };
 
   const handleOpenMessageDialog = (user: User) => {
     // Reset unread count for this user
@@ -532,7 +565,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
         <UserList
           users={users}
           unreadCounts={unreadCounts}
-          onUserClick={handleOpenMessageDialog}
+          onUserClick={handleUserClick}
         />
 
         {/* Main area with tabs */}
@@ -641,6 +674,15 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
           )}
         </div>
       </div>
+
+      {/* User Info Dialog */}
+      {userInfoDialogUser && (
+        <UserInfoDialog
+          user={userInfoDialogUser}
+          onClose={() => setUserInfoDialogUser(null)}
+          onSendMessage={handleOpenMessageDialog}
+        />
+      )}
 
       {/* Message Dialog */}
       {messageDialogUser && (

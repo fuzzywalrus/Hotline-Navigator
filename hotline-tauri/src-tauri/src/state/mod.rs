@@ -59,9 +59,10 @@ impl AppState {
         Ok(())
     }
 
-    pub async fn connect_server(&self, bookmark: Bookmark) -> Result<String, String> {
+    pub async fn connect_server(&self, bookmark: Bookmark, username: String, user_icon_id: u16) -> Result<String, String> {
         let server_id = bookmark.id.clone();
         let client = HotlineClient::new(bookmark);
+        client.set_user_info(username, user_icon_id).await;
 
         client.connect().await?;
 
@@ -87,11 +88,12 @@ impl AppState {
                         });
                         let _ = app_handle.emit(&format!("chat-message-{}", server_id_clone), payload);
                     }
-                    HotlineEvent::UserJoined { user_id, user_name, icon } => {
+                    HotlineEvent::UserJoined { user_id, user_name, icon, flags } => {
                         let payload = serde_json::json!({
                             "userId": user_id,
                             "userName": user_name,
                             "iconId": icon,
+                            "flags": flags,
                         });
                         let _ = app_handle.emit(&format!("user-joined-{}", server_id_clone), payload);
                     }
@@ -101,11 +103,12 @@ impl AppState {
                         });
                         let _ = app_handle.emit(&format!("user-left-{}", server_id_clone), payload);
                     }
-                    HotlineEvent::UserChanged { user_id, user_name, icon } => {
+                    HotlineEvent::UserChanged { user_id, user_name, icon, flags } => {
                         let payload = serde_json::json!({
                             "userId": user_id,
                             "userName": user_name,
                             "iconId": icon,
+                            "flags": flags,
                         });
                         let _ = app_handle.emit(&format!("user-changed-{}", server_id_clone), payload);
                     }

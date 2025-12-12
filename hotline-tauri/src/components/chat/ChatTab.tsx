@@ -42,8 +42,10 @@ export default function ChatTab({
         ) : (
           messages.map((msg, index) => {
             const isOwnMessage = msg.userName === 'Me';
+            // Create unique key from userId, timestamp, message content, and index
+            const uniqueKey = `${msg.userId}-${msg.timestamp.getTime()}-${msg.message.substring(0, 20)}-${index}`;
             return (
-              <div key={index} className="text-sm">
+              <div key={uniqueKey} className="text-sm">
                 <span
                   className={`font-semibold ${
                     isOwnMessage

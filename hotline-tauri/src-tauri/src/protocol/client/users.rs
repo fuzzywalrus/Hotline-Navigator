@@ -33,7 +33,7 @@ impl HotlineClient {
         Ok(())
     }
 
-    pub(crate) fn parse_user_info(data: &[u8]) -> Result<(u16, String, u16), String> {
+    pub(crate) fn parse_user_info(data: &[u8]) -> Result<(u16, String, u16, u16), String> {
         // UserNameWithInfo format:
         // 2 bytes: User ID
         // 2 bytes: Icon ID
@@ -47,7 +47,7 @@ impl HotlineClient {
 
         let user_id = u16::from_be_bytes([data[0], data[1]]);
         let icon_id = u16::from_be_bytes([data[2], data[3]]);
-        // Skip user flags (bytes 4-5)
+        let flags = u16::from_be_bytes([data[4], data[5]]);
         let name_len = u16::from_be_bytes([data[6], data[7]]) as usize;
 
         if data.len() < 8 + name_len {
@@ -56,6 +56,6 @@ impl HotlineClient {
 
         let username = String::from_utf8_lossy(&data[8..8 + name_len]).to_string();
 
-        Ok((user_id, username, icon_id))
+        Ok((user_id, username, icon_id, flags))
     }
 }

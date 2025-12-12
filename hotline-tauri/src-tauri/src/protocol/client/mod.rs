@@ -27,9 +27,9 @@ pub enum HotlineEvent {
     ChatMessage { user_id: u16, user_name: String, message: String },
     ServerMessage(String),
     PrivateMessage { user_id: u16, message: String },
-    UserJoined { user_id: u16, user_name: String, icon: u16 },
+    UserJoined { user_id: u16, user_name: String, icon: u16, flags: u16 },
     UserLeft { user_id: u16 },
-    UserChanged { user_id: u16, user_name: String, icon: u16 },
+    UserChanged { user_id: u16, user_name: String, icon: u16, flags: u16 },
     AgreementRequired(String),
     FileList { files: Vec<FileInfo> },
     NewMessageBoardPost(String),
@@ -46,6 +46,8 @@ pub struct FileInfo {
 
 pub struct HotlineClient {
     bookmark: Bookmark,
+    username: Arc<Mutex<String>>,
+    user_icon_id: Arc<Mutex<u16>>,
     status: Arc<Mutex<ConnectionStatus>>,
     read_half: Arc<Mutex<Option<OwnedReadHalf>>>,
     write_half: Arc<Mutex<Option<OwnedWriteHalf>>>,
@@ -70,6 +72,8 @@ impl HotlineClient {
 
         Self {
             bookmark,
+            username: Arc::new(Mutex::new("guest".to_string())),
+            user_icon_id: Arc::new(Mutex::new(191)),
             status: Arc::new(Mutex::new(ConnectionStatus::Disconnected)),
             read_half: Arc::new(Mutex::new(None)),
             write_half: Arc::new(Mutex::new(None)),
@@ -81,6 +85,11 @@ impl HotlineClient {
             receive_task: Arc::new(Mutex::new(None)),
             keepalive_task: Arc::new(Mutex::new(None)),
         }
+    }
+
+    pub async fn set_user_info(&self, username: String, user_icon_id: u16) {
+        *self.username.lock().await = username;
+        *self.user_icon_id.lock().await = user_icon_id;
     }
 
     pub(crate) fn next_transaction_id(&self) -> u32 {
@@ -210,13 +219,16 @@ impl HotlineClient {
             FieldType::UserPassword,
             self.bookmark.password.as_deref().unwrap_or(""),
         ));
+        let user_icon_id = *self.user_icon_id.lock().await;
+        let username = self.username.lock().await.clone();
+        
         transaction.add_field(TransactionField::from_u16(
             FieldType::UserIconId,
-            self.bookmark.icon.unwrap_or(414),
+            user_icon_id,
         ));
         transaction.add_field(TransactionField::from_string(
             FieldType::UserName,
-            &self.bookmark.name,
+            &username,
         ));
         transaction.add_field(TransactionField::from_u32(FieldType::VersionNumber, 123));
 
@@ -422,11 +434,12 @@ impl HotlineClient {
                         if field.field_type == FieldType::UserNameWithInfo {
                             has_user_info = true;
                             if let Ok(user_info) = HotlineClient::parse_user_info(&field.data) {
-                                println!("Parsed user: {} (ID: {}, Icon: {})", user_info.1, user_info.0, user_info.2);
+                                println!("Parsed user: {} (ID: {}, Icon: {}, Flags: 0x{:04x})", user_info.1, user_info.0, user_info.2, user_info.3);
                                 let _ = event_tx.send(HotlineEvent::UserJoined {
                                     user_id: user_info.0,
                                     user_name: user_info.1,
                                     icon: user_info.2,
+                                    flags: user_info.3,
                                 });
                             }
                         } else if field.field_type == FieldType::FileNameWithInfo {
@@ -534,11 +547,16 @@ impl HotlineClient {
                     .get_field(FieldType::UserIconId)
                     .and_then(|f| f.to_u16().ok())
                     .unwrap_or(414);
+                let flags = transaction
+                    .get_field(FieldType::UserFlags)
+                    .and_then(|f| f.to_u16().ok())
+                    .unwrap_or(0);
 
                 let _ = event_tx.send(HotlineEvent::UserChanged {
                     user_id,
                     user_name,
                     icon,
+                    flags,
                 });
             }
             TransactionType::NotifyUserDelete => {

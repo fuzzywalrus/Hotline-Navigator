@@ -31,8 +31,11 @@ export default function FilesTab({
         >
           Root
         </button>
-        {currentPath.map((folder, index) => (
-          <span key={index} className="flex items-center gap-2">
+        {currentPath.map((folder, index) => {
+          // Create unique key from path segment and position
+          const uniqueKey = `path-${index}-${folder}`;
+          return (
+          <span key={uniqueKey} className="flex items-center gap-2">
             <span className="text-gray-400">/</span>
             <button
               onClick={() => onPathChange(currentPath.slice(0, index + 1))}
@@ -41,7 +44,8 @@ export default function FilesTab({
               {folder}
             </button>
           </span>
-        ))}
+          );
+        })}
       </div>
 
       {/* File list */}
@@ -52,9 +56,13 @@ export default function FilesTab({
           </div>
         ) : (
           <div className="space-y-1">
-            {files.map((file) => (
+            {files.map((file, index) => {
+              // Create unique key from current path, file name, and index
+              const pathKey = currentPath.join('/');
+              const uniqueKey = `file-${pathKey}-${file.name}-${index}`;
+              return (
               <div
-                key={file.name}
+                key={uniqueKey}
                 className="flex items-center gap-3 px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded group"
               >
                 <div
@@ -107,7 +115,8 @@ export default function FilesTab({
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

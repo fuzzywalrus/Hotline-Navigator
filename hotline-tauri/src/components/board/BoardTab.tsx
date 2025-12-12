@@ -29,16 +29,21 @@ export default function BoardTab({
           </div>
         ) : (
           <div className="space-y-4">
-            {boardPosts.map((post, index) => (
+            {boardPosts.map((post, index) => {
+              // Create unique key from post content hash and index
+              const postHash = post.substring(0, 50).replace(/\s/g, '');
+              const uniqueKey = `post-${index}-${postHash}`;
+              return (
               <div
-                key={index}
+                key={uniqueKey}
                 className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700"
               >
                 <pre className="text-sm text-gray-900 dark:text-gray-100 font-mono whitespace-pre-wrap break-words m-0">
                   {post}
                 </pre>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

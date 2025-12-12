@@ -7,10 +7,12 @@ use tauri::State;
 #[tauri::command]
 pub async fn connect_to_server(
     bookmark: Bookmark,
+    username: String,
+    user_icon_id: u16,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    println!("Command: connect_to_server to {}:{}", bookmark.address, bookmark.port);
-    state.connect_server(bookmark).await
+    println!("Command: connect_to_server to {}:{} as {}", bookmark.address, bookmark.port, username);
+    state.connect_server(bookmark, username, user_icon_id).await
 }
 
 #[tauri::command]

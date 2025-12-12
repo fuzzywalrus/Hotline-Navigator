@@ -65,9 +65,12 @@ export default function MessageDialog({ userId, userName, messages, onSendMessag
               No messages yet. Start a conversation!
             </div>
           ) : (
-            messages.map((msg, index) => (
+            messages.map((msg, index) => {
+              // Create unique key from timestamp, content, and index
+              const uniqueKey = `${msg.timestamp.getTime()}-${msg.isOutgoing ? 'out' : 'in'}-${msg.text.substring(0, 20)}-${index}`;
+              return (
               <div
-                key={index}
+                key={uniqueKey}
                 className={`flex ${msg.isOutgoing ? 'justify-end' : 'justify-start'}`}
               >
                 <div
@@ -82,7 +85,8 @@ export default function MessageDialog({ userId, userName, messages, onSendMessag
                   </pre>
                 </div>
               </div>
-            ))
+              );
+            })
           )}
           <div ref={messagesEndRef} />
         </div>

@@ -1,7 +1,12 @@
+import UserIcon from './UserIcon';
+
 interface User {
   userId: number;
   userName: string;
   iconId: number;
+  flags: number;
+  isAdmin: boolean;
+  isIdle: boolean;
 }
 
 interface UserListProps {
@@ -22,12 +27,17 @@ export default function UserList({ users, unreadCounts, onUserClick }: UserListP
             key={user.userId}
             onClick={() => onUserClick(user)}
             className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 py-1 px-2 rounded cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-            title="Click to send private message"
+            title={`Click to view user info${user.isAdmin ? ' (Admin)' : ''}${user.isIdle ? ' (Idle)' : ''}`}
           >
-            <div className="w-4 h-4 bg-gray-300 dark:bg-gray-600 rounded flex items-center justify-center text-xs">
-              {user.iconId}
-            </div>
-            <span className="truncate flex-1">{user.userName}</span>
+            <UserIcon iconId={user.iconId} size={16} />
+            <span className={`truncate flex-1 ${user.isIdle ? 'opacity-60 italic' : ''}`}>
+              {user.userName}
+            </span>
+            {user.isAdmin && (
+              <div className="bg-yellow-500 text-white text-xs font-bold rounded px-1" title="Admin">
+                A
+              </div>
+            )}
             {unreadCounts.get(user.userId) ? (
               <div className="bg-red-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
                 {unreadCounts.get(user.userId)}

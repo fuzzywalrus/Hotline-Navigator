@@ -8,7 +8,7 @@ interface ConnectDialogProps {
 }
 
 export default function ConnectDialog({ onClose }: ConnectDialogProps) {
-  const { addBookmark } = useAppStore();
+  const { addBookmark, bookmarks } = useAppStore();
   const [formData, setFormData] = useState({
     name: '',
     address: '',
@@ -31,7 +31,10 @@ export default function ConnectDialog({ onClose }: ConnectDialogProps) {
 
     try {
       await invoke('save_bookmark', { bookmark });
-      addBookmark(bookmark);
+      // Only add if it doesn't already exist (shouldn't happen, but safety check)
+      if (!bookmarks.some(b => b.id === bookmark.id)) {
+        addBookmark(bookmark);
+      }
       onClose();
     } catch (error) {
       console.error('Failed to save bookmark:', error);

@@ -3,43 +3,27 @@ import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../../stores/appStore';
 import BookmarkList from './BookmarkList';
 import ConnectDialog from './ConnectDialog';
+import SettingsView from '../settings/SettingsView';
 import type { Bookmark } from '../../types';
 
 export default function TrackerWindow() {
   const [showConnect, setShowConnect] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<string>('');
-  const { bookmarks, addBookmark } = useAppStore();
+  const [showSettings, setShowSettings] = useState(false);
+  const { bookmarks, setBookmarks } = useAppStore();
 
-  const handleTestConnection = async () => {
-    setTesting(true);
-    setTestResult('');
-    try {
-      const result = await invoke<string>('test_connection', {
-        address: 'hotline.semihosted.xyz',
-        port: 5500,
-      });
-      setTestResult(`✅ ${result}`);
-    } catch (error) {
-      setTestResult(`❌ ${error}`);
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  // Load bookmarks from disk on mount
+  // Load bookmarks from disk on mount - replace entire array to avoid duplicates
   useEffect(() => {
     const loadBookmarks = async () => {
       try {
         const savedBookmarks = await invoke<Bookmark[]>('get_bookmarks');
-        savedBookmarks.forEach(bookmark => addBookmark(bookmark));
+        setBookmarks(savedBookmarks);
       } catch (error) {
         console.error('Failed to load bookmarks:', error);
       }
     };
 
     loadBookmarks();
-  }, []);
+  }, [setBookmarks]);
 
   return (
     <div className="h-full w-full flex flex-col bg-white dark:bg-gray-800">
@@ -50,11 +34,10 @@ export default function TrackerWindow() {
         </h1>
         <div className="flex gap-2">
           <button
-            onClick={handleTestConnection}
-            disabled={testing}
-            className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white rounded-md text-sm font-medium transition-colors"
+            onClick={() => setShowSettings(true)}
+            className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-md text-sm font-medium transition-colors"
           >
-            {testing ? 'Testing...' : 'Test Server'}
+            Settings
           </button>
           <button
             onClick={() => setShowConnect(true)}
@@ -64,13 +47,6 @@ export default function TrackerWindow() {
           </button>
         </div>
       </div>
-
-      {/* Test Result */}
-      {testResult && (
-        <div className="px-4 py-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-          <p className="text-sm font-mono">{testResult}</p>
-        </div>
-      )}
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
@@ -86,6 +62,9 @@ export default function TrackerWindow() {
 
       {/* Connect dialog */}
       {showConnect && <ConnectDialog onClose={() => setShowConnect(false)} />}
+      
+      {/* Settings dialog */}
+      {showSettings && <SettingsView onClose={() => setShowSettings(false)} />}
     </div>
   );
 }

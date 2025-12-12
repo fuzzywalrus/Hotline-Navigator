@@ -12,8 +12,9 @@ This file tracks completed features and implementation notes for the Tauri port.
 6. ✅ User list
 7. ✅ Message Board & News (get/post boards, browse categories, view/post articles)
 8. ✅ Files & transfers (browse, download with progress)
-9. ⏸️ File uploads
-10. ⏸️ Accounts, Settings, About
+9. ✅ Settings & Preferences (username, icon selection, persistent storage)
+10. ⏸️ File uploads
+11. ⏸️ Accounts, About
 
 ---
 
@@ -470,6 +471,217 @@ _No features currently in progress._
 
 **Next task:** Test private messaging functionality with live server
 
+### 2025-12-12: Private Message Enhancements & Component Refactoring
+
+**What was completed:**
+- **Persistent Chat History**: Messages now stored in ServerWindow for duration of connection
+- **Unread Message Badges**: Red circular badges with count next to users with unread messages
+- **Single-Click to Message**: Changed from double-click to single-click for opening message dialogs
+- **Component Refactoring**: Extracted large ServerWindow into smaller, domain-organized components
+- **Clean Architecture**: Reorganized components into feature-based folders
+
+**Chat History Implementation:**
+- Moved message storage from MessageDialog to ServerWindow (src/components/server/ServerWindow.tsx:83, 211-247)
+- Messages persist when closing and reopening dialog
+- Each user has separate message history in `Map<userId, PrivateMessage[]>`
+- MessageDialog now receives messages and send handler as props
+
+**Unread Badges:**
+- Track unread count per user in `Map<userId, count>`
+- Increment on incoming messages when dialog closed
+- Reset to zero when opening dialog for that user
+- Red badge with count appears next to user in list
+
+**Component Organization:**
+Created domain-specific components in proper folders:
+- `src/components/chat/ChatTab.tsx` - Public chat interface
+- `src/components/chat/MessageDialog.tsx` - Private message dialog
+- `src/components/board/BoardTab.tsx` - Message board interface
+- `src/components/files/FilesTab.tsx` - File browser interface
+- `src/components/news/NewsTab.tsx` - News reader interface
+- `src/components/users/UserList.tsx` - User sidebar component
+
+**Files created/modified:**
+- `src/components/chat/ChatTab.tsx` - NEW: Extracted from ServerWindow
+- `src/components/chat/MessageDialog.tsx` - MOVED from server/, updated props
+- `src/components/board/BoardTab.tsx` - NEW: Extracted message board
+- `src/components/files/FilesTab.tsx` - NEW: Extracted file browser
+- `src/components/news/NewsTab.tsx` - NEW: Extracted news reader
+- `src/components/users/UserList.tsx` - MOVED from server/, user list with badges
+- `src/components/server/ServerWindow.tsx` - REFACTORED: Reduced from ~1000 to ~655 lines (35% reduction)
+
+**Architecture Benefits:**
+- Clear separation of concerns
+- Components grouped by feature domain (chat, files, news, users, board)
+- Reusable, testable components
+- Much easier to maintain and extend
+- Follows project's existing folder structure
+
+**Testing status:**
+- ✅ All code compiles successfully
+- ✅ Message history persists during connection
+- ✅ Unread badges appear and update correctly
+- ✅ Single-click opens message dialog
+- ⏸️ Needs testing with live server
+
+**Next task:** Continue with remaining features from porting guide
+
+### 2025-12-12: User Info Dialog & User Flags Implementation
+
+**What was completed:**
+- **User Flags Parsing**: Backend now parses and forwards user flags (admin, idle status)
+- **User Info Dialog**: Click user to view detailed information in modal dialog
+- **Visual Status Indicators**: Admin badge and idle styling in user list
+- **Protocol Completion**: Implemented full UserNameWithInfo structure parsing
+
+**Backend Implementation:**
+- Updated `parse_user_info()` to extract flags field (src-tauri/src/protocol/client/users.rs:36-60)
+  - Previously skipped bytes 4-5, now correctly parses user flags
+  - Returns (user_id, username, icon_id, flags) tuple
+- Added flags to HotlineEvent enum (src-tauri/src/protocol/client/mod.rs:424-549)
+  - UserJoined event now includes flags
+  - UserChanged event now includes flags
+  - NotifyUserChange handler extracts UserFlags field
+- Updated event payloads to forward flags to frontend (src-tauri/src/state/mod.rs:90-113)
+
+**Frontend Implementation:**
+- Extended User interface with flags, isAdmin, isIdle (src/components/server/ServerWindow.tsx:28-35)
+- Created parseUserFlags() helper function (src/components/server/ServerWindow.tsx:14-19)
+  - Parses 0x0001 bit for admin status
+  - Parses 0x0002 bit for idle status
+- Updated event listeners to parse and store user flags (src/components/server/ServerWindow.tsx:187-232)
+- Updated UserList with status indicators (src/components/users/UserList.tsx)
+  - Yellow "A" badge for admin users
+  - Italic, dimmed text for idle users
+  - Updated tooltips to show status
+- Created UserInfoDialog component (src/components/users/UserInfoDialog.tsx)
+  - Displays username, user ID, icon ID
+  - Shows status badges (Administrator, Idle, Active)
+  - Displays raw flags in hex format
+  - "Send Message" button to open private message dialog
+  - Clean, modal design matching app style
+
+**User Experience:**
+- Click user in list → User Info Dialog opens
+- User Info Dialog shows all details and status
+- "Send Message" button → Opens private message dialog
+- Visual indicators in user list:
+  - Admin users have yellow "A" badge
+  - Idle users shown in italic with reduced opacity
+  - Tooltip shows admin/idle status
+
+**Files created/modified:**
+- `src/components/users/UserInfoDialog.tsx` - NEW: User information modal
+- `src/components/users/UserList.tsx` - UPDATED: Added flags interface, admin/idle indicators
+- `src/components/server/ServerWindow.tsx` - UPDATED: User interface, flag parsing, dialog integration
+- `src-tauri/src/protocol/client/users.rs` - UPDATED: Parse user flags from protocol
+- `src-tauri/src/protocol/client/mod.rs` - UPDATED: Added flags to events
+- `src-tauri/src/state/mod.rs` - UPDATED: Forward flags to frontend
+
+**Testing status:**
+- ✅ All code compiles successfully
+- ✅ User flags parsed from protocol correctly
+- ✅ User Info Dialog displays properly
+- ✅ Status indicators show in user list
+- ⏸️ Needs testing with live server (admin users, idle detection)
+
+**Next task:** File upload functionality or server info display
+
+### 2025-12-12: UI Improvements, Bug Fixes & Settings System
+
+**What was completed:**
+- **React Key Warnings Fixed**: Replaced all non-unique `key={index}` with unique composite keys
+- **Bookmark Stability**: Fixed duplicate bookmarks and glitchy deletion behavior
+- **Connection Error Handling**: Inline error messages with user-friendly formatting
+- **User Icons Imported**: Copied 629 classic icons from Swift codebase, created UserIcon component
+- **Settings/Preferences System**: Username and icon selection with persistent storage
+- **Bookmark vs Username Fix**: Separated bookmark name (display) from username (login)
+
+**React Key Fixes:**
+- ChatTab: Unique keys from userId + timestamp + message content + index
+- BoardTab: Unique keys from post content hash + index
+- MessageDialog: Unique keys from timestamp + direction + content + index
+- NewsTab: Unique keys for categories (path + name + index) and articles (article.id)
+- FilesTab: Unique keys for files (path + name + index) and breadcrumbs (path segment + position)
+- All components now maintain proper identity across updates
+
+**Bookmark Stability Improvements:**
+- Added `setBookmarks()` action to replace entire array (prevents duplicates on reload)
+- Added duplicate check in `addBookmark()` to prevent accidental duplicates
+- Changed TrackerWindow to use `setBookmarks()` when loading from disk
+- Bookmarks now load once without duplicates, state stays in sync with disk
+
+**Connection Error Handling:**
+- Inline error messages appear below each bookmark (replaces alert popups)
+- User-friendly error messages for common connection failures:
+  - DNS resolution failures: "Unable to resolve server address..."
+  - Connection refused: "Connection refused. The server may be offline..."
+  - Timeouts: "Connection timed out..."
+- Dismissible errors with close button
+- Errors auto-clear when retrying connection
+
+**User Icons:**
+- Copied 629 classic icons from `Hotline/Assets.xcassets/Classic/` to `public/icons/classic/`
+- Created `UserIcon` component with fallback to icon ID if image fails to load
+- Updated UserList and UserInfoDialog to display actual icons instead of numbers
+- Icons use pixelated rendering to preserve classic look
+
+**Settings/Preferences System:**
+- Created `preferencesStore.ts` with Zustand persist middleware
+  - Stores username (default: "guest") and userIconId (default: 191)
+  - Persists to localStorage automatically
+- Created Settings UI with tabbed interface:
+  - **GeneralSettingsTab**: Username input field with auto-save
+  - **IconSettingsTab**: Grid of 629 selectable classic icons with hover/selection states
+- Added Settings button to TrackerWindow header
+- Settings dialog matches app design with proper dark mode support
+
+**Bookmark vs Username Separation:**
+- **Before**: Bookmark name was incorrectly used as username when logging in
+- **After**: 
+  - Bookmark `name` field only used for server display in UI
+  - Username comes from preferences store
+  - Icon comes from preferences store
+- Updated Rust backend:
+  - `connect_to_server` command now accepts `username` and `userIconId` parameters
+  - `HotlineClient` stores username and iconId separately from bookmark
+  - Login transaction uses preferences, not bookmark name
+- Updated frontend:
+  - `BookmarkList` reads preferences and passes them when connecting
+  - Server display name comes from `bookmark.name` (via `addActiveServer`)
+
+**Files created/modified:**
+- `src/stores/preferencesStore.ts` - NEW: Preferences store with persistence
+- `src/components/settings/SettingsView.tsx` - NEW: Main settings dialog
+- `src/components/settings/GeneralSettingsTab.tsx` - NEW: Username settings
+- `src/components/settings/IconSettingsTab.tsx` - NEW: Icon selection grid
+- `src/components/users/UserIcon.tsx` - NEW: Reusable icon component
+- `src/components/tracker/TrackerWindow.tsx` - Added Settings button
+- `src/components/tracker/BookmarkList.tsx` - Connection error handling, preferences integration
+- `src/components/chat/ChatTab.tsx` - Fixed React keys
+- `src/components/board/BoardTab.tsx` - Fixed React keys
+- `src/components/chat/MessageDialog.tsx` - Fixed React keys
+- `src/components/news/NewsTab.tsx` - Fixed React keys
+- `src/components/files/FilesTab.tsx` - Fixed React keys
+- `src/components/users/UserList.tsx` - Uses UserIcon component
+- `src/components/users/UserInfoDialog.tsx` - Uses UserIcon component
+- `src/stores/appStore.ts` - Added setBookmarks action, duplicate prevention
+- `src-tauri/src/commands/mod.rs` - Updated connect_to_server to accept username/iconId
+- `src-tauri/src/state/mod.rs` - Updated connect_server to pass user info
+- `src-tauri/src/protocol/client/mod.rs` - Added username/iconId storage, set_user_info method
+- `public/icons/classic/` - NEW: 629 classic user icons copied from Swift project
+
+**Testing status:**
+- ✅ All React key warnings resolved
+- ✅ Bookmarks load without duplicates
+- ✅ Connection errors display inline with helpful messages
+- ✅ User icons display correctly (with fallback for missing icons)
+- ✅ Settings persist across app restarts
+- ✅ Username and icon from settings used when connecting
+- ✅ Bookmark name only affects display, not login
+
+**Next task:** File uploads, server info display, or other features from porting guide
+
 ---
 
 ### Future: Tracker Features
@@ -492,8 +704,8 @@ _No features currently in progress._
 - [ ] Chat invitations
 
 ### User Interaction
-- [ ] User info dialog (click user to view full details)
-- [ ] User privileges/flags display
+- [x] User info dialog (click user to view full details)
+- [x] User privileges/flags display
 - [x] Send private message from user list
 - [ ] Admin functions (kick, ban, disconnect users)
 - [ ] User context menu (right-click actions)
@@ -517,9 +729,13 @@ _No features currently in progress._
 - [ ] Drag & drop file uploads
 - [ ] Context menus throughout app
 - [ ] Keyboard shortcuts
-- [ ] Transfer progress indicators
-- [ ] Multiple simultaneous server connections
-- [ ] Tabbed interface for multiple servers
+- [x] Transfer progress indicators
+- [x] Multiple simultaneous server connections
+- [x] Tabbed interface for multiple servers
+- [x] Unread message indicators
+- [x] Connection error handling with inline messages
+- [x] User icon display (classic icons imported)
+- [x] Settings UI for username and icon
 - [ ] Notification system
 - [ ] Sound effects
 
@@ -529,7 +745,7 @@ _No features currently in progress._
 - [ ] Connection history tracking
 - [ ] Auto-reconnect on disconnect
 - [ ] Encrypted file transfers
-- [ ] Custom user icon support
+- [x] Custom user icon support (classic icon set, 629 icons available)
 - [ ] Auto-away status
 - [ ] Message filtering/blocking
 

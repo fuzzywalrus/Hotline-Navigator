@@ -68,8 +68,11 @@ export default function NewsTab({
           >
             News
           </button>
-          {newsPath.map((segment, index) => (
-            <span key={index} className="flex items-center gap-2">
+          {newsPath.map((segment, index) => {
+            // Create unique key from path segment and position
+            const uniqueKey = `news-path-${index}-${segment}`;
+            return (
+            <span key={uniqueKey} className="flex items-center gap-2">
               <span className="text-gray-400 dark:text-gray-500">/</span>
               <button
                 onClick={() => onNewsPathChange(newsPath.slice(0, index + 1))}
@@ -78,7 +81,8 @@ export default function NewsTab({
                 {segment}
               </button>
             </span>
-          ))}
+            );
+          })}
           {newsPath.length > 0 && (
             <button
               onClick={onNewsBack}
@@ -96,9 +100,12 @@ export default function NewsTab({
               CATEGORIES
             </div>
             <div className="divide-y divide-gray-200 dark:divide-gray-700">
-              {newsCategories.map((category, index) => (
+              {newsCategories.map((category, index) => {
+                // Create unique key from category path and name
+                const uniqueKey = `category-${category.path.join('/')}-${category.name}-${index}`;
+                return (
                 <button
-                  key={index}
+                  key={uniqueKey}
                   onClick={() => onNavigateNews(category)}
                   className="w-full px-4 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                 >
@@ -111,7 +118,8 @@ export default function NewsTab({
                     </span>
                   </div>
                 </button>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
