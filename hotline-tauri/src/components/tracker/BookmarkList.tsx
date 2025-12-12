@@ -7,9 +7,10 @@ import EditBookmarkDialog from './EditBookmarkDialog';
 
 interface BookmarkListProps {
   bookmarks: Bookmark[];
+  searchQuery?: string;
 }
 
-export default function BookmarkList({ bookmarks }: BookmarkListProps) {
+export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkListProps) {
   const { removeBookmark, addActiveServer, setFocusedServer } = useAppStore();
   const { username, userIconId } = usePreferencesStore();
   const [editingBookmark, setEditingBookmark] = useState<Bookmark | null>(null);
@@ -209,15 +210,48 @@ export default function BookmarkList({ bookmarks }: BookmarkListProps) {
     await handleConnect(bookmark);
   };
 
+  // Filter helper functions
+  const matchesSearch = (text: string): boolean => {
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase().trim();
+    return text.toLowerCase().includes(query);
+  };
+
+  const shouldShowBookmark = (bookmark: Bookmark): boolean => {
+    if (!searchQuery.trim()) return true;
+    // For regular bookmarks, filter by name
+    if (bookmark.type !== 'tracker') {
+      return matchesSearch(bookmark.name);
+    }
+    // Trackers are always shown (they won't be filtered)
+    return true;
+  };
+
+  const getFilteredTrackerServers = (servers: ServerBookmark[]): ServerBookmark[] => {
+    if (!searchQuery.trim()) return servers;
+    const query = searchQuery.toLowerCase().trim();
+    return servers.filter(server => 
+      matchesSearch(server.name) || 
+      (server.description && matchesSearch(server.description))
+    );
+  };
+
+  // Filter bookmarks based on search query
+  const filteredBookmarks = bookmarks.filter(shouldShowBookmark);
+
   return (
     <>
       <div className="bg-white dark:bg-gray-900">
-        {bookmarks.map((bookmark, index) => {
+        {filteredBookmarks.map((bookmark, index) => {
           const isTracker = bookmark.type === 'tracker';
           const isExpanded = expandedTrackers.has(bookmark.id);
-          const servers = trackerServers.get(bookmark.id) || [];
+          const allServers = trackerServers.get(bookmark.id) || [];
+          const servers = getFilteredTrackerServers(allServers);
           const isLoading = loadingTrackers.has(bookmark.id);
           const isEven = index % 2 === 0;
+          
+          // Trackers are always shown (never filtered by name)
+          // Only their nested servers are filtered
           
           return (
             <div key={bookmark.id}>
@@ -264,8 +298,8 @@ export default function BookmarkList({ bookmarks }: BookmarkListProps) {
                       />
                     </div>
                     
-                    {/* Tracker name - bold */}
-                    <span className="text-sm font-semibold text-gray-900 dark:text-white flex-1 truncate">
+                    {/* Tracker name - bold, no max width */}
+                    <span className="text-sm font-semibold text-gray-900 dark:text-white flex-1 truncate min-w-0">
                   {bookmark.name}
                     </span>
                     
@@ -334,7 +368,7 @@ export default function BookmarkList({ bookmarks }: BookmarkListProps) {
                     return (
                       <div
                         key={server.id}
-                        className={`h-[34px] pl-[34px] pr-2 flex items-center gap-1.5 cursor-pointer group ${
+                        className={`h-[34px] pl-[34px] pr-2 flex items-center gap-1.5 cursor-pointer group min-w-0 ${
                           serverIsEven 
                             ? 'bg-white dark:bg-gray-900' 
                             : 'bg-gray-50 dark:bg-gray-800/50'
@@ -361,17 +395,20 @@ export default function BookmarkList({ bookmarks }: BookmarkListProps) {
                           />
                         </div>
                         
-                        {/* Server name */}
-                        <span className="text-sm text-gray-900 dark:text-white flex-1 truncate">
+                        {/* Server name - truncates naturally, no max width */}
+                        <span className="text-sm text-gray-900 dark:text-white truncate min-w-0 flex-shrink">
                           {server.name}
                         </span>
                         
-                        {/* Server description if available */}
+                        {/* Server description if available - truncates naturally, no max width */}
                         {server.description && (
-                          <span className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[200px]">
+                          <span className="text-xs text-gray-500 dark:text-gray-400 truncate min-w-0 flex-shrink">
                             {server.description}
                           </span>
                         )}
+                        
+                        {/* Spacer to push user count to the right */}
+                        <div className="flex-1 min-w-0"></div>
                         
                         {/* User count with animated dot */}
                         {server.users > 0 && (
@@ -440,15 +477,15 @@ export default function BookmarkList({ bookmarks }: BookmarkListProps) {
                     />
                   </div>
                   
-                  {/* Server name - not bold */}
-                  <span className="text-sm text-gray-900 dark:text-white flex-1 truncate">
+                  {/* Server name - not bold, no max width */}
+                  <span className="text-sm text-gray-900 dark:text-white flex-1 truncate min-w-0">
                     {bookmark.name}
                   </span>
                   
                   {/* Edit/Delete/Connect buttons on hover */}
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => setEditingBookmark(bookmark)}
+                <button
+                  onClick={() => setEditingBookmark(bookmark)}
                       className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 text-xs px-1.5 py-0.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900/30"
                       title="Edit bookmark"
                 >

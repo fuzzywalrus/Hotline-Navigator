@@ -61,6 +61,9 @@ pub struct HotlineClient {
     // Pending transactions (for request/reply pattern)
     pending_transactions: Arc<RwLock<HashMap<u32, mpsc::Sender<Transaction>>>>,
 
+    // Server info (extracted from login reply)
+    server_info: Arc<Mutex<Option<ServerInfo>>>,
+
     // Background tasks
     receive_task: Arc<Mutex<Option<JoinHandle<()>>>>,
     keepalive_task: Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -78,6 +81,7 @@ impl HotlineClient {
             read_half: Arc::new(Mutex::new(None)),
             write_half: Arc::new(Mutex::new(None)),
             transaction_counter: Arc::new(AtomicU32::new(1)),
+            server_info: Arc::new(Mutex::new(None)),
             running: Arc::new(AtomicBool::new(false)),
             event_tx,
             event_rx: Arc::new(Mutex::new(Some(event_rx))),
@@ -297,6 +301,36 @@ impl HotlineClient {
                 .unwrap_or_else(|| format!("Error code: {}", reply.error_code));
 
             return Err(format!("Login failed: {}", error_msg));
+        }
+
+        // Extract server info from login reply
+        let server_name = reply
+            .get_field(FieldType::ServerName)
+            .and_then(|f| f.to_string().ok())
+            .unwrap_or_else(|| self.bookmark.name.clone());
+        
+        let server_version = reply
+            .get_field(FieldType::VersionNumber)
+            .and_then(|f| f.to_u16().ok())
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "Unknown".to_string());
+        
+        // Server description may be in Data field or not present
+        let server_description = reply
+            .get_field(FieldType::Data)
+            .and_then(|f| f.to_string().ok())
+            .filter(|s| !s.is_empty() && s != &server_name)
+            .unwrap_or_else(|| String::new());
+
+        // Store server info
+        {
+            let mut server_info = self.server_info.lock().await;
+            *server_info = Some(ServerInfo {
+                name: server_name,
+                description: server_description,
+                version: server_version,
+                agreement: None, // Agreement is handled separately
+            });
         }
 
         // Update status
@@ -650,7 +684,9 @@ impl HotlineClient {
     }
 
     pub async fn get_server_info(&self) -> Result<ServerInfo, String> {
-        // TODO: Implement server info retrieval from login reply
-        Err("Not implemented".to_string())
+        let server_info = self.server_info.lock().await;
+        server_info
+            .clone()
+            .ok_or_else(|| "Server info not available".to_string())
     }
 }

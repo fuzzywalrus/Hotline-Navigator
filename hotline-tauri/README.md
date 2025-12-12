@@ -1,6 +1,6 @@
 # Hotline Tauri
 
-A cross-platform Tauri port of the Hotline client, aiming to mirror the macOS SwiftUI app on macOS, Windows, and Linux. The frontend is React + TypeScript (Vite), the backend is Rust + Tokio inside Tauri 1.x. This README reflects the current `hotline-tauri/` state and the macOS reference we are porting from.
+Tauri-based port of the modern Hotline client so the SwiftUI macOS build can reach macOS, Windows, and Linux with one codebase. Frontend is React + TypeScript (Vite), backend is Rust + Tokio within Tauri 1.x. This doc tracks the `hotline-tauri/` work and the macOS reference we’re mirroring.
 
 ## Current implementation
 

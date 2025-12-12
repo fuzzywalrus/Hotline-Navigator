@@ -45,6 +45,7 @@ pub fn run() {
             commands::accept_agreement,
             commands::download_banner,
             commands::fetch_tracker_servers,
+        commands::get_server_info,
             commands::test_connection,
         ])
         .run(tauri::generate_context!())

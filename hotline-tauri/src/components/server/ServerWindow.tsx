@@ -8,6 +8,7 @@ import ChatTab from '../chat/ChatTab';
 import BoardTab from '../board/BoardTab';
 import FilesTab from '../files/FilesTab';
 import NewsTab from '../news/NewsTab';
+import { ServerInfo } from '../../types';
 
 // Hotline user flag bits
 const USER_FLAG_ADMIN = 0x0001;
@@ -104,6 +105,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
   const [privateMessageHistory, setPrivateMessageHistory] = useState<Map<number, PrivateMessage[]>>(new Map());
   const [agreementText, setAgreementText] = useState<string | null>(null);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
+  const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
 
   // Debug: log when bannerUrl changes
   useEffect(() => {
@@ -450,6 +452,22 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     };
   }, [serverId, users.length]);
 
+  // Fetch server info after connection
+  useEffect(() => {
+    if (users.length > 0 && !serverInfo) {
+      const fetchServerInfo = async () => {
+        try {
+          const info = await invoke<ServerInfo>('get_server_info', { serverId });
+          console.log('Server info fetched:', info);
+          setServerInfo(info);
+        } catch (error) {
+          console.error('Failed to fetch server info:', error);
+        }
+      };
+      fetchServerInfo();
+    }
+  }, [serverId, users.length, serverInfo]);
+
   const handleUserClick = (user: User) => {
     // Open user info dialog
     setUserInfoDialogUser(user);
@@ -735,23 +753,32 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
       )}
 
       {/* Header */}
-      <div className="bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-gray-900 dark:text-white">
-          {serverName}
-        </h1>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleDisconnect}
-            className="px-3 py-1 text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 rounded hover:bg-red-50 dark:hover:bg-red-900/30"
-          >
-            Disconnect
-          </button>
-          <button
-            onClick={onClose}
-            className="px-3 py-1 text-sm text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
-          >
-            Close
-          </button>
+      <div className="bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex-1">
+            <h1 className="text-lg font-semibold text-gray-900 dark:text-white">
+              {serverInfo?.name || serverName}
+            </h1>
+            {serverInfo?.description && (
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                {serverInfo.description}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            {serverInfo && (
+              <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                <span className="font-medium">{users.length}</span>
+                <span>user{users.length !== 1 ? 's' : ''}</span>
+              </div>
+            )}
+            <button
+              onClick={handleDisconnect}
+              className="px-3 py-1 text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 rounded hover:bg-red-50 dark:hover:bg-red-900/30"
+            >
+              Disconnect
+            </button>
+          </div>
         </div>
       </div>
 

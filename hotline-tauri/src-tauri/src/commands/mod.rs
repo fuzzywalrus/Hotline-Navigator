@@ -221,6 +221,15 @@ pub async fn fetch_tracker_servers(
 }
 
 #[tauri::command]
+pub async fn get_server_info(
+    server_id: String,
+    state: State<'_, AppState>,
+) -> Result<crate::protocol::types::ServerInfo, String> {
+    println!("Command: get_server_info for {}", server_id);
+    state.get_server_info(&server_id).await
+}
+
+#[tauri::command]
 pub async fn test_connection(address: String, port: u16) -> Result<String, String> {
     println!("Command: test_connection to {}:{}", address, port);
 

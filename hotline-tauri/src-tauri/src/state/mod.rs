@@ -402,6 +402,15 @@ impl AppState {
         Ok(bookmarks.clone())
     }
 
+    pub async fn get_server_info(&self, server_id: &str) -> Result<crate::protocol::types::ServerInfo, String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.get_server_info().await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
     pub async fn save_bookmark(&self, bookmark: Bookmark) -> Result<(), String> {
         let mut bookmarks = self.bookmarks.write().await;
 
