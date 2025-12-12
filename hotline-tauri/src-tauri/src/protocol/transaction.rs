@@ -1,7 +1,6 @@
 // Hotline transaction structures
 
 use super::constants::{FieldType, TransactionType, TRANSACTION_HEADER_SIZE};
-use std::io::{self, Write};
 
 #[derive(Debug, Clone)]
 pub struct TransactionField {
@@ -44,9 +43,45 @@ impl TransactionField {
         }
     }
 
+    pub fn from_path(field_type: FieldType, path: &[String]) -> Self {
+        let mut data = Vec::new();
+
+        // Write count of path components
+        data.extend_from_slice(&(path.len() as u16).to_be_bytes());
+
+        // Write each path component
+        for component in path {
+            // Write separator (always 0)
+            data.extend_from_slice(&0u16.to_be_bytes());
+
+            // Write component length and data
+            let component_bytes = component.as_bytes();
+            data.push(component_bytes.len() as u8);
+            data.extend_from_slice(component_bytes);
+        }
+
+        Self {
+            field_type,
+            data,
+        }
+    }
+
     pub fn to_string(&self) -> Result<String, String> {
-        String::from_utf8(self.data.clone())
-            .map_err(|e| format!("Failed to decode string: {}", e))
+        // Try UTF-8 first
+        let s = if let Ok(s) = String::from_utf8(self.data.clone()) {
+            s
+        } else {
+            // Fall back to MacOS Roman (x-mac-roman) - this is what Hotline protocol uses
+            let (decoded, _encoding, had_errors) = encoding_rs::MACINTOSH.decode(&self.data);
+            if had_errors {
+                return Err("Failed to decode string".to_string());
+            }
+            decoded.into_owned()
+        };
+
+        // Classic Mac OS used \r (carriage return) for line breaks, but modern systems use \n
+        // Convert \r to \n so they render properly in HTML
+        Ok(s.replace('\r', "\n"))
     }
 
     pub fn to_u16(&self) -> Result<u16, String> {

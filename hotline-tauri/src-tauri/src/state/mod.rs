@@ -128,6 +128,12 @@ impl AppState {
                         });
                         let _ = app_handle.emit(&format!("file-list-{}", server_id_clone), payload);
                     }
+                    HotlineEvent::NewMessageBoardPost(message) => {
+                        let payload = serde_json::json!({
+                            "message": message,
+                        });
+                        let _ = app_handle.emit(&format!("message-board-post-{}", server_id_clone), payload);
+                    }
                 }
             }
             println!("Event forwarding task ended for server {}", server_id_clone);
@@ -156,6 +162,26 @@ impl AppState {
 
         if let Some(client) = clients.get(server_id) {
             client.send_chat(message).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn get_message_board(&self, server_id: &str) -> Result<Vec<String>, String> {
+        let clients = self.clients.read().await;
+
+        if let Some(client) = clients.get(server_id) {
+            client.get_message_board().await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn post_message_board(&self, server_id: &str, message: String) -> Result<(), String> {
+        let clients = self.clients.read().await;
+
+        if let Some(client) = clients.get(server_id) {
+            client.post_message_board(message).await
         } else {
             Err("Server not connected".to_string())
         }
@@ -253,5 +279,45 @@ impl AppState {
         self.save_bookmarks_to_disk(&bookmarks)?;
 
         Ok(())
+    }
+
+    pub async fn get_news_categories(&self, server_id: &str, path: Vec<String>) -> Result<Vec<crate::protocol::types::NewsCategory>, String> {
+        let clients = self.clients.read().await;
+
+        if let Some(client) = clients.get(server_id) {
+            client.get_news_categories(path).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn get_news_articles(&self, server_id: &str, path: Vec<String>) -> Result<Vec<crate::protocol::types::NewsArticle>, String> {
+        let clients = self.clients.read().await;
+
+        if let Some(client) = clients.get(server_id) {
+            client.get_news_articles(path).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn get_news_article_data(&self, server_id: &str, article_id: u32, path: Vec<String>) -> Result<String, String> {
+        let clients = self.clients.read().await;
+
+        if let Some(client) = clients.get(server_id) {
+            client.get_news_article_data(article_id, path).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn post_news_article(&self, server_id: &str, title: String, text: String, path: Vec<String>, parent_id: u32) -> Result<(), String> {
+        let clients = self.clients.read().await;
+
+        if let Some(client) = clients.get(server_id) {
+            client.post_news_article(title, text, path, parent_id).await
+        } else {
+            Err("Server not connected".to_string())
+        }
     }
 }

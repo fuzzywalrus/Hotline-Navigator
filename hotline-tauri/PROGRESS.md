@@ -10,7 +10,7 @@ This file tracks completed features and implementation notes for the Tauri port.
 4. ✅ Server window shell (basic UI with chat input)
 5. ✅ Chat receive & display
 6. ✅ User list
-7. ⏸️ Message Board & News
+7. ✅ Message Board & News (get/post boards, browse categories, view/post articles)
 8. ✅ Files & transfers (browse, download with progress)
 9. ⏸️ File uploads
 10. ⏸️ Accounts, Settings, About
@@ -369,6 +369,62 @@ _No features currently in progress._
 
 **Next task:** Choose next feature from porting guide
 
+### 2025-12-12: Message Board & News Implementation
+
+**What was completed:**
+- Message Board: Get and post message board with MacOS Roman encoding support
+- News: Complete category/article browsing and posting system
+- MacOS Roman text encoding/decoding (including carriage return to line feed conversion)
+- Board tab UI with post viewer and composer
+- News tab UI with two-panel layout (categories/articles + viewer/composer)
+- Hierarchical news category navigation with breadcrumbs
+- Article viewer with monospace font for ASCII art
+- Reply to articles (parent_id support)
+
+**Files created/modified:**
+- `src-tauri/Cargo.toml` - Added encoding_rs dependency for MacOS Roman support
+- `src-tauri/src/protocol/types.rs` - Added NewsCategory and NewsArticle types
+- `src-tauri/src/protocol/transaction.rs` - Added from_path() method, fixed MacOS Roman encoding + \r→\n conversion
+- `src-tauri/src/protocol/client.rs` - Added get_message_board(), post_message_board(), get_news_categories(), get_news_articles(), get_news_article_data(), post_news_article()
+- `src-tauri/src/state/mod.rs` - Added state methods for message board and news
+- `src-tauri/src/commands/mod.rs` - Added Tauri commands for board and news
+- `src-tauri/src/lib.rs` - Registered new commands
+- `src/components/server/ServerWindow.tsx` - Added Board and News tabs with full UI
+
+**Implementation details:**
+- **Message Board**: Transaction 101 (get), 102 (new message event), 103 (post)
+  - Returns single Data field with all posts as concatenated string
+  - Posts separated by divider lines in the text
+- **News Categories**: Transaction 370 (get categories)
+  - Returns NewsCategoryListData15 fields
+  - Type 2 = bundle (folder), Type 3 = category
+  - Hierarchical navigation using path arrays
+- **News Articles**: Transaction 371 (get articles), 400 (get article data), 410 (post article)
+  - Binary parsing of article list with metadata (id, parent_id, title, poster, etc.)
+  - Support for threaded discussions via parent_id
+  - Article content stored as plain text
+- **Text Encoding**: MacOS Roman (MACINTOSH encoding) with fallback to UTF-8
+  - Classic Mac OS used \r (carriage return) for line breaks, converted to \n for HTML rendering
+  - Preserves ASCII art formatting in message board and news articles
+- **UI Design**:
+  - Board: Single panel with posts list + composer
+  - News: Two-panel split (left: categories/articles, right: viewer/composer)
+  - Monospace font for proper ASCII art rendering
+  - Breadcrumb navigation for news categories
+  - Loading states and error handling for servers without news support
+
+**Bug fixes:**
+- Fixed infinite loading loop in news useEffect by removing loadingNews from dependencies
+- Added proper error handling for servers that don't support News protocol
+
+**Testing status:**
+- ✅ Message board posts display with correct line breaks and ASCII art
+- ✅ News category navigation working
+- ✅ Article viewing and posting functional
+- ⏸️ Needs testing with various servers to verify encoding edge cases
+
+**Next task:** File uploads or other features from porting guide
+
 ---
 
 ### Future: Tracker Features
@@ -398,11 +454,11 @@ _No features currently in progress._
 - [ ] User context menu (right-click actions)
 
 ### News & Message Board
-- [ ] News/message board reader UI
-- [ ] News category browsing
-- [ ] Read news articles
-- [ ] Post news articles (if privileges allow)
-- [ ] News article threading
+- [x] News/message board reader UI
+- [x] News category browsing
+- [x] Read news articles
+- [x] Post news articles (if privileges allow)
+- [x] News article threading
 
 ### Server Features
 - [ ] Server agreement dialog modal

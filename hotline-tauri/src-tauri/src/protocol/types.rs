@@ -47,3 +47,24 @@ pub enum ConnectionStatus {
     LoggedIn,
     Failed,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewsCategory {
+    #[serde(rename = "type")]
+    pub category_type: u16, // 2 = bundle (folder), 3 = category
+    pub count: u16,         // Number of items inside
+    pub name: String,
+    pub path: Vec<String>,  // Full path to this category
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewsArticle {
+    pub id: u32,
+    pub parent_id: u32,     // 0 if root article
+    pub flags: u32,
+    pub title: String,
+    pub poster: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
+    pub path: Vec<String>,  // Path to containing category
+}

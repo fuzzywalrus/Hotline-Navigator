@@ -33,6 +33,25 @@ pub async fn send_chat_message(
 }
 
 #[tauri::command]
+pub async fn get_message_board(
+    server_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    println!("Command: get_message_board for {}", server_id);
+    state.get_message_board(&server_id).await
+}
+
+#[tauri::command]
+pub async fn post_message_board(
+    server_id: String,
+    message: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    println!("Command: post_message_board to {}: {} chars", server_id, message.len());
+    state.post_message_board(&server_id, message).await
+}
+
+#[tauri::command]
 pub async fn get_bookmarks(state: State<'_, AppState>) -> Result<Vec<Bookmark>, String> {
     state.get_bookmarks().await
 }
@@ -72,6 +91,50 @@ pub async fn download_file(
 ) -> Result<String, String> {
     println!("Command: download_file {} (size: {} bytes)", file_name, file_size);
     state.download_file(&server_id, path, file_name, file_size).await
+}
+
+#[tauri::command]
+pub async fn get_news_categories(
+    server_id: String,
+    path: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::protocol::types::NewsCategory>, String> {
+    println!("Command: get_news_categories for {} path {:?}", server_id, path);
+    state.get_news_categories(&server_id, path).await
+}
+
+#[tauri::command]
+pub async fn get_news_articles(
+    server_id: String,
+    path: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::protocol::types::NewsArticle>, String> {
+    println!("Command: get_news_articles for {} path {:?}", server_id, path);
+    state.get_news_articles(&server_id, path).await
+}
+
+#[tauri::command]
+pub async fn get_news_article_data(
+    server_id: String,
+    article_id: u32,
+    path: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    println!("Command: get_news_article_data for {} article {} path {:?}", server_id, article_id, path);
+    state.get_news_article_data(&server_id, article_id, path).await
+}
+
+#[tauri::command]
+pub async fn post_news_article(
+    server_id: String,
+    title: String,
+    text: String,
+    path: Vec<String>,
+    parent_id: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    println!("Command: post_news_article to {} path {:?}", server_id, path);
+    state.post_news_article(&server_id, title, text, path, parent_id).await
 }
 
 #[tauri::command]
