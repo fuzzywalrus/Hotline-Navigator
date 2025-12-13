@@ -51,12 +51,45 @@ npm run build:macos              # macOS universal binary (Intel + Apple Silicon
 npm run build:macos-intel        # macOS Intel (x86_64) only
 npm run build:macos-silicon      # macOS Apple Silicon (aarch64) only
 npm run build:macos-universal    # macOS universal binary (same as build:macos)
+npm run build:release           # signed release build (requires .env file)
 ```
 
 **macOS Architecture Support:**
 - Universal binaries work on both Intel (x86_64) and Apple Silicon (aarch64) Macs
 - Both Rust targets must be installed: `rustup target add aarch64-apple-darwin x86_64-apple-darwin`
 - Universal builds are recommended for distribution as they work on all Macs
+- Minimum macOS version: Big Sur (11.0)
+
+**Release Builds (Code Signing & Notarization):**
+
+To create a signed, release-ready build for macOS:
+
+1. **Create `.env` file** in the project root with your Apple Developer credentials:
+   ```bash
+   APPLE_ID="your-apple-id@example.com"
+   APP_PASSWORD="your-app-specific-password"
+   TEAM_ID="YOUR_TEAM_ID"
+   SIGNING_IDENTITY="Developer ID Application: Your Name (YOUR_TEAM_ID)"
+   ```
+
+2. **Run the release build script**:
+   ```bash
+   npm run build:release
+   ```
+
+   This will:
+   - Build a Universal Binary (Intel + Apple Silicon)
+   - Code sign the app bundle
+   - Verify the code signature
+   - Create a DMG (if `create-dmg` is installed)
+   - Output to `release/hotline-{version}-macos/`
+
+3. **Optional: Notarization** (uncomment in `build-release.sh`):
+   - Automatically submits the app to Apple for notarization
+   - Staples the notarization ticket to the app
+   - Required for distribution outside the App Store
+
+**Note:** The `.env` file is gitignored and should never be committed. It contains sensitive credentials.
 
 ## Swift/macOS feature map (reference)
 
