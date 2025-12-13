@@ -1,8 +1,12 @@
 import { useAppStore } from './stores/appStore';
 import TrackerWindow from './components/tracker/TrackerWindow';
 import ServerWindow from './components/server/ServerWindow';
+import { useDarkMode } from './hooks/useDarkMode';
 
 function App() {
+  // Initialize dark mode management
+  useDarkMode();
+  
   const { focusedServer, serverInfo, setFocusedServer } = useAppStore();
 
   const currentServer = focusedServer ? serverInfo.get(focusedServer) : null;

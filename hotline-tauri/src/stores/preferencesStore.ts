@@ -1,11 +1,14 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
+export type DarkModePreference = 'system' | 'light' | 'dark';
+
 interface PreferencesState {
   username: string;
   userIconId: number;
   fileCacheDepth: number;
   enablePrivateMessaging: boolean;
+  darkMode: DarkModePreference;
   
   // Sound preferences
   playSounds: boolean;
@@ -24,6 +27,7 @@ interface PreferencesState {
   setUserIconId: (iconId: number) => void;
   setFileCacheDepth: (depth: number) => void;
   setEnablePrivateMessaging: (enabled: boolean) => void;
+  setDarkMode: (mode: DarkModePreference) => void;
   setPlaySounds: (enabled: boolean) => void;
   setPlayChatSound: (enabled: boolean) => void;
   setPlayFileTransferCompleteSound: (enabled: boolean) => void;
@@ -43,6 +47,7 @@ export const usePreferencesStore = create<PreferencesState>()(
       userIconId: 191, // Default icon from Swift code
       fileCacheDepth: 8, // Default to 8 layers deep
       enablePrivateMessaging: true, // Private messaging enabled by default
+      darkMode: 'system', // Default to system preference
       
       // Sound preferences (all enabled by default)
       playSounds: true,
@@ -68,6 +73,7 @@ export const usePreferencesStore = create<PreferencesState>()(
       setPlayLeaveSound: (playLeaveSound) => set({ playLeaveSound }),
       setPlayLoggedInSound: (playLoggedInSound) => set({ playLoggedInSound }),
       setPlayErrorSound: (playErrorSound) => set({ playErrorSound }),
+      setDarkMode: (darkMode) => set({ darkMode }),
       setPlayServerMessageSound: (playServerMessageSound) => set({ playServerMessageSound }),
       setPlayNewNewsSound: (playNewNewsSound) => set({ playNewNewsSound }),
     }),
