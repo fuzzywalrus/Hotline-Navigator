@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import type { ConnectionStatus } from '../../../types';
 import type { ChatMessage, FileItem, User } from '../serverTypes';
 import { useSound } from '../../../hooks/useSound';
+import { useAppStore } from '../../../stores/appStore';
 
 interface UseServerEventsProps {
   serverId: string;
@@ -19,6 +20,10 @@ interface UseServerEventsProps {
   setFileCache: (serverId: string, path: string[], files: FileItem[]) => void;
   currentPathRef: React.MutableRefObject<string[]>;
   parseUserFlags: (flags: number) => { isAdmin: boolean; isIdle: boolean };
+  enablePrivateMessaging: boolean;
+  addTransfer: (transfer: any) => void;
+  updateTransfer: (id: string, updates: Partial<any>) => void;
+  onFileListReceived?: (path: string[]) => void;
 }
 
 export function useServerEvents({
@@ -36,6 +41,10 @@ export function useServerEvents({
   setFileCache,
   currentPathRef,
   parseUserFlags,
+  enablePrivateMessaging,
+  addTransfer,
+  updateTransfer,
+  onFileListReceived,
 }: UseServerEventsProps) {
   const sounds = useSound();
 
@@ -83,6 +92,10 @@ export function useServerEvents({
       // Only update UI if this is for the current path
       if (path.join('/') === currentPathRef.current.join('/')) {
         setFiles(files);
+        // Notify that file list was received for current path
+        if (onFileListReceived) {
+          onFileListReceived(path);
+        }
       }
       
       // Always cache the file list
@@ -92,7 +105,7 @@ export function useServerEvents({
     return () => {
       unlisten.then((fn) => fn()).catch(() => {});
     };
-  }, [serverId, setFiles, setFileCache, currentPathRef]);
+  }, [serverId, setFiles, setFileCache, currentPathRef, onFileListReceived]);
 
   // Listen for new message board posts
   useEffect(() => {
@@ -162,6 +175,10 @@ export function useServerEvents({
 
   // Listen for private messages
   useEffect(() => {
+    if (!enablePrivateMessaging) {
+      return; // Private messaging is disabled, don't listen for messages
+    }
+    
     const unlisten = listen<{ userId: number; message: string }>(
       `private-message-${serverId}`,
       (event) => {
@@ -194,37 +211,83 @@ export function useServerEvents({
     return () => {
       unlisten.then((fn) => fn()).catch(() => {});
     };
-  }, [serverId, sounds, setPrivateMessageHistory, setUnreadCounts]);
+  }, [serverId, sounds, setPrivateMessageHistory, setUnreadCounts, enablePrivateMessaging]);
 
   // Listen for download progress events
   useEffect(() => {
-    const unlisten = listen<{ fileName: string; bytesReceived: number; totalBytes: number; progress: number }>(
+    const unlisten = listen<{ fileName: string; bytesRead: number; totalBytes: number; progress: number }>(
       `download-progress-${serverId}`,
       (event) => {
-        const { fileName, progress } = event.payload;
+        const { fileName, bytesRead, totalBytes, progress } = event.payload;
         setDownloadProgress((prev) => new Map(prev).set(fileName, progress));
+        
+        // Track transfer
+        const transferId = `${serverId}-download-${fileName}`;
+        const existingTransfer = useAppStore.getState().transfers.find((t) => t.id === transferId);
+        
+        if (!existingTransfer) {
+          addTransfer({
+            id: transferId,
+            serverId,
+            type: 'download',
+            fileName,
+            fileSize: totalBytes || 0,
+            transferred: bytesRead || 0,
+            speed: 0,
+            status: 'active',
+            startTime: new Date(),
+          });
+        } else {
+          updateTransfer(transferId, {
+            transferred: bytesRead || 0,
+            fileSize: totalBytes || existingTransfer.fileSize || 0,
+          });
+        }
       }
     );
 
     return () => {
       unlisten.then((fn) => fn()).catch(() => {});
     };
-  }, [serverId, setDownloadProgress]);
+  }, [serverId, setDownloadProgress, addTransfer, updateTransfer]);
 
   // Listen for upload progress events
   useEffect(() => {
     const unlisten = listen<{ fileName: string; bytesSent: number; totalBytes: number; progress: number }>(
       `upload-progress-${serverId}`,
       (event) => {
-        const { fileName, progress } = event.payload;
+        const { fileName, bytesSent, totalBytes, progress } = event.payload;
         setUploadProgress((prev) => new Map(prev).set(fileName, progress));
+        
+        // Track transfer
+        const transferId = `${serverId}-upload-${fileName}`;
+        const existingTransfer = useAppStore.getState().transfers.find((t) => t.id === transferId);
+        
+        if (!existingTransfer) {
+          addTransfer({
+            id: transferId,
+            serverId,
+            type: 'upload',
+            fileName,
+            fileSize: totalBytes || 0,
+            transferred: bytesSent || 0,
+            speed: 0,
+            status: 'active',
+            startTime: new Date(),
+          });
+        } else {
+          updateTransfer(transferId, {
+            transferred: bytesSent || 0,
+            fileSize: totalBytes || existingTransfer.fileSize || 0,
+          });
+        }
       }
     );
 
     return () => {
       unlisten.then((fn) => fn()).catch(() => {});
     };
-  }, [serverId, setUploadProgress]);
+  }, [serverId, setUploadProgress, addTransfer, updateTransfer]);
 
   // Listen for download/upload complete and error events
   useEffect(() => {
@@ -235,6 +298,13 @@ export function useServerEvents({
           const next = new Map(prev);
           next.delete(event.payload.fileName);
           return next;
+        });
+        
+        // Mark transfer as completed
+        const transferId = `${serverId}-download-${event.payload.fileName}`;
+        updateTransfer(transferId, {
+          status: 'completed',
+          endTime: new Date(),
         });
       }
     );
@@ -247,6 +317,13 @@ export function useServerEvents({
           next.delete(event.payload.fileName);
           return next;
         });
+        
+        // Mark transfer as completed
+        const transferId = `${serverId}-upload-${event.payload.fileName}`;
+        updateTransfer(transferId, {
+          status: 'completed',
+          endTime: new Date(),
+        });
       }
     );
 
@@ -257,6 +334,14 @@ export function useServerEvents({
           const next = new Map(prev);
           next.delete(event.payload.fileName);
           return next;
+        });
+        
+        // Mark transfer as failed
+        const transferId = `${serverId}-download-${event.payload.fileName}`;
+        updateTransfer(transferId, {
+          status: 'failed',
+          error: event.payload.error,
+          endTime: new Date(),
         });
       }
     );
@@ -269,6 +354,14 @@ export function useServerEvents({
           next.delete(event.payload.fileName);
           return next;
         });
+        
+        // Mark transfer as failed
+        const transferId = `${serverId}-upload-${event.payload.fileName}`;
+        updateTransfer(transferId, {
+          status: 'failed',
+          error: event.payload.error,
+          endTime: new Date(),
+        });
       }
     );
 
@@ -278,7 +371,7 @@ export function useServerEvents({
       unlistenDownloadError.then((fn) => fn()).catch(() => {});
       unlistenUploadError.then((fn) => fn()).catch(() => {});
     };
-  }, [serverId, setDownloadProgress, setUploadProgress]);
+  }, [serverId, sounds, setDownloadProgress, setUploadProgress, updateTransfer]);
 
   // Listen for connection status changes
   useEffect(() => {

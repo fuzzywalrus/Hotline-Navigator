@@ -4,12 +4,14 @@ import { useAppStore } from '../../stores/appStore';
 import BookmarkList from './BookmarkList';
 import ConnectDialog from './ConnectDialog';
 import SettingsView from '../settings/SettingsView';
+import AboutView from '../about/AboutView';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import type { Bookmark } from '../../types';
 
 export default function TrackerWindow() {
   const [showConnect, setShowConnect] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const { bookmarks, setBookmarks } = useAppStore();
 
@@ -80,6 +82,13 @@ export default function TrackerWindow() {
           >
             ⚙️
           </button>
+          <button
+            onClick={() => setShowAbout(true)}
+            className="px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+            title="About"
+          >
+            ℹ️
+          </button>
         </div>
         </div>
         {/* Search bar */}
@@ -132,6 +141,9 @@ export default function TrackerWindow() {
       
       {/* Settings dialog */}
       {showSettings && <SettingsView onClose={() => setShowSettings(false)} />}
+      
+      {/* About dialog */}
+      {showAbout && <AboutView onClose={() => setShowAbout(false)} />}
     </div>
   );
 }

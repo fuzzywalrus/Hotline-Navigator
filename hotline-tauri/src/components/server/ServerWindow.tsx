@@ -9,6 +9,7 @@ import NewsTab from '../news/NewsTab';
 import ServerBanner from './ServerBanner';
 import ServerHeader from './ServerHeader';
 import ServerSidebar from './ServerSidebar';
+import TransferList from '../transfers/TransferList';
 import { ServerInfo, ConnectionStatus } from '../../types';
 import { useAppStore } from '../../stores/appStore';
 import { usePreferencesStore } from '../../stores/preferencesStore';
@@ -25,8 +26,9 @@ interface ServerWindowProps {
 }
 
 export default function ServerWindow({ serverId, serverName, onClose }: ServerWindowProps) {
-  const { setFileCache, getFileCache, clearFileCache, clearFileCachePath } = useAppStore();
-  const { fileCacheDepth } = usePreferencesStore();
+  const { setFileCache, getFileCache, clearFileCache, clearFileCachePath, addTransfer, updateTransfer } = useAppStore();
+  const { fileCacheDepth, enablePrivateMessaging } = usePreferencesStore();
+  const [showTransferList, setShowTransferList] = useState(false);
   const [activeTab, setActiveTab] = useState<ViewTab>('chat');
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
@@ -69,7 +71,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     }
   }, [bannerUrl]);
 
-  // Check for pending agreement when component mounts
+  // Check for pending agreement and connection status when component mounts
   useEffect(() => {
     const checkPendingAgreement = async () => {
       try {
@@ -86,6 +88,30 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     };
     checkPendingAgreement();
   }, [serverId]);
+  
+  // Update connection status based on users - if we have users, we're logged in
+  // Use a ref to track if we've already updated to avoid infinite loops
+  const statusUpdatedRef = useRef(false);
+  useEffect(() => {
+    if (users.length > 0 && !statusUpdatedRef.current && (connectionStatus === 'connecting' || connectionStatus === 'connected')) {
+      setConnectionStatus('logged-in');
+      statusUpdatedRef.current = true;
+    }
+    // Reset the ref if users list becomes empty
+    if (users.length === 0) {
+      statusUpdatedRef.current = false;
+    }
+  }, [users.length, connectionStatus]);
+
+  // Request file list when Files tab is activated or path changes
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  
+  const handleFileListReceived = (path: string[]) => {
+    // Clear loading state when file list arrives for the current path
+    if (JSON.stringify(path) === JSON.stringify(currentPath)) {
+      setIsLoadingFiles(false);
+    }
+  };
 
   // Use server events hook (handles all event listeners)
   useServerEvents({
@@ -103,6 +129,10 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     setFileCache,
     currentPathRef,
     parseUserFlags,
+    enablePrivateMessaging,
+    addTransfer,
+    updateTransfer,
+    onFileListReceived: handleFileListReceived,
   });
 
   // Keyboard shortcuts
@@ -154,9 +184,11 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     currentPathRef.current = currentPath;
   }, [currentPath]);
 
-  // Request file list when Files tab is activated or path changes
   useEffect(() => {
     if (activeTab === 'files') {
+      // Set loading state immediately to prevent race conditions
+      setIsLoadingFiles(true);
+      
       // Check cache first for instant display
       const cached = getFileCache(serverId, currentPath);
       if (cached) {
@@ -168,11 +200,13 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
       invoke('get_file_list', {
         serverId,
         path: currentPath,
-      }).catch((error) => {
-        console.error('Failed to get file list:', error);
-      });
+      })
+        .catch((error) => {
+          console.error('Failed to get file list:', error);
+          setIsLoadingFiles(false);
+        });
     }
-  }, [activeTab, currentPath, serverId, getFileCache]);
+  }, [activeTab, currentPath, serverId, getFileCache, setFiles]);
 
   // Pre-fetch file listings when connected
   useEffect(() => {
@@ -324,12 +358,16 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     }
   }, [serverId, users.length, serverInfo]);
 
+
   const handleUserClick = (user: User) => {
     // Open user info dialog
     setUserInfoDialogUser(user);
   };
 
   const handleOpenMessageDialog = (user: User) => {
+    if (!enablePrivateMessaging) {
+      return; // Private messaging is disabled
+    }
     // Reset unread count for this user
     setUnreadCounts((prev) => {
       const newCounts = new Map(prev);
@@ -448,6 +486,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
         users={users}
         connectionStatus={connectionStatus}
         onDisconnect={handleDisconnect}
+        onShowTransfers={() => setShowTransferList(true)}
       />
 
       {/* Main content */}
@@ -520,11 +559,17 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
           {/* Files view */}
           {activeTab === 'files' && (
             <FilesTab
+              serverId={serverId}
               files={files}
               currentPath={currentPath}
               downloadProgress={downloadProgress}
               uploadProgress={uploadProgress}
-              onPathChange={setCurrentPath}
+              isLoading={isLoadingFiles}
+              onPathChange={(path) => {
+                if (!isLoadingFiles) {
+                  setCurrentPath(path);
+                }
+              }}
               onDownloadFile={handleDownloadFile}
               onUploadFile={handleUploadFile}
               onRefresh={() => {
@@ -565,6 +610,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
           user={userInfoDialogUser}
           onClose={() => setUserInfoDialogUser(null)}
           onSendMessage={handleOpenMessageDialog}
+          enablePrivateMessaging={enablePrivateMessaging}
         />
       )}
 
@@ -576,6 +622,15 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
           messages={privateMessageHistory.get(messageDialogUser.userId) || []}
           onSendMessage={handleSendPrivateMessage}
           onClose={() => setMessageDialogUser(null)}
+        />
+      )}
+
+      {/* Transfer List */}
+      {showTransferList && (
+        <TransferList
+          serverId={serverId}
+          serverName={serverName}
+          onClose={() => setShowTransferList(false)}
         />
       )}
     </div>

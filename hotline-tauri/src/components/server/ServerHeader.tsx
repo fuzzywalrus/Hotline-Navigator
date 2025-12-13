@@ -7,6 +7,7 @@ interface ServerHeaderProps {
   users: User[];
   connectionStatus: ConnectionStatus;
   onDisconnect: () => void;
+  onShowTransfers?: () => void;
 }
 
 export default function ServerHeader({
@@ -15,6 +16,7 @@ export default function ServerHeader({
   users,
   connectionStatus,
   onDisconnect,
+  onShowTransfers,
 }: ServerHeaderProps) {
   return (
     <div className="bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
@@ -53,6 +55,15 @@ export default function ServerHeader({
               <span className="font-medium">{users.length}</span>
               <span>user{users.length !== 1 ? 's' : ''}</span>
             </div>
+          )}
+          {onShowTransfers && (
+            <button
+              onClick={onShowTransfers}
+              className="px-3 py-1 text-sm text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+              title="View Transfers"
+            >
+              📥 Transfers
+            </button>
           )}
           <button
             onClick={onDisconnect}

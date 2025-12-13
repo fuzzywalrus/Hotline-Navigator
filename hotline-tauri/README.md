@@ -45,9 +45,18 @@ npm run tauri dev
 
 Build:
 ```
-npm run build        # frontend only
-npm run tauri build  # full bundle
+npm run build                    # frontend only
+npm run tauri build              # full bundle (default target)
+npm run build:macos              # macOS universal binary (Intel + Apple Silicon)
+npm run build:macos-intel        # macOS Intel (x86_64) only
+npm run build:macos-silicon      # macOS Apple Silicon (aarch64) only
+npm run build:macos-universal    # macOS universal binary (same as build:macos)
 ```
+
+**macOS Architecture Support:**
+- Universal binaries work on both Intel (x86_64) and Apple Silicon (aarch64) Macs
+- Both Rust targets must be installed: `rustup target add aarch64-apple-darwin x86_64-apple-darwin`
+- Universal builds are recommended for distribution as they work on all Macs
 
 ## Swift/macOS feature map (reference)
 

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { usePreferencesStore } from '../../stores/preferencesStore';
 
 export default function GeneralSettingsTab() {
-  const { username, setUsername, fileCacheDepth, setFileCacheDepth } = usePreferencesStore();
+  const { username, setUsername, fileCacheDepth, setFileCacheDepth, enablePrivateMessaging, setEnablePrivateMessaging } = usePreferencesStore();
   const [localUsername, setLocalUsername] = useState(username);
   const [localFileCacheDepth, setLocalFileCacheDepth] = useState(fileCacheDepth);
 
@@ -56,6 +56,25 @@ export default function GeneralSettingsTab() {
         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
           Number of folder layers to pre-fetch and cache when connecting to a server. Higher values improve browsing speed but use more memory. (0-10, default: 8)
         </p>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Enable Private Messaging
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Allow other users to send you private messages and enable private messaging features.
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            checked={enablePrivateMessaging}
+            onChange={(e) => setEnablePrivateMessaging(e.target.checked)}
+            className="ml-4 toggle toggle-primary"
+          />
+        </div>
       </div>
     </div>
   );

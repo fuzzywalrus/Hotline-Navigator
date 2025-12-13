@@ -32,7 +32,7 @@ This file tracks completed features and implementation notes for the Tauri port.
 - [x] Broadcast messages (server-wide announcements)
 - [x] Sound settings tab (add to Settings)
 - [ ] About window
-- [ ] File preview (images, text files)
+- [x] File preview (images, audio, text files - video excluded to avoid bandwidth issues)
 - [ ] Transfer list window (active/completed transfers)
 
 ### Lower Priority Features
@@ -1290,7 +1290,7 @@ Created domain-specific components in proper folders:
 - [ ] Server statistics
 
 ### UI/UX Improvements
-- [ ] File preview (images, text files)
+- [x] File preview (images, audio, text files - video excluded to avoid bandwidth issues)
 - [ ] Drag & drop file uploads
 - [ ] Context menus throughout app
 - [ ] Keyboard shortcuts
@@ -1392,3 +1392,71 @@ Created domain-specific components in proper folders:
 - ✅ Context menus added to files
 - ✅ TypeScript compilation successful
 - ⏸️ Needs testing with live app to verify menus work correctly
+
+### 2025-12-12: File Preview Implementation
+
+**What was completed:**
+- **Backend Preview System**: Created `read_preview_file` Tauri command that reads downloaded files and returns base64-encoded data with MIME types
+- **Content-Based MIME Detection**: Detects file types from magic bytes (file signatures) for accurate type identification
+- **Preview Support**: Images (PNG, JPEG, GIF, BMP, TIFF, WebP, SVG), Audio (MP3, WAV, OGG, FLAC, M4A, AAC), and Text (TXT, JSON, XML, HTML, CSS, JS)
+- **Video Exclusion**: Video files excluded from preview to avoid heavy bandwidth usage on servers
+- **Preview UI**: Preview button positioned to the left of download button, only visible for previewable files
+- **Preview Modal**: Full-screen modal with image viewer, audio player, and text viewer
+- **Preview Navigation**: Navigate between previewable files with arrow buttons
+- **Preview Caching**: Cached previews for instant display on subsequent views
+
+**Backend Implementation:**
+- `read_preview_file` command in `commands/mod.rs`:
+  - Reads file bytes and detects MIME type from content (magic bytes) first
+  - Falls back to extension-based detection if content detection fails
+  - Returns text directly for text files, base64-encoded data for binary files
+  - Handles UTF-8 decoding for text files with fallback to base64
+- Content-based MIME detection supports:
+  - Images: PNG, JPEG, GIF, BMP, WebP (from file signatures)
+  - Audio: MP3 (ID3v2 and frame sync), WAV, OGG, FLAC, MP4/M4A (from file signatures)
+  - Text: Detected by MIME type (text/*, application/json, application/xml, etc.)
+
+**Frontend Implementation:**
+- Preview button in file list (only shown for previewable files):
+  - Positioned to the left of download button
+  - Only visible when file can be previewed
+  - Eye icon (👁) with hover styling
+- Preview modal:
+  - Full-screen overlay with backdrop
+  - Header with filename and preview type
+  - Navigation arrows for browsing previewable files
+  - Download button in modal header
+  - Close button
+- Preview types:
+  - **Images**: Centered display with max height constraint
+  - **Audio**: Audio player with controls and filename
+  - **Text**: Monospace font with scrollable content
+- Preview caching:
+  - Caches preview data (blob URLs and text) for instant display
+  - Cache key based on file path and name
+  - Reduces redundant downloads and processing
+
+**Files created/modified:**
+- `src-tauri/src/commands/mod.rs` - Added `read_preview_file` command with content-based MIME detection
+- `src/components/files/FilesTab.tsx` - Added preview button, preview modal, preview state management, preview caching
+- `src-tauri/src/lib.rs` - Registered `read_preview_file` command
+
+**Implementation details:**
+- **Preview Flow**: Download file → Read with `read_preview_file` → Create blob URL → Display in modal
+- **MIME Detection**: Magic bytes first (accurate), extension fallback (for edge cases)
+- **Video Exclusion**: Video files (MP4, WebM, MOV, AVI, etc.) excluded from preview to avoid bandwidth issues
+- **Preview Button**: Only shown for files that can be previewed (images, audio, text)
+- **Preview Navigation**: Arrow buttons navigate through all previewable files in current directory
+- **Caching**: Preview data cached to avoid re-downloading and re-processing
+
+**Testing status:**
+- ✅ Preview button only shows for previewable files
+- ✅ Preview button positioned to left of download button
+- ✅ Video files excluded from preview
+- ✅ Image previews work correctly
+- ✅ Audio previews work correctly
+- ✅ Text previews work correctly
+- ✅ Preview caching works
+- ✅ Preview navigation works
+- ✅ TypeScript compilation successful
+- ⏸️ Needs testing with various file types on live server

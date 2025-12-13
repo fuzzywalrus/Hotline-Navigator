@@ -4,6 +4,7 @@ use super::HotlineClient;
 use crate::protocol::constants::{FieldType, TransactionType};
 use crate::protocol::transaction::{Transaction, TransactionField};
 use crate::protocol::types::{NewsArticle, NewsCategory};
+use std::io::ErrorKind;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
@@ -24,18 +25,35 @@ impl HotlineClient {
 
         // Send transaction
         let encoded = transaction.encode();
-        let mut write_guard = self.write_half.lock().await;
-        let write_stream = write_guard
-            .as_mut()
-            .ok_or("Not connected".to_string())?;
+        let write_result = {
+            let mut write_guard = self.write_half.lock().await;
+            let write_stream = write_guard
+                .as_mut()
+                .ok_or("Not connected".to_string())?;
+            write_stream.write_all(&encoded).await
+        };
+        if let Err(e) = &write_result {
+            if e.kind() == ErrorKind::BrokenPipe || e.to_string().contains("Broken pipe") {
+                let mut write_guard = self.write_half.lock().await;
+                write_guard.take();
+            }
+        }
+        write_result.map_err(|e| format!("Failed to send get message board request: {}", e))?;
 
-        write_stream
-            .write_all(&encoded)
-            .await
-            .map_err(|e| format!("Failed to send get message board request: {}", e))?;
-
-        write_stream.flush().await.map_err(|e| format!("Failed to flush: {}", e))?;
-        drop(write_guard);
+        let flush_result = {
+            let mut write_guard = self.write_half.lock().await;
+            let write_stream = write_guard
+                .as_mut()
+                .ok_or("Not connected".to_string())?;
+            write_stream.flush().await
+        };
+        if let Err(e) = &flush_result {
+            if e.kind() == ErrorKind::BrokenPipe || e.to_string().contains("Broken pipe") {
+                let mut write_guard = self.write_half.lock().await;
+                write_guard.take();
+            }
+        }
+        flush_result.map_err(|e| format!("Failed to flush: {}", e))?;
 
         // Wait for reply
         let reply = tokio::time::timeout(Duration::from_secs(10), rx.recv())
@@ -78,17 +96,38 @@ impl HotlineClient {
 
         let encoded = transaction.encode();
 
-        let mut write_guard = self.write_half.lock().await;
-        let write_stream = write_guard
-            .as_mut()
-            .ok_or("Not connected".to_string())?;
+        {
+            let mut write_guard = self.write_half.lock().await;
+            let write_stream = write_guard
+                .as_mut()
+                .ok_or("Not connected".to_string())?;
 
-        write_stream
-            .write_all(&encoded)
-            .await
-            .map_err(|e| format!("Failed to post message: {}", e))?;
+            let write_result = write_stream.write_all(&encoded).await;
+            drop(write_stream);
+            drop(write_guard);
+            if let Err(e) = &write_result {
+                if e.kind() == ErrorKind::BrokenPipe || e.to_string().contains("Broken pipe") {
+                    let mut write_guard = self.write_half.lock().await;
+                    write_guard.take();
+                }
+            }
+            write_result.map_err(|e| format!("Failed to post message: {}", e))?;
 
-        write_stream.flush().await.map_err(|e| format!("Failed to flush: {}", e))?;
+            let flush_result = {
+                let mut write_guard = self.write_half.lock().await;
+                let write_stream = write_guard
+                    .as_mut()
+                    .ok_or("Not connected".to_string())?;
+                write_stream.flush().await
+            };
+            if let Err(e) = &flush_result {
+                if e.kind() == ErrorKind::BrokenPipe || e.to_string().contains("Broken pipe") {
+                    let mut write_guard = self.write_half.lock().await;
+                    write_guard.take();
+                }
+            }
+            flush_result.map_err(|e| format!("Failed to flush: {}", e))?;
+        }
 
         println!("Message board post sent successfully");
 
@@ -121,12 +160,31 @@ impl HotlineClient {
                 .as_mut()
                 .ok_or("Not connected".to_string())?;
 
-            write_stream
-                .write_all(&encoded)
-                .await
-                .map_err(|e| format!("Failed to send request: {}", e))?;
+            let write_result = write_stream.write_all(&encoded).await;
+            drop(write_stream);
+            drop(write_guard);
+            if let Err(e) = &write_result {
+                if e.kind() == ErrorKind::BrokenPipe || e.to_string().contains("Broken pipe") {
+                    let mut write_guard = self.write_half.lock().await;
+                    write_guard.take();
+                }
+            }
+            write_result.map_err(|e| format!("Failed to send request: {}", e))?;
 
-            write_stream.flush().await.map_err(|e| format!("Failed to flush: {}", e))?;
+            let flush_result = {
+                let mut write_guard = self.write_half.lock().await;
+                let write_stream = write_guard
+                    .as_mut()
+                    .ok_or("Not connected".to_string())?;
+                write_stream.flush().await
+            };
+            if let Err(e) = &flush_result {
+                if e.kind() == ErrorKind::BrokenPipe || e.to_string().contains("Broken pipe") {
+                    let mut write_guard = self.write_half.lock().await;
+                    write_guard.take();
+                }
+            }
+            flush_result.map_err(|e| format!("Failed to flush: {}", e))?;
         }
 
         // Wait for reply
@@ -184,12 +242,31 @@ impl HotlineClient {
                 .as_mut()
                 .ok_or("Not connected".to_string())?;
 
-            write_stream
-                .write_all(&encoded)
-                .await
-                .map_err(|e| format!("Failed to send request: {}", e))?;
+            let write_result = write_stream.write_all(&encoded).await;
+            drop(write_stream);
+            drop(write_guard);
+            if let Err(e) = &write_result {
+                if e.kind() == ErrorKind::BrokenPipe || e.to_string().contains("Broken pipe") {
+                    let mut write_guard = self.write_half.lock().await;
+                    write_guard.take();
+                }
+            }
+            write_result.map_err(|e| format!("Failed to send request: {}", e))?;
 
-            write_stream.flush().await.map_err(|e| format!("Failed to flush: {}", e))?;
+            let flush_result = {
+                let mut write_guard = self.write_half.lock().await;
+                let write_stream = write_guard
+                    .as_mut()
+                    .ok_or("Not connected".to_string())?;
+                write_stream.flush().await
+            };
+            if let Err(e) = &flush_result {
+                if e.kind() == ErrorKind::BrokenPipe || e.to_string().contains("Broken pipe") {
+                    let mut write_guard = self.write_half.lock().await;
+                    write_guard.take();
+                }
+            }
+            flush_result.map_err(|e| format!("Failed to flush: {}", e))?;
         }
 
         // Wait for reply
@@ -244,12 +321,31 @@ impl HotlineClient {
                 .as_mut()
                 .ok_or("Not connected".to_string())?;
 
-            write_stream
-                .write_all(&encoded)
-                .await
-                .map_err(|e| format!("Failed to send request: {}", e))?;
+            let write_result = write_stream.write_all(&encoded).await;
+            drop(write_stream);
+            drop(write_guard);
+            if let Err(e) = &write_result {
+                if e.kind() == ErrorKind::BrokenPipe || e.to_string().contains("Broken pipe") {
+                    let mut write_guard = self.write_half.lock().await;
+                    write_guard.take();
+                }
+            }
+            write_result.map_err(|e| format!("Failed to send request: {}", e))?;
 
-            write_stream.flush().await.map_err(|e| format!("Failed to flush: {}", e))?;
+            let flush_result = {
+                let mut write_guard = self.write_half.lock().await;
+                let write_stream = write_guard
+                    .as_mut()
+                    .ok_or("Not connected".to_string())?;
+                write_stream.flush().await
+            };
+            if let Err(e) = &flush_result {
+                if e.kind() == ErrorKind::BrokenPipe || e.to_string().contains("Broken pipe") {
+                    let mut write_guard = self.write_half.lock().await;
+                    write_guard.take();
+                }
+            }
+            flush_result.map_err(|e| format!("Failed to flush: {}", e))?;
         }
 
         // Wait for reply
@@ -306,12 +402,31 @@ impl HotlineClient {
                 .as_mut()
                 .ok_or("Not connected".to_string())?;
 
-            write_stream
-                .write_all(&encoded)
-                .await
-                .map_err(|e| format!("Failed to send request: {}", e))?;
+            let write_result = write_stream.write_all(&encoded).await;
+            drop(write_stream);
+            drop(write_guard);
+            if let Err(e) = &write_result {
+                if e.kind() == ErrorKind::BrokenPipe || e.to_string().contains("Broken pipe") {
+                    let mut write_guard = self.write_half.lock().await;
+                    write_guard.take();
+                }
+            }
+            write_result.map_err(|e| format!("Failed to send request: {}", e))?;
 
-            write_stream.flush().await.map_err(|e| format!("Failed to flush: {}", e))?;
+            let flush_result = {
+                let mut write_guard = self.write_half.lock().await;
+                let write_stream = write_guard
+                    .as_mut()
+                    .ok_or("Not connected".to_string())?;
+                write_stream.flush().await
+            };
+            if let Err(e) = &flush_result {
+                if e.kind() == ErrorKind::BrokenPipe || e.to_string().contains("Broken pipe") {
+                    let mut write_guard = self.write_half.lock().await;
+                    write_guard.take();
+                }
+            }
+            flush_result.map_err(|e| format!("Failed to flush: {}", e))?;
         }
 
         // Wait for reply

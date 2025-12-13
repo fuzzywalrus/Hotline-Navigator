@@ -359,10 +359,26 @@ impl AppState {
         let clients = self.clients.read().await;
 
         if let Some(client) = clients.get(server_id) {
-            // Get reference number from server
-            let reference_number = client.download_file(path, file_name.clone()).await?;
+            // Get reference number from server and server-reported file size
+            let (reference_number, server_file_size) = client.download_file(path, file_name.clone()).await?;
 
             println!("Got reference number {}, starting file transfer...", reference_number);
+            if let Some(server_size) = server_file_size {
+                println!("Server reports file size: {} bytes ({:.2} MB)", server_size, server_size as f64 / 1_000_000.0);
+            }
+
+            // Prefer server-reported file size over file list size, but fall back to file list size if server reports 0
+            let effective_file_size = if let Some(server_size) = server_file_size {
+                if server_size > 0 {
+                    server_size
+                } else {
+                    println!("Server reported file size is 0, using file list size: {} bytes", file_size);
+                    file_size
+                }
+            } else {
+                println!("Server did not report file size, using file list size: {} bytes", file_size);
+                file_size
+            };
 
             // Perform the file transfer with progress callback
             let app_handle = self.app_handle.clone();
@@ -370,7 +386,7 @@ impl AppState {
             let file_name_clone = file_name.clone();
             let file_data = client.perform_file_transfer(
                 reference_number,
-                file_size,
+                effective_file_size,
                 move |bytes_read, total_bytes| {
                     let progress = (bytes_read as f64 / total_bytes as f64 * 100.0) as u32;
                     let payload = serde_json::json!({
@@ -391,10 +407,23 @@ impl AppState {
                 .download_dir()
                 .map_err(|e| format!("Failed to get downloads directory: {}", e))?;
 
+            // Sanitize filename for filesystem (handle unicode and invalid characters)
+            // Replace invalid path characters with underscore
+            let sanitized_name = file_name
+                .chars()
+                .map(|c| {
+                    if c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') {
+                        '_'
+                    } else {
+                        c
+                    }
+                })
+                .collect::<String>();
+            
             // Create full file path
-            let file_path = downloads_dir.join(&file_name);
+            let file_path = downloads_dir.join(&sanitized_name);
 
-            println!("Saving file to: {:?}", file_path);
+            println!("Saving file to: {:?} (original name: {:?})", file_path, file_name);
 
             // Save file to disk
             fs::write(&file_path, file_data)
@@ -441,6 +470,16 @@ impl AppState {
     pub async fn delete_bookmark(&self, id: &str) -> Result<(), String> {
         let mut bookmarks = self.bookmarks.write().await;
         bookmarks.retain(|b| b.id != id);
+
+        // Persist to disk
+        self.save_bookmarks_to_disk(&bookmarks)?;
+
+        Ok(())
+    }
+
+    pub async fn reorder_bookmarks(&self, new_bookmarks: Vec<Bookmark>) -> Result<(), String> {
+        let mut bookmarks = self.bookmarks.write().await;
+        *bookmarks = new_bookmarks;
 
         // Persist to disk
         self.save_bookmarks_to_disk(&bookmarks)?;

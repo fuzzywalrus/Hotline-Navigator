@@ -12,7 +12,7 @@ interface BookmarkListProps {
 }
 
 export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkListProps) {
-  const { removeBookmark, addActiveServer, setFocusedServer } = useAppStore();
+  const { removeBookmark, addActiveServer, setFocusedServer, setBookmarks } = useAppStore();
   const { username, userIconId } = usePreferencesStore();
   const [editingBookmark, setEditingBookmark] = useState<Bookmark | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -21,6 +21,8 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
   const [expandedTrackers, setExpandedTrackers] = useState<Set<string>>(new Set());
   const [trackerServers, setTrackerServers] = useState<Map<string, ServerBookmark[]>>(new Map());
   const [loadingTrackers, setLoadingTrackers] = useState<Set<string>>(new Set());
+  const [draggedBookmarkId, setDraggedBookmarkId] = useState<string | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
 
   const handleDelete = async (id: string) => {
@@ -240,6 +242,68 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
   // Filter bookmarks based on search query
   const filteredBookmarks = bookmarks.filter(shouldShowBookmark);
 
+  // Handle drag and drop reordering
+  const handleDragStart = (e: React.DragEvent, bookmarkId: string) => {
+    setDraggedBookmarkId(bookmarkId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', bookmarkId);
+  };
+
+  const handleDragOver = (e: React.DragEvent, filteredIndex: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIndex(filteredIndex);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, dropBookmarkId: string) => {
+    e.preventDefault();
+    setDragOverIndex(null);
+    
+    if (!draggedBookmarkId) return;
+
+    // Find the dragged bookmark and its current index in the original (unfiltered) list
+    const draggedIndex = bookmarks.findIndex(b => b.id === draggedBookmarkId);
+    if (draggedIndex === -1) return;
+
+    // Find the drop target bookmark's index in the original list
+    const dropIndex = bookmarks.findIndex(b => b.id === dropBookmarkId);
+    if (dropIndex === -1) return;
+
+    // Don't do anything if dropped on itself
+    if (draggedIndex === dropIndex) {
+      setDraggedBookmarkId(null);
+      return;
+    }
+
+    // Reorder bookmarks
+    const newBookmarks = [...bookmarks];
+    const [draggedBookmark] = newBookmarks.splice(draggedIndex, 1);
+    newBookmarks.splice(dropIndex, 0, draggedBookmark);
+
+    // Update local state immediately for responsive UI
+    setBookmarks(newBookmarks);
+
+    // Save to backend
+    try {
+      await invoke('reorder_bookmarks', { bookmarks: newBookmarks });
+    } catch (error) {
+      console.error('Failed to reorder bookmarks:', error);
+      // Revert on error
+      setBookmarks(bookmarks);
+    }
+
+    setDraggedBookmarkId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedBookmarkId(null);
+    setDragOverIndex(null);
+  };
+
   return (
     <>
       <div className="bg-white dark:bg-gray-900">
@@ -260,11 +324,21 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
                 // Tracker display - compact, list-like
                 <>
                   <div
-                    className={`h-[34px] px-2 flex items-center gap-1.5 cursor-pointer group ${
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, bookmark.id)}
+                    onDragOver={(e) => handleDragOver(e, index)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, bookmark.id)}
+                    onDragEnd={handleDragEnd}
+                    className={`h-[34px] px-2 flex items-center gap-1.5 cursor-move group ${
                       isEven 
                         ? 'bg-white dark:bg-gray-900' 
                         : 'bg-gray-50 dark:bg-gray-800/50'
-                    } hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors`}
+                    } hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors ${
+                      draggedBookmarkId === bookmark.id ? 'opacity-50' : ''
+                    } ${
+                      dragOverIndex === index ? 'border-t-2 border-blue-500' : ''
+                    }`}
                     onClick={() => handleToggleTracker(bookmark.id)}
                     onContextMenu={(e) => {
                       const items: ContextMenuItem[] = [
@@ -299,6 +373,13 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
                       showContextMenu(e, items);
                     }}
                   >
+                    {/* Drag handle - 6px width */}
+                    <div className="flex-shrink-0 w-[6px] flex items-center justify-center text-gray-300 dark:text-gray-600 cursor-move opacity-0 group-hover:opacity-100 transition-opacity">
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 16 16">
+                        <path d="M2 4h2v2H2V4zm0 3h2v2H2V7zm0 3h2v2H2v-2zm3-6h2v2H5V4zm0 3h2v2H5V7zm0 3h2v2H5v-2zm3-6h2v2H8V4zm0 3h2v2H8V7zm0 3h2v2H8v-2z"/>
+                      </svg>
+                    </div>
+                    
                     {/* Chevron - 10px width, opacity 0.5 */}
                     <button
                       onClick={(e) => {
@@ -477,12 +558,29 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
               ) : (
                 // Regular server bookmark - compact list style
                 <div
-                  className={`h-[34px] px-2 flex items-center gap-1.5 group ${
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, bookmark.id)}
+                  onDragOver={(e) => handleDragOver(e, index)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, bookmark.id)}
+                  onDragEnd={handleDragEnd}
+                  className={`h-[34px] px-2 flex items-center gap-1.5 group cursor-move ${
                     isEven 
                       ? 'bg-white dark:bg-gray-900' 
                       : 'bg-gray-50 dark:bg-gray-800/50'
-                  } hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors`}
+                  } hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors ${
+                    draggedBookmarkId === bookmark.id ? 'opacity-50' : ''
+                  } ${
+                    dragOverIndex === index ? 'border-t-2 border-blue-500' : ''
+                  }`}
                 >
+                  {/* Drag handle - 6px width */}
+                  <div className="flex-shrink-0 w-[6px] flex items-center justify-center text-gray-300 dark:text-gray-600 cursor-move opacity-0 group-hover:opacity-100 transition-opacity">
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 16 16">
+                      <path d="M2 4h2v2H2V4zm0 3h2v2H2V7zm0 3h2v2H2v-2zm3-6h2v2H5V4zm0 3h2v2H5V7zm0 3h2v2H5v-2zm3-6h2v2H8V4zm0 3h2v2H8V7zm0 3h2v2H8v-2z"/>
+                    </svg>
+                  </div>
+                  
                   {/* Bookmark icon - 11x11, opacity 0.75 
                       This indicates it's a saved server bookmark (not a tracker).
                       In the Swift app, server bookmarks show bookmark.fill before the server icon. */}

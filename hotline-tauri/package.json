@@ -7,7 +7,11 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:macos": "npm run tauri build -- --target universal-apple-darwin",
+    "build:macos-intel": "npm run tauri build -- --target x86_64-apple-darwin",
+    "build:macos-silicon": "npm run tauri build -- --target aarch64-apple-darwin",
+    "build:macos-universal": "npm run tauri build -- --target universal-apple-darwin"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

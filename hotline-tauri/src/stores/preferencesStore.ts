@@ -5,6 +5,7 @@ interface PreferencesState {
   username: string;
   userIconId: number;
   fileCacheDepth: number;
+  enablePrivateMessaging: boolean;
   
   // Sound preferences
   playSounds: boolean;
@@ -22,6 +23,7 @@ interface PreferencesState {
   setUsername: (username: string) => void;
   setUserIconId: (iconId: number) => void;
   setFileCacheDepth: (depth: number) => void;
+  setEnablePrivateMessaging: (enabled: boolean) => void;
   setPlaySounds: (enabled: boolean) => void;
   setPlayChatSound: (enabled: boolean) => void;
   setPlayFileTransferCompleteSound: (enabled: boolean) => void;
@@ -40,6 +42,7 @@ export const usePreferencesStore = create<PreferencesState>()(
       username: 'guest',
       userIconId: 191, // Default icon from Swift code
       fileCacheDepth: 8, // Default to 8 layers deep
+      enablePrivateMessaging: true, // Private messaging enabled by default
       
       // Sound preferences (all enabled by default)
       playSounds: true,
@@ -56,6 +59,7 @@ export const usePreferencesStore = create<PreferencesState>()(
       setUsername: (username) => set({ username }),
       setUserIconId: (userIconId) => set({ userIconId }),
       setFileCacheDepth: (fileCacheDepth) => set({ fileCacheDepth }),
+      setEnablePrivateMessaging: (enablePrivateMessaging) => set({ enablePrivateMessaging }),
       setPlaySounds: (playSounds) => set({ playSounds }),
       setPlayChatSound: (playChatSound) => set({ playChatSound }),
       setPlayFileTransferCompleteSound: (playFileTransferCompleteSound) => set({ playFileTransferCompleteSound }),

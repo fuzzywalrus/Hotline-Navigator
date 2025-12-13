@@ -74,6 +74,7 @@ export interface FileItem {
 
 export interface Transfer {
   id: string;
+  serverId: string;
   type: 'upload' | 'download';
   fileName: string;
   fileSize: number;
@@ -81,6 +82,8 @@ export interface Transfer {
   speed: number;
   status: 'active' | 'completed' | 'failed' | 'cancelled';
   error?: string;
+  startTime?: Date;
+  endTime?: Date;
 }
 
 export interface NewsCategory {

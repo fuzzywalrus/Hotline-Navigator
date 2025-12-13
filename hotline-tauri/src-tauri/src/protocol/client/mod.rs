@@ -303,10 +303,36 @@ impl HotlineClient {
 
         // Check for error
         if reply.error_code != 0 {
+            // Try to get error text from various possible fields
             let error_msg = reply
                 .get_field(FieldType::ErrorText)
                 .and_then(|f| f.to_string().ok())
-                .unwrap_or_else(|| format!("Error code: {}", reply.error_code));
+                .or_else(|| {
+                    // Some servers put error text in Data field
+                    reply.get_field(FieldType::Data)
+                        .and_then(|f| f.to_string().ok())
+                })
+                .unwrap_or_else(|| {
+                    // Map common error codes to messages
+                    match reply.error_code {
+                        1 => "Invalid login credentials or server rejected login".to_string(),
+                        2 => "Server is full".to_string(),
+                        3 => "Banned from server".to_string(),
+                        _ => format!("Error code: {}", reply.error_code),
+                    }
+                });
+
+            // Log all fields for debugging
+            println!("Login failed with error_code={}, fields={}", reply.error_code, reply.fields.len());
+            for (i, field) in reply.fields.iter().enumerate() {
+                println!("  Field {}: type={:?} ({}), size={} bytes", 
+                    i, field.field_type, field.field_type as u16, field.data.len());
+                if let Ok(text) = field.to_string() {
+                    if text.len() < 200 {
+                        println!("    Text: {}", text);
+                    }
+                }
+            }
 
             return Err(format!("Login failed: {}", error_msg));
         }
@@ -401,7 +427,9 @@ impl HotlineClient {
         self.running.store(true, Ordering::SeqCst);
 
         let read_half = self.read_half.clone();
+        let write_half = self.write_half.clone();
         let running = self.running.clone();
+        let status = self.status.clone();
         let event_tx = self.event_tx.clone();
         let pending_transactions = self.pending_transactions.clone();
         let file_list_paths = self.file_list_paths.clone();
@@ -422,6 +450,21 @@ impl HotlineClient {
 
                 if read_result.is_err() {
                     println!("Receive loop: connection closed");
+                    // Clear both halves to prevent further writes
+                    {
+                        let mut read_guard = read_half.lock().await;
+                        read_guard.take();
+                    }
+                    {
+                        let mut write_guard = write_half.lock().await;
+                        write_guard.take();
+                    }
+                    // Update status
+                    {
+                        let mut status_guard = status.lock().await;
+                        *status_guard = ConnectionStatus::Disconnected;
+                    }
+                    let _ = event_tx.send(HotlineEvent::StatusChanged(ConnectionStatus::Disconnected));
                     break;
                 }
 
@@ -446,10 +489,28 @@ impl HotlineClient {
                         None => break,
                     };
 
-                    if read_stream.read_exact(&mut additional_data).await.is_err() {
+                    let read_result = read_stream.read_exact(&mut additional_data).await;
+                    drop(read_guard);
+                    
+                    if read_result.is_err() {
+                        println!("Receive loop: connection closed while reading data");
+                        // Clear both halves to prevent further writes
+                        {
+                            let mut read_guard = read_half.lock().await;
+                            read_guard.take();
+                        }
+                        {
+                            let mut write_guard = write_half.lock().await;
+                            write_guard.take();
+                        }
+                        // Update status
+                        {
+                            let mut status_guard = status.lock().await;
+                            *status_guard = ConnectionStatus::Disconnected;
+                        }
+                        let _ = event_tx.send(HotlineEvent::StatusChanged(ConnectionStatus::Disconnected));
                         break;
                     }
-                    drop(read_guard);
 
                     full_data.extend(additional_data);
                 }
@@ -514,8 +575,8 @@ impl HotlineClient {
 
                     // If it's not a user/file list reply, forward to pending transaction handlers
                     if !has_user_info && !has_file_info {
-                        let pending = pending_transactions.read().await;
-                        if let Some(tx) = pending.get(&transaction.id) {
+                        let mut pending = pending_transactions.write().await;
+                        if let Some(tx) = pending.remove(&transaction.id) {
                             let _ = tx.send(transaction).await;
                         }
                     }
@@ -672,16 +733,18 @@ impl HotlineClient {
 
         let task = tokio::spawn(async move {
             while running.load(Ordering::SeqCst) {
-                tokio::time::sleep(Duration::from_secs(60)).await;
+                tokio::time::sleep(Duration::from_secs(180)).await; // 3 minutes like Swift client
 
                 if !running.load(Ordering::SeqCst) {
                     break;
                 }
 
-                // Send empty transaction as keep-alive
+                // Send GetUserNameList as keep-alive (works for all server versions)
+                // Swift client uses ConnectionKeepAlive for servers >= 185, but falls back to GetUserNameList
+                // Since we don't have ConnectionKeepAlive in our protocol, we'll use GetUserNameList
                 let transaction = Transaction::new(
                     transaction_counter.fetch_add(1, Ordering::SeqCst),
-                    TransactionType::Reply,
+                    TransactionType::GetUserNameList,
                 );
                 let encoded = transaction.encode();
 
@@ -691,7 +754,7 @@ impl HotlineClient {
                         println!("Keep-alive failed, connection lost");
                         break;
                     }
-                    println!("Keep-alive sent");
+                    println!("Keep-alive sent (GetUserNameList)");
                 } else {
                     break;
                 }

@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useContextMenu, type ContextMenuItem } from '../common/ContextMenu';
 
@@ -11,6 +12,7 @@ interface FileItem {
 }
 
 interface FilesTabProps {
+  serverId: string;
   files: FileItem[];
   currentPath: string[];
   downloadProgress: Map<string, number>;
@@ -20,9 +22,11 @@ interface FilesTabProps {
   onUploadFile?: (file: File) => Promise<void>;
   onRefresh?: () => void;
   getAllCachedFiles?: () => Array<{ file: FileItem; path: string[] }>;
+  isLoading?: boolean;
 }
 
 export default function FilesTab({
+  serverId,
   files,
   currentPath,
   downloadProgress,
@@ -31,11 +35,31 @@ export default function FilesTab({
   onUploadFile,
   onRefresh,
   getAllCachedFiles,
+  isLoading = false,
 }: FilesTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Array<{ file: FileItem; path: string[] }>>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
+  const previewableExtensions = [
+    // Images
+    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tif', '.tiff', '.webp', '.svg',
+    // Audio
+    '.mp3', '.wav', '.ogg', '.oga', '.flac', '.m4a', '.aac',
+    // Text
+    '.txt', '.json', '.xml', '.html', '.htm', '.css', '.js'
+    // Note: Video files excluded to avoid heavy bandwidth usage
+  ];
+  const [previewState, setPreviewState] = useState<{
+    file: FileItem | null;
+    path: string[];
+    src: string | null;
+    textContent?: string;
+    loading: boolean;
+    error?: string;
+    index?: number;
+  }>({ file: null, path: [], src: null, loading: false });
+  const [previewCache, setPreviewCache] = useState<Map<string, { src: string | null; text?: string }>>(new Map());
 
   // Search through all cached files
   useEffect(() => {
@@ -82,6 +106,9 @@ export default function FilesTab({
   ]);
 
   const handleFileClick = (file: FileItem, path?: string[]) => {
+    if (isLoading) {
+      return; // Prevent navigation while loading
+    }
     if (isSearching && path) {
       // If searching, navigate to the file's location
       onPathChange(path);
@@ -89,6 +116,135 @@ export default function FilesTab({
     } else if (file.isFolder) {
       onPathChange([...currentPath, file.name]);
     }
+  };
+
+  const canPreview = (file: FileItem) => {
+    if (file.isFolder) return false;
+    const lower = file.name.toLowerCase();
+    return previewableExtensions.some((ext) => lower.endsWith(ext));
+  };
+
+  const previewableList = useMemo(() => files.filter((f) => canPreview(f)), [files]);
+
+  const previewType = (file: FileItem): 'image' | 'audio' | 'video' | 'text' | 'unknown' => {
+    const lower = file.name.toLowerCase();
+    if (['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tif', '.tiff', '.webp', '.svg'].some((ext) => lower.endsWith(ext))) return 'image';
+    if (['.mp3', '.wav', '.ogg', '.oga', '.flac', '.m4a', '.aac'].some((ext) => lower.endsWith(ext))) return 'audio';
+    if (['.mp4', '.m4v', '.webm', '.ogv', '.mov', '.avi'].some((ext) => lower.endsWith(ext))) return 'video';
+    if (['.txt', '.json', '.xml', '.html', '.htm', '.css', '.js'].some((ext) => lower.endsWith(ext))) return 'text';
+    return 'unknown';
+  };
+
+  const openPreview = async (file: FileItem, path: string[]) => {
+    if (!canPreview(file) || isLoading) {
+      return;
+    }
+
+    const cacheKey = `${path.join('/')}/${file.name}`;
+    const currentIndex = previewableList.findIndex((f) => f.name === file.name);
+
+    setPreviewState({
+      file,
+      path,
+      src: null,
+      textContent: undefined,
+      loading: true,
+      error: undefined,
+      index: currentIndex,
+    });
+
+    // Return cached preview if available
+    if (previewCache.has(cacheKey)) {
+      const cached = previewCache.get(cacheKey)!;
+      setPreviewState((prev) => ({
+        ...prev,
+        loading: false,
+        src: cached.src,
+        textContent: cached.text,
+      }));
+      return;
+    }
+
+    try {
+      // Download to a temp file for preview
+      const previewPath = await invoke<string>('download_file', {
+        serverId,
+        path,
+        fileName: file.name,
+        fileSize: file.size,
+      });
+
+      // extract actual path from returned string "Downloaded to: <path>"
+      const actualPath = previewPath.replace(/^Downloaded to:\s*/, '').trim();
+      const kind = previewType(file);
+      let result: { src: string | null; text?: string };
+      if (kind === 'text') {
+        try {
+          const preview = await invoke<{ mime: string; data: string; is_text: boolean }>('read_preview_file', { path: actualPath });
+          result = { src: null, text: preview.data };
+        } catch (err) {
+          setPreviewState((prev) => ({
+            ...prev,
+            loading: false,
+            src: null,
+            textContent: undefined,
+            error: err instanceof Error ? err.message : 'Failed to preview file',
+          }));
+          return;
+        }
+      } else {
+        try {
+          const preview = await invoke<{ mime: string; data: string; is_text: boolean }>('read_preview_file', { path: actualPath });
+          const bytes = Uint8Array.from(atob(preview.data), (c) => c.charCodeAt(0));
+          const blob = new Blob([bytes], { type: preview.mime });
+          const objectUrl = URL.createObjectURL(blob);
+          result = { src: objectUrl, text: undefined };
+        } catch (err) {
+          setPreviewState((prev) => ({
+            ...prev,
+            loading: false,
+            src: null,
+            textContent: undefined,
+            error: err instanceof Error ? err.message : 'Failed to preview file',
+          }));
+          return;
+        }
+      }
+
+      setPreviewCache((prev) => {
+        const next = new Map(prev);
+        next.set(cacheKey, { src: result.src, text: result.text });
+        return next;
+      });
+
+      setPreviewState((prev) => ({
+        ...prev,
+        loading: false,
+        src: result.src,
+        textContent: result.text,
+        error: undefined,
+      }));
+    } catch (error) {
+      console.error('Preview failed:', error);
+      setPreviewState((prev) => ({
+        ...prev,
+        loading: false,
+        error: error instanceof Error ? error.message : 'Failed to preview file',
+      }));
+    }
+  };
+
+  const goToPreview = (direction: 1 | -1) => {
+    if (!previewState.file || previewableList.length < 2) return;
+    const currentIndex = previewableList.findIndex((f) => f.name === previewState.file?.name);
+    if (currentIndex === -1) return;
+    const nextIndex = (currentIndex + direction + previewableList.length) % previewableList.length;
+    const nextFile = previewableList[nextIndex];
+    openPreview(nextFile, previewState.path.length ? previewState.path : currentPath);
+  };
+
+  const closePreview = () => {
+    setPreviewState({ file: null, path: [], src: null, loading: false });
   };
 
   return (
@@ -150,8 +306,15 @@ export default function FilesTab({
           <span key={uniqueKey} className="flex items-center gap-2">
             <span className="text-gray-400">/</span>
             <button
-              onClick={() => onPathChange(currentPath.slice(0, index + 1))}
-              className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+              onClick={() => {
+                if (!isLoading) {
+                  onPathChange(currentPath.slice(0, index + 1));
+                }
+              }}
+              disabled={isLoading}
+              className={`text-sm text-blue-600 dark:text-blue-400 hover:underline ${
+                isLoading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
             >
               {folder}
             </button>
@@ -232,7 +395,9 @@ export default function FilesTab({
                 className="flex items-center gap-3 px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded group"
               >
                 <div
-                  className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+                  className={`flex items-center gap-3 flex-1 min-w-0 ${
+                    isLoading && file.isFolder ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+                  }`}
                   onClick={() => handleFileClick(file, 'path' in item ? item.path : undefined)}
                   onDoubleClick={(e) => {
                     e.stopPropagation();
@@ -265,10 +430,9 @@ export default function FilesTab({
                         label: 'Preview',
                         icon: '👁️',
                         action: () => {
-                          // TODO: Implement file preview
-                          console.log('Preview file:', file.name);
+                          openPreview(file, path);
                         },
-                        disabled: file.isFolder || !file.fileType,
+                        disabled: !canPreview(file),
                       },
                     ];
                     showContextMenu(e, items);
@@ -312,12 +476,23 @@ export default function FilesTab({
                         </span>
                       </div>
                     ) : (
-                      <button
-                        onClick={() => onDownloadFile(file.name, file.size)}
-                        className="opacity-0 group-hover:opacity-100 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-opacity"
-                      >
-                        Download
-                      </button>
+                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {canPreview(file) && (
+                          <button
+                            onClick={() => openPreview(file, path)}
+                            className="px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 rounded"
+                            title="Preview"
+                          >
+                            👁
+                          </button>
+                        )}
+                        <button
+                          onClick={() => onDownloadFile(file.name, file.size)}
+                          className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded"
+                        >
+                          Download
+                        </button>
+                      </div>
                     )}
                   </div>
                 )}
@@ -368,6 +543,87 @@ export default function FilesTab({
               </button>
             );
           })}
+        </div>
+      )}
+
+      {/* Preview modal */}
+      {previewState.file && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4" onClick={closePreview}>
+          <div
+            className="bg-white dark:bg-gray-900 rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
+              <div>
+                <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">{previewState.file.name}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">{previewType(previewState.file)} preview</div>
+              </div>
+              <div className="flex items-center gap-2">
+                {previewableList.length > 1 && (
+                  <>
+                    <button
+                      onClick={() => goToPreview(-1)}
+                      className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 px-2 py-1 rounded border border-gray-200 dark:border-gray-700"
+                    >
+                      ←
+                    </button>
+                    <button
+                      onClick={() => goToPreview(1)}
+                      className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 px-2 py-1 rounded border border-gray-200 dark:border-gray-700"
+                    >
+                      →
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => previewState.file && onDownloadFile(previewState.file.name, previewState.file.size)}
+                  className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded"
+                >
+                  Download
+                </button>
+                <button
+                  onClick={closePreview}
+                  className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  ✕
+                </button>
+              </div>
+
+            </div>
+
+            <div className="p-4 flex-1 overflow-auto bg-gray-50 dark:bg-gray-950">
+              {previewState.loading && (
+                <div className="text-sm text-gray-600 dark:text-gray-300">Loading preview…</div>
+              )}
+              {previewState.error && (
+                <div className="text-sm text-red-600 dark:text-red-400">{previewState.error}</div>
+              )}
+              {!previewState.loading && !previewState.error && previewState.file && (
+                <>
+                  {previewType(previewState.file) === 'image' && previewState.src && (
+                    <div className="w-full flex justify-center">
+                      <img src={previewState.src} alt={previewState.file.name} className="max-h-[70vh] object-contain" />
+                    </div>
+                  )}
+                  {previewType(previewState.file) === 'audio' && previewState.src && (
+                    <div className="w-full flex flex-col items-center gap-4 p-4">
+                      <audio controls className="w-full max-w-2xl" src={previewState.src}>
+                        Your browser does not support the audio element.
+                      </audio>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        {previewState.file.name}
+                      </div>
+                    </div>
+                  )}
+                  {previewType(previewState.file) === 'text' && (
+                    <pre className="whitespace-pre-wrap text-sm text-gray-800 dark:text-gray-100 bg-white dark:bg-gray-900 p-3 rounded border border-gray-200 dark:border-gray-800 max-h-[70vh] overflow-auto">
+                      {previewState.textContent ?? 'No content'}
+                    </pre>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

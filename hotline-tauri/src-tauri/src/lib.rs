@@ -42,11 +42,13 @@ pub fn run() {
             commands::get_bookmarks,
             commands::save_bookmark,
             commands::delete_bookmark,
+            commands::reorder_bookmarks,
             commands::get_pending_agreement,
             commands::accept_agreement,
             commands::download_banner,
+            commands::read_preview_file,
             commands::fetch_tracker_servers,
-        commands::get_server_info,
+            commands::get_server_info,
             commands::test_connection,
         ])
         .run(tauri::generate_context!())

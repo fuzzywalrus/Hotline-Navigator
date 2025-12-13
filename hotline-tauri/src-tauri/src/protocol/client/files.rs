@@ -68,7 +68,7 @@ impl HotlineClient {
         Ok(())
     }
 
-    pub async fn download_file(&self, path: Vec<String>, file_name: String) -> Result<u32, String> {
+    pub async fn download_file(&self, path: Vec<String>, file_name: String) -> Result<(u32, Option<u32>), String> {
         println!("Requesting download for file: {:?} / {}", path, file_name);
 
         let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::DownloadFile);
@@ -125,10 +125,21 @@ impl HotlineClient {
 
         // Wait for reply
         println!("Waiting for DownloadFile reply...");
-        let reply = tokio::time::timeout(Duration::from_secs(10), rx.recv())
-            .await
-            .map_err(|_| "Timeout waiting for download reply".to_string())?
-            .ok_or("Channel closed".to_string())?;
+        let reply = match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(reply)) => reply,
+            Ok(None) => {
+                // Channel closed, remove from pending
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                return Err("Channel closed".to_string());
+            }
+            Err(_) => {
+                // Timeout, remove from pending
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                return Err("Timeout waiting for download reply".to_string());
+            }
+        };
 
         println!("DownloadFile reply received: error_code={}, {} fields", reply.error_code, reply.fields.len());
 
@@ -176,7 +187,8 @@ impl HotlineClient {
             println!("File transfer options: {:02X?}", options_field.data);
         }
 
-        Ok(reference_number)
+        // Return both reference number and server-reported file size
+        Ok((reference_number, file_size))
     }
 
     pub async fn perform_file_transfer<F>(&self, reference_number: u32, expected_size: u32, mut progress_callback: F) -> Result<Vec<u8>, String>
@@ -295,49 +307,134 @@ impl HotlineClient {
 
             // Determine actual size to read
             // If fork header shows 0 size but this is a DATA fork, use expected_size
-            let actual_size = if data_size == 0 && fork_type.trim() == "DATA" && expected_size > 0 {
-                println!("Fork header shows 0 size, using expected size from file list: {} bytes", expected_size);
-                expected_size
+            // Note: The Hotline protocol uses u32 for file sizes, which limits files to ~4.3GB (u32::MAX)
+            // We allow files up to this limit. To support larger files (like 25GB), the protocol would need
+            // to be extended to use u64, which is a significant change.
+            let (actual_size, read_until_eof) = if data_size == 0 && fork_type.trim() == "DATA" && expected_size > 0 {
+                // Check for suspicious round numbers that might indicate corruption (like exactly 2GB)
+                // These specific values often indicate encoding/parsing issues with unicode filenames
+                if expected_size == 2_147_483_648 || expected_size == 2_161_946_800 {
+                    return Err(format!(
+                        "File size from file list ({}) appears to be corrupted (suspicious round number). Fork header shows size=0. This may be due to a unicode encoding issue in the filename. Please try refreshing the file list or contact the server administrator.",
+                        expected_size
+                    ));
+                }
+                
+                // Check for suspiciously large file sizes (> 2GB) when fork header shows 0
+                // This often indicates file list corruption, especially with unicode filenames
+                // Instead of rejecting, we'll try to read until EOF as a workaround
+                const SUSPICIOUS_FILE_SIZE_THRESHOLD: u32 = 2_000_000_000; // 2GB
+                let is_suspicious = expected_size > SUSPICIOUS_FILE_SIZE_THRESHOLD;
+                
+                if is_suspicious {
+                    println!("WARNING: File size from file list ({:.2} GB) is suspiciously large and fork header shows size=0. This likely indicates file list corruption, possibly due to unicode encoding issues in the filename. Attempting to read until EOF as a workaround...", expected_size as f64 / 1_000_000_000.0);
+                } else {
+                    println!("Fork header shows 0 size, using expected size from file list: {} bytes ({:.2} MB)", expected_size, expected_size as f64 / 1_000_000.0);
+                }
+                
+                // If suspicious, we'll read until EOF instead of expecting the full size
+                (expected_size, is_suspicious)
             } else {
                 if fork_type.trim() == "DATA" && data_size != expected_size && expected_size > 0 {
                     println!("Note: DATA fork header size ({}) differs from file list size ({})", data_size, expected_size);
                 }
-                data_size
+                (data_size, false)
             };
 
             // Read fork data
-            if actual_size > 0 {
+            if actual_size > 0 || read_until_eof {
                 let is_data_fork = fork_type.trim() == "DATA";
 
                 if is_data_fork {
                     // For DATA fork, read in chunks and report progress
+                    // For very large files, we need to be careful about memory
                     let chunk_size = 65536; // 64KB chunks
-                    let mut fork_data = Vec::with_capacity(actual_size as usize);
+                    // Don't pre-allocate the entire vector for huge files - let it grow naturally
+                    // but reserve a reasonable amount to avoid too many reallocations
+                    // For files > 100MB, use a smaller initial capacity to avoid memory issues
+                    let initial_capacity = if read_until_eof {
+                        1024 * 1024 // 1MB default for read-until-EOF mode
+                    } else if actual_size > 100_000_000 {
+                        std::cmp::min(actual_size as usize / 100, 10 * 1024 * 1024) // Max 10MB initial for huge files
+                    } else {
+                        std::cmp::min(actual_size as usize, 10 * 1024 * 1024) // Max 10MB initial
+                    };
+                    let mut fork_data = Vec::with_capacity(initial_capacity);
                     let mut bytes_read = 0u32;
                     let mut last_reported_progress = 0u32;
 
-                    while bytes_read < actual_size {
-                        let remaining = actual_size - bytes_read;
-                        let to_read = std::cmp::min(remaining, chunk_size) as usize;
-                        let mut chunk = vec![0u8; to_read];
+                    if read_until_eof {
+                        // Read until EOF as a workaround for corrupted file sizes
+                        println!("Reading file until EOF (file list size may be corrupted)...");
+                        loop {
+                            let mut chunk = vec![0u8; chunk_size];
+                            
+                            match transfer_stream.read(&mut chunk).await {
+                                Ok(0) => {
+                                    // EOF reached
+                                    println!("EOF reached after reading {} bytes", bytes_read);
+                                    break;
+                                }
+                                Ok(n) => {
+                                    chunk.truncate(n);
+                                    bytes_read += n as u32;
+                                    fork_data.extend_from_slice(&chunk);
+                                    
+                                    // Report progress using bytes_read as both current and total (since we don't know the total)
+                                    // This will show progress but percentage will be approximate
+                                    if bytes_read % (1024 * 1024) == 0 || bytes_read < 1024 * 1024 {
+                                        // Report every MB or for small files
+                                        progress_callback(bytes_read, bytes_read.max(1));
+                                    }
+                                }
+                                Err(e) => {
+                                    // If we've read some data, treat EOF as success
+                                    if bytes_read > 0 && e.kind() == std::io::ErrorKind::UnexpectedEof {
+                                        println!("EOF reached after reading {} bytes (unexpected EOF)", bytes_read);
+                                        break;
+                                    }
+                                    return Err(format!("Failed to read fork {} data: {}", fork_idx, e));
+                                }
+                            }
+                        }
+                        println!("Received DATA fork: {} bytes (read until EOF)", fork_data.len());
+                    } else {
+                        // Normal read with known size
+                        while bytes_read < actual_size {
+                            let remaining = actual_size - bytes_read;
+                            let to_read = std::cmp::min(remaining, chunk_size as u32) as usize;
+                            let mut chunk = vec![0u8; to_read];
 
-                        transfer_stream
-                            .read_exact(&mut chunk)
-                            .await
-                            .map_err(|e| format!("Failed to read fork {} data: {}", fork_idx, e))?;
+                            // Use read_exact with better error handling for large files
+                            match transfer_stream.read_exact(&mut chunk).await {
+                                Ok(_) => {
+                                    bytes_read += to_read as u32;
+                                    fork_data.extend_from_slice(&chunk);
 
-                        bytes_read += to_read as u32;
-                        fork_data.extend_from_slice(&chunk);
-
-                        // Only emit progress every 2% or on completion to avoid UI stuttering
-                        let current_progress = (bytes_read as f64 / actual_size as f64 * 100.0) as u32;
-                        if current_progress >= last_reported_progress + 2 || bytes_read == actual_size {
-                            progress_callback(bytes_read, actual_size);
-                            last_reported_progress = current_progress;
+                                    // Only emit progress every 2% or on completion to avoid UI stuttering
+                                    let current_progress = (bytes_read as f64 / actual_size as f64 * 100.0) as u32;
+                                    if current_progress >= last_reported_progress + 2 || bytes_read == actual_size {
+                                        progress_callback(bytes_read, actual_size);
+                                        last_reported_progress = current_progress;
+                                    }
+                                }
+                                Err(e) => {
+                                    // If we get an error, check if it's EOF and we've read some data
+                                    if bytes_read > 0 && e.kind() == std::io::ErrorKind::UnexpectedEof {
+                                        println!("Warning: Early EOF after reading {} of {} bytes. File may be incomplete.", bytes_read, actual_size);
+                                        // Continue with what we have
+                                        break;
+                                    }
+                                    return Err(format!("Failed to read fork {} data at offset {}: {}", fork_idx, bytes_read, e));
+                                }
+                            }
+                        }
+                        println!("Received DATA fork: {} bytes (expected: {} bytes)", fork_data.len(), actual_size);
+                        if fork_data.len() as u32 != actual_size {
+                            println!("Warning: Received {} bytes but expected {} bytes. File may be incomplete.", fork_data.len(), actual_size);
                         }
                     }
-
-                    println!("Received DATA fork: {} bytes", fork_data.len());
+                    
                     file_data = fork_data;
                 } else {
                     // For INFO/MACR forks, read all at once

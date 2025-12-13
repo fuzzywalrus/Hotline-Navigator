@@ -4,6 +4,8 @@ use crate::protocol::types::Bookmark;
 use crate::protocol::tracker::TrackerClient;
 use crate::state::AppState;
 use tauri::State;
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 
 #[tauri::command]
 pub async fn connect_to_server(
@@ -83,6 +85,15 @@ pub async fn save_bookmark(
 pub async fn delete_bookmark(id: String, state: State<'_, AppState>) -> Result<(), String> {
     println!("Command: delete_bookmark {}", id);
     state.delete_bookmark(&id).await
+}
+
+#[tauri::command]
+pub async fn reorder_bookmarks(
+    bookmarks: Vec<Bookmark>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    println!("Command: reorder_bookmarks ({} bookmarks)", bookmarks.len());
+    state.reorder_bookmarks(bookmarks).await
 }
 
 #[tauri::command]
@@ -221,6 +232,178 @@ pub async fn download_banner(
     println!("Banner converted to data URL, length: {} bytes", data_url.len());
     
     Ok(data_url)
+}
+
+#[derive(serde::Serialize)]
+pub struct PreviewData {
+    pub mime: String,
+    pub data: String,
+    pub is_text: bool,
+}
+
+fn guess_mime_from_extension(path: &str) -> &'static str {
+    let lower = path.to_lowercase();
+    if lower.ends_with(".png") { "image/png" }
+    else if lower.ends_with(".jpg") || lower.ends_with(".jpeg") { "image/jpeg" }
+    else if lower.ends_with(".gif") { "image/gif" }
+    else if lower.ends_with(".bmp") { "image/bmp" }
+    else if lower.ends_with(".tif") || lower.ends_with(".tiff") { "image/tiff" }
+    else if lower.ends_with(".webp") { "image/webp" }
+    else if lower.ends_with(".svg") { "image/svg+xml" }
+    else if lower.ends_with(".mp3") { "audio/mpeg" }
+    else if lower.ends_with(".wav") { "audio/wav" }
+    else if lower.ends_with(".ogg") || lower.ends_with(".oga") { "audio/ogg" }
+    else if lower.ends_with(".flac") { "audio/flac" }
+    else if lower.ends_with(".m4a") { "audio/mp4" }
+    else if lower.ends_with(".aac") { "audio/aac" }
+    else if lower.ends_with(".mp4") || lower.ends_with(".m4v") { "video/mp4" }
+    else if lower.ends_with(".webm") { "video/webm" }
+    else if lower.ends_with(".ogv") { "video/ogg" }
+    else if lower.ends_with(".mov") { "video/quicktime" }
+    else if lower.ends_with(".avi") { "video/x-msvideo" }
+    else if lower.ends_with(".txt") { "text/plain" }
+    else if lower.ends_with(".json") { "application/json" }
+    else if lower.ends_with(".xml") { "application/xml" }
+    else if lower.ends_with(".html") || lower.ends_with(".htm") { "text/html" }
+    else if lower.ends_with(".css") { "text/css" }
+    else if lower.ends_with(".js") { "text/javascript" }
+    else { "application/octet-stream" }
+}
+
+fn detect_mime_from_content(data: &[u8]) -> Option<&'static str> {
+    if data.len() < 4 {
+        return None;
+    }
+
+    // Image formats
+    if data.len() >= 8 && &data[0..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] {
+        return Some("image/png");
+    }
+    if data.len() >= 3 && &data[0..3] == [0xFF, 0xD8, 0xFF] {
+        return Some("image/jpeg");
+    }
+    if data.len() >= 6 && &data[0..6] == [0x47, 0x49, 0x46, 0x38, 0x39, 0x61] || 
+       data.len() >= 6 && &data[0..6] == [0x47, 0x49, 0x46, 0x38, 0x37, 0x61] {
+        return Some("image/gif");
+    }
+    if data.len() >= 2 && &data[0..2] == [0x42, 0x4D] {
+        return Some("image/bmp");
+    }
+    if data.len() >= 4 && &data[0..4] == [0x52, 0x49, 0x46, 0x46] && 
+       data.len() >= 12 && &data[8..12] == [0x57, 0x45, 0x42, 0x50] {
+        return Some("image/webp");
+    }
+
+    // Audio formats
+    // MP3: ID3v2 (starts with "ID3") or frame sync (0xFF 0xFB/0xFA/0xF3/0xF2)
+    if data.len() >= 3 && &data[0..3] == [0x49, 0x44, 0x33] {
+        return Some("audio/mpeg");
+    }
+    if data.len() >= 2 && data[0] == 0xFF && (data[1] & 0xE0) == 0xE0 {
+        return Some("audio/mpeg");
+    }
+    // WAV: RIFF header with WAVE
+    if data.len() >= 12 && &data[0..4] == [0x52, 0x49, 0x46, 0x46] && 
+       &data[8..12] == [0x57, 0x41, 0x56, 0x45] {
+        return Some("audio/wav");
+    }
+    // OGG: starts with "OggS"
+    if data.len() >= 4 && &data[0..4] == [0x4F, 0x67, 0x67, 0x53] {
+        return Some("audio/ogg");
+    }
+    // FLAC: starts with "fLaC"
+    if data.len() >= 4 && &data[0..4] == [0x66, 0x4C, 0x61, 0x43] {
+        return Some("audio/flac");
+    }
+    // MP4/M4A: ftyp box at offset 4
+    if data.len() >= 12 && &data[4..8] == [0x66, 0x74, 0x79, 0x70] {
+        // Check for audio (m4a) or video (mp4) variants
+        if data.len() >= 20 {
+            let brand = &data[8..12];
+            if brand == b"M4A " || brand == b"mp41" || brand == b"isom" {
+                // Could be audio or video, check more
+                if data.len() >= 24 {
+                    let brand2 = &data[20..24];
+                    if brand2 == b"M4A " {
+                        return Some("audio/mp4");
+                    }
+                }
+                // Default to video/mp4 for now, extension will refine
+                return Some("video/mp4");
+            }
+        }
+        return Some("video/mp4");
+    }
+
+    // Video formats
+    // WebM: starts with 0x1A 0x45 0xDF 0xA3
+    if data.len() >= 4 && &data[0..4] == [0x1A, 0x45, 0xDF, 0xA3] {
+        return Some("video/webm");
+    }
+    // QuickTime/MOV: ftyp box
+    if data.len() >= 12 && &data[4..8] == [0x66, 0x74, 0x79, 0x70] {
+        if data.len() >= 20 {
+            let brand = &data[8..12];
+            if brand == b"qt  " {
+                return Some("video/quicktime");
+            }
+        }
+    }
+    // AVI: starts with "RIFF" and "AVI " at offset 8
+    if data.len() >= 12 && &data[0..4] == [0x52, 0x49, 0x46, 0x46] && 
+       &data[8..12] == [0x41, 0x56, 0x49, 0x20] {
+        return Some("video/x-msvideo");
+    }
+
+    None
+}
+
+fn guess_mime(path: &str, data: Option<&[u8]>) -> &'static str {
+    // First try to detect from file content (magic bytes)
+    if let Some(data) = data {
+        if let Some(mime) = detect_mime_from_content(data) {
+            return mime;
+        }
+    }
+    
+    // Fall back to extension-based detection
+    guess_mime_from_extension(path)
+}
+
+/// Read a downloaded file into a data payload for safe previewing (avoids asset:// CORS issues)
+#[tauri::command]
+pub async fn read_preview_file(path: String) -> Result<PreviewData, String> {
+    use std::fs;
+
+    // Read file bytes first for content-based MIME detection
+    let bytes = fs::read(&path).map_err(|e| format!("Failed to read file: {}", e))?;
+    
+    // Detect MIME type from content (magic bytes) first, then fall back to extension
+    let mime = guess_mime(&path, Some(&bytes)).to_string();
+    let is_text = mime.starts_with("text/") || 
+                  mime == "application/json" || 
+                  mime == "application/xml" ||
+                  mime == "text/html" ||
+                  mime == "text/css" ||
+                  mime == "text/javascript";
+
+    if is_text {
+        // Try to read as UTF-8 text
+        match String::from_utf8(bytes.clone()) {
+            Ok(text) => {
+                return Ok(PreviewData { mime, data: text, is_text: true });
+            }
+            Err(_) => {
+                // If not valid UTF-8, treat as binary and base64 encode
+                let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                return Ok(PreviewData { mime, data: encoded, is_text: false });
+            }
+        }
+    }
+
+    // For binary files (images, audio, video), base64 encode
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(PreviewData { mime, data: encoded, is_text: false })
 }
 
 #[tauri::command]

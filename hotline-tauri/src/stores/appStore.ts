@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Bookmark, TrackerBookmark } from '../types';
+import { Bookmark, TrackerBookmark, Transfer } from '../types';
 
 interface ServerInfo {
   id: string;
@@ -32,6 +32,9 @@ interface AppState {
   // File cache per server
   fileCache: Map<string, FileCache>;
 
+  // Transfers
+  transfers: Transfer[];
+
   // UI state
   showAbout: boolean;
   showUpdate: boolean;
@@ -57,6 +60,12 @@ interface AppState {
   getFileCache: (serverId: string, path: string[]) => FileItem[] | null;
   clearFileCache: (serverId: string) => void;
   clearFileCachePath: (serverId: string, path: string[]) => void;
+
+  // Transfer actions
+  addTransfer: (transfer: Transfer) => void;
+  updateTransfer: (id: string, updates: Partial<Transfer>) => void;
+  removeTransfer: (id: string) => void;
+  clearCompletedTransfers: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -68,6 +77,7 @@ export const useAppStore = create<AppState>((set) => ({
   showAbout: false,
   showUpdate: false,
   fileCache: new Map(),
+  transfers: [],
 
   addBookmark: (bookmark) => set((state) => {
     // Check if bookmark already exists to prevent duplicates
@@ -155,4 +165,23 @@ export const useAppStore = create<AppState>((set) => ({
     newFileCache.set(serverId, newCache);
     return { fileCache: newFileCache };
   }),
+
+  // Transfer actions
+  addTransfer: (transfer) => set((state) => ({
+    transfers: [...state.transfers, transfer],
+  })),
+
+  updateTransfer: (id, updates) => set((state) => ({
+    transfers: state.transfers.map((t) =>
+      t.id === id ? { ...t, ...updates } : t
+    ),
+  })),
+
+  removeTransfer: (id) => set((state) => ({
+    transfers: state.transfers.filter((t) => t.id !== id),
+  })),
+
+  clearCompletedTransfers: () => set((state) => ({
+    transfers: state.transfers.filter((t) => t.status === 'active'),
+  })),
 }));

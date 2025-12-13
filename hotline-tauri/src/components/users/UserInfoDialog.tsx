@@ -13,9 +13,10 @@ interface UserInfoDialogProps {
   user: User;
   onClose: () => void;
   onSendMessage?: (user: User) => void;
+  enablePrivateMessaging?: boolean;
 }
 
-export default function UserInfoDialog({ user, onClose, onSendMessage }: UserInfoDialogProps) {
+export default function UserInfoDialog({ user, onClose, onSendMessage, enablePrivateMessaging = true }: UserInfoDialogProps) {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-[400px] flex flex-col">
@@ -105,7 +106,7 @@ export default function UserInfoDialog({ user, onClose, onSendMessage }: UserInf
 
         {/* Actions */}
         <div className="border-t border-gray-200 dark:border-gray-700 p-4 flex gap-2 justify-end">
-          {onSendMessage && (
+          {onSendMessage && enablePrivateMessaging && (
             <button
               onClick={() => {
                 onSendMessage(user);
