@@ -42,6 +42,15 @@ export interface User {
   color?: string;
 }
 
+export interface UserAccess {
+  canDisconnectUsers: boolean;
+  canBroadcast: boolean;
+  canOpenUsers: boolean;
+  canModifyUsers: boolean;
+  canGetClientInfo: boolean;
+  // Add more as needed
+}
+
 export interface ChatMessage {
   id: string;
   timestamp: Date;

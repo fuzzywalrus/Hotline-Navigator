@@ -164,6 +164,17 @@ impl AppState {
 
         client.connect().await?;
 
+        // Emit user access permissions after successful connection
+        let user_access = client.get_user_access().await;
+        let app_handle_clone = self.app_handle.clone();
+        let server_id_for_access = server_id.clone();
+        tokio::spawn(async move {
+            let payload = serde_json::json!({
+                "access": user_access,
+            });
+            let _ = app_handle_clone.emit(&format!("user-access-{}", server_id_for_access), payload);
+        });
+
         // Get the event receiver from the client
         let mut event_rx = {
             let mut rx_guard = client.event_rx.lock().await;
@@ -487,6 +498,24 @@ impl AppState {
         let clients = self.clients.read().await;
         if let Some(client) = clients.get(server_id) {
             client.get_server_info().await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn get_user_access(&self, server_id: &str) -> Result<u64, String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            Ok(client.get_user_access().await)
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn disconnect_user(&self, server_id: &str, user_id: u16, options: Option<u16>) -> Result<(), String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.disconnect_user(user_id, options).await
         } else {
             Err("Server not connected".to_string())
         }

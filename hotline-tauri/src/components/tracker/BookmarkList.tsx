@@ -30,7 +30,7 @@ interface BookmarkListProps {
 
 interface SortableItemProps {
   id: string;
-  children: React.ReactNode;
+  children: (dragHandleProps: any) => React.ReactNode;
 }
 
 function SortableItem({ id, children }: SortableItemProps) {
@@ -38,6 +38,7 @@ function SortableItem({ id, children }: SortableItemProps) {
     attributes,
     listeners,
     setNodeRef,
+    setActivatorNodeRef,
     transform,
     transition,
     isDragging,
@@ -49,9 +50,14 @@ function SortableItem({ id, children }: SortableItemProps) {
     opacity: isDragging ? 0.5 : 1,
   };
 
+  const dragHandleProps = {
+    ref: setActivatorNodeRef,
+    ...listeners,
+  };
+
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      {children}
+    <div ref={setNodeRef} style={style} {...attributes}>
+      {children(dragHandleProps)}
     </div>
   );
 }
@@ -345,9 +351,11 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
             isTracker ? (
               // Tracker display - compact, list-like
               <SortableItem key={bookmark.id} id={bookmark.id}>
+                {(dragHandleProps) => (
+                <>
                 <div
                   onClick={() => handleToggleTracker(bookmark.id)}
-                  className={`h-[34px] px-2 flex items-center gap-1.5 cursor-grab active:cursor-grabbing group ${
+                  className={`h-[34px] px-2 flex items-center gap-1.5 group ${
                     isEven
                       ? 'bg-white dark:bg-gray-900'
                       : 'bg-gray-50 dark:bg-gray-800/50'
@@ -385,6 +393,17 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
                       showContextMenu(e, items);
                     }}
                   >
+                    {/* Drag handle - only draggable from here */}
+                    <div
+                      {...dragHandleProps}
+                      className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 cursor-grab active:cursor-grabbing flex-shrink-0 w-[12px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Drag to reorder"
+                    >
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 16 16">
+                        <path d="M5 3h2v2H5V3zm0 4h2v2H5V7zm0 4h2v2H5v-2zm4-8h2v2H9V3zm0 4h2v2H9V7zm0 4h2v2H9v-2z"/>
+                      </svg>
+                    </div>
+
                     {/* Chevron - 10px width, opacity 0.5 */}
                     <button
                       onClick={(e) => {
@@ -487,7 +506,7 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
                       </button>
                     </div>
                   </div>
-                  
+
                   {/* Tracker servers list (when expanded) - indented 34px */}
                   {isExpanded && servers.map((server, serverIndex) => {
                     const serverIsEven = (index + serverIndex + 1) % 2 === 0;
@@ -566,10 +585,14 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
                       <span className="text-xs text-gray-500 dark:text-gray-400">No servers found</span>
                     </div>
                   )}
-                </SortableItem>
+                </>
+                )}
+              </SortableItem>
             ) : (
               // Regular server bookmark - compact list style
               <SortableItem key={bookmark.id} id={bookmark.id}>
+                {(dragHandleProps) => (
+                <>
                 <div
                   onClick={() => handleConnect(bookmark)}
                   onContextMenu={(e) => {
@@ -606,12 +629,23 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
                     ];
                     showContextMenu(e, items);
                   }}
-                  className={`h-[34px] px-2 flex items-center gap-1.5 group cursor-grab active:cursor-grabbing ${
+                  className={`h-[34px] px-2 flex items-center gap-1.5 group ${
                     isEven
                       ? 'bg-white dark:bg-gray-900'
                       : 'bg-gray-50 dark:bg-gray-800/50'
                   } hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors`}
                 >
+                  {/* Drag handle - only draggable from here */}
+                  <div
+                    {...dragHandleProps}
+                    className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 cursor-grab active:cursor-grabbing flex-shrink-0 w-[12px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Drag to reorder"
+                  >
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 16 16">
+                      <path d="M5 3h2v2H5V3zm0 4h2v2H5V7zm0 4h2v2H5v-2zm4-8h2v2H9V3zm0 4h2v2H9V7zm0 4h2v2H9v-2z"/>
+                    </svg>
+                  </div>
+
                   {/* Bookmark icon - 11x11, opacity 0.75 
                       This indicates it's a saved server bookmark (not a tracker).
                       In the Swift app, server bookmarks show bookmark.fill before the server icon. */}
@@ -686,7 +720,7 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
                 </button>
               </div>
                 </div>
-                
+
                 {/* Connection error message for servers */}
                 {connectionErrors.has(bookmark.id) && (
                   <div className={`px-2 py-1.5 bg-red-50 dark:bg-red-900/20 border-l-2 border-red-500 flex items-center justify-between gap-2 ${
@@ -711,6 +745,8 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
                       ✕
                     </button>
                   </div>
+                )}
+                </>
                 )}
               </SortableItem>
             )

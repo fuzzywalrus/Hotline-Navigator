@@ -1,8 +1,8 @@
 // User management functionality for Hotline client
 
 use super::HotlineClient;
-use crate::protocol::constants::TransactionType;
-use crate::protocol::transaction::Transaction;
+use crate::protocol::constants::{FieldType, TransactionType};
+use crate::protocol::transaction::{Transaction, TransactionField};
 use tokio::io::AsyncWriteExt;
 
 impl HotlineClient {
@@ -57,5 +57,47 @@ impl HotlineClient {
         let username = String::from_utf8_lossy(&data[8..8 + name_len]).to_string();
 
         Ok((user_id, username, icon_id, flags))
+    }
+
+    /// Disconnect a user from the server (admin function)
+    /// 
+    /// - `user_id`: The ID of the user to disconnect
+    /// - `options`: Optional disconnect options (1 = temporarily ban, 2 = permanently ban)
+    pub async fn disconnect_user(&self, user_id: u16, options: Option<u16>) -> Result<(), String> {
+        println!("Disconnecting user {} with options: {:?}", user_id, options);
+
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::DisconnectUser);
+        transaction.add_field(TransactionField::from_u16(FieldType::UserId, user_id));
+        
+        if let Some(opts) = options {
+            transaction.add_field(TransactionField::from_u16(FieldType::Options, opts));
+        }
+
+        let encoded = transaction.encode();
+
+        let mut write_guard = self.write_half.lock().await;
+        let write_stream = write_guard
+            .as_mut()
+            .ok_or("Not connected".to_string())?;
+
+        write_stream
+            .write_all(&encoded)
+            .await
+            .map_err(|e| format!("Failed to send DisconnectUser: {}", e))?;
+
+        write_stream
+            .flush()
+            .await
+            .map_err(|e| format!("Failed to flush: {}", e))?;
+
+        println!("DisconnectUser transaction sent successfully");
+
+        Ok(())
+    }
+
+    /// Get current user access permissions
+    pub async fn get_user_access(&self) -> u64 {
+        let access_guard = self.user_access.lock().await;
+        *access_guard
     }
 }

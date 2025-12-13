@@ -50,6 +50,8 @@ pub fn run() {
             commands::read_preview_file,
             commands::fetch_tracker_servers,
             commands::get_server_info,
+            commands::get_user_access,
+            commands::disconnect_user,
             commands::test_connection,
             commands::check_for_updates,
         ])

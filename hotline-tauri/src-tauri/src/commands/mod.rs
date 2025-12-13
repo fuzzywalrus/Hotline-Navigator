@@ -458,6 +458,24 @@ pub async fn get_server_info(
 }
 
 #[tauri::command]
+pub async fn get_user_access(
+    server_id: String,
+    state: State<'_, AppState>,
+) -> Result<u64, String> {
+    state.get_user_access(&server_id).await
+}
+
+#[tauri::command]
+pub async fn disconnect_user(
+    server_id: String,
+    user_id: u16,
+    options: Option<u16>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.disconnect_user(&server_id, user_id, options).await
+}
+
+#[tauri::command]
 pub async fn test_connection(address: String, port: u16) -> Result<String, String> {
     println!("Command: test_connection to {}:{}", address, port);
 

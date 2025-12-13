@@ -43,6 +43,13 @@ impl TransactionField {
         }
     }
 
+    pub fn from_u64(field_type: FieldType, value: u64) -> Self {
+        Self {
+            field_type,
+            data: value.to_be_bytes().to_vec(),
+        }
+    }
+
     pub fn from_path(field_type: FieldType, path: &[String]) -> Self {
         let mut data = Vec::new();
 
@@ -100,6 +107,22 @@ impl TransactionField {
             self.data[1],
             self.data[2],
             self.data[3],
+        ]))
+    }
+
+    pub fn to_u64(&self) -> Result<u64, String> {
+        if self.data.len() != 8 {
+            return Err(format!("Invalid u64 size: {}", self.data.len()));
+        }
+        Ok(u64::from_be_bytes([
+            self.data[0],
+            self.data[1],
+            self.data[2],
+            self.data[3],
+            self.data[4],
+            self.data[5],
+            self.data[6],
+            self.data[7],
         ]))
     }
 

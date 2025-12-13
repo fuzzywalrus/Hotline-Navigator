@@ -67,6 +67,9 @@ pub struct HotlineClient {
 
     // Server info (extracted from login reply)
     server_info: Arc<Mutex<Option<ServerInfo>>>,
+    
+    // User access permissions (from login reply)
+    user_access: Arc<Mutex<u64>>,
 
     // Background tasks
     receive_task: Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -87,6 +90,7 @@ impl HotlineClient {
             transaction_counter: Arc::new(AtomicU32::new(1)),
             file_list_paths: Arc::new(RwLock::new(HashMap::new())),
             server_info: Arc::new(Mutex::new(None)),
+            user_access: Arc::new(Mutex::new(0)), // Default to no permissions
             running: Arc::new(AtomicBool::new(false)),
             event_tx,
             event_rx: Arc::new(Mutex::new(Some(event_rx))),
@@ -355,6 +359,20 @@ impl HotlineClient {
             .and_then(|f| f.to_string().ok())
             .filter(|s| !s.is_empty() && s != &server_name)
             .unwrap_or_else(|| String::new());
+
+        // Parse and store user access permissions (if present)
+        // This is optional - some servers may not send it, which is fine
+        let user_access = reply
+            .get_field(FieldType::UserAccess)
+            .and_then(|f| f.to_u64().ok())
+            .unwrap_or(0);
+        
+        {
+            let mut access_guard = self.user_access.lock().await;
+            *access_guard = user_access;
+        }
+        
+        println!("User access permissions: 0x{:016X}", user_access);
 
         // Store server info
         {

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import MessageDialog from '../chat/MessageDialog';
 import UserInfoDialog from '../users/UserInfoDialog';
 import { useContextMenu, ContextMenuRenderer, type ContextMenuItem } from '../common/ContextMenu';
@@ -38,6 +39,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
   const [sending, setSending] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [userAccess, setUserAccess] = useState<number>(0); // User access permissions (bitmask)
   const [files, setFiles] = useState<FileItem[]>([]);
   const currentPathRef = useRef<string[]>([]);
   const [currentPath, setCurrentPath] = useState<string[]>([]);
@@ -92,6 +94,33 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     };
     checkPendingAgreement();
   }, [serverId]);
+
+  // Listen for user access permissions
+  useEffect(() => {
+    let isActive = true;
+    
+    const unlistenPromise = listen<{ access: number }>(`user-access-${serverId}`, (event) => {
+      if (!isActive) return;
+      setUserAccess(event.payload.access);
+      console.log('User access permissions received:', '0x' + event.payload.access.toString(16));
+    });
+
+    return () => {
+      isActive = false;
+      unlistenPromise.then((unlisten) => unlisten()).catch(() => {});
+    };
+  }, [serverId]);
+
+  // Helper function to check if user has specific permission
+  const hasPermission = (bitIndex: number): boolean => {
+    // Hotline access bits are indexed from 63 down to 0
+    // bitIndex 22 = canDisconnectUsers (bit 63-22 = 41)
+    const bit = 63 - bitIndex;
+    // Convert to BigInt for 64-bit operations, then back to boolean
+    const accessBigInt = BigInt(userAccess);
+    const bitMask = BigInt(1) << BigInt(bit);
+    return (accessBigInt & bitMask) !== BigInt(0);
+  };
   
   // Update connection status based on users - if we have users, we're logged in
   // Use a ref to track if we've already updated to avoid infinite loops
@@ -390,6 +419,29 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
         },
       },
     ];
+
+    // Add Disconnect option if user has permission
+    // canDisconnectUsers is bit 22 (accessIndexToBit(22) = bit 41)
+    if (hasPermission(22)) {
+      items.push({ divider: true, label: '', action: () => {} });
+      items.push({
+        label: 'Disconnect',
+        icon: '🚫',
+        action: async () => {
+          if (confirm(`Are you sure you want to disconnect ${user.userName}? They will be disconnected from the server, but may reconnect.`)) {
+            try {
+              await invoke('disconnect_user', {
+                serverId,
+                userId: user.userId,
+                options: null, // No ban options for now
+              });
+            } catch (error) {
+              console.error('Failed to disconnect user:', error);
+            }
+          }
+        },
+      });
+    }
     
     showContextMenu(event, items);
   };
