@@ -15,7 +15,8 @@
     "build:windows": "npm run tauri build -- --target x86_64-pc-windows-msvc",
     "build:linux": "npm run tauri build -- --target x86_64-unknown-linux-gnu",
     "build:linux-arm": "npm run tauri build -- --target aarch64-unknown-linux-gnu",
-    "build:release": "./build-release.sh"
+    "build:release": "./build-release.sh",
+    "build:release-all": "./build-release-all.sh"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

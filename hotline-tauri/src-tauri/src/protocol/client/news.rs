@@ -103,8 +103,7 @@ impl HotlineClient {
                 .ok_or("Not connected".to_string())?;
 
             let write_result = write_stream.write_all(&encoded).await;
-            drop(write_stream);
-            drop(write_guard);
+            // write_guard will be dropped when it goes out of scope
             if let Err(e) = &write_result {
                 if e.kind() == ErrorKind::BrokenPipe || e.to_string().contains("Broken pipe") {
                     let mut write_guard = self.write_half.lock().await;
@@ -161,8 +160,7 @@ impl HotlineClient {
                 .ok_or("Not connected".to_string())?;
 
             let write_result = write_stream.write_all(&encoded).await;
-            drop(write_stream);
-            drop(write_guard);
+            // write_guard will be dropped when it goes out of scope
             if let Err(e) = &write_result {
                 if e.kind() == ErrorKind::BrokenPipe || e.to_string().contains("Broken pipe") {
                     let mut write_guard = self.write_half.lock().await;
@@ -243,8 +241,7 @@ impl HotlineClient {
                 .ok_or("Not connected".to_string())?;
 
             let write_result = write_stream.write_all(&encoded).await;
-            drop(write_stream);
-            drop(write_guard);
+            // write_guard will be dropped when it goes out of scope
             if let Err(e) = &write_result {
                 if e.kind() == ErrorKind::BrokenPipe || e.to_string().contains("Broken pipe") {
                     let mut write_guard = self.write_half.lock().await;
@@ -322,8 +319,7 @@ impl HotlineClient {
                 .ok_or("Not connected".to_string())?;
 
             let write_result = write_stream.write_all(&encoded).await;
-            drop(write_stream);
-            drop(write_guard);
+            // write_guard will be dropped when it goes out of scope
             if let Err(e) = &write_result {
                 if e.kind() == ErrorKind::BrokenPipe || e.to_string().contains("Broken pipe") {
                     let mut write_guard = self.write_half.lock().await;
@@ -403,8 +399,7 @@ impl HotlineClient {
                 .ok_or("Not connected".to_string())?;
 
             let write_result = write_stream.write_all(&encoded).await;
-            drop(write_stream);
-            drop(write_guard);
+            // write_guard will be dropped when it goes out of scope
             if let Err(e) = &write_result {
                 if e.kind() == ErrorKind::BrokenPipe || e.to_string().contains("Broken pipe") {
                     let mut write_guard = self.write_half.lock().await;
