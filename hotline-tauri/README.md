@@ -1,136 +1,226 @@
-# Hotline Tauri
+# Hotline
 
-Tauri-based port of the modern Hotline client so the SwiftUI macOS build can reach macOS, Windows, and Linux with one codebase. Frontend is React + TypeScript (Vite), backend is Rust + Tokio within Tauri 1.x. This doc tracks the `hotline-tauri/` work and the macOS reference we’re mirroring.
+A modern, cross-platform client for the Hotline protocol built with Tauri, React, and Rust.
 
-## Current implementation
+![Hotline Client](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-- React shell with macOS-inspired window layout (sidebar for trackers/bookmarks + Bonjour placeholder, center server list, utility panel with credentials).
-- Default Hotline bookmarks and manual tracker fetch UI.
-- Rust tracker client command (`tracker_servers`) for live tracker listings.
-- Rust Hotline connect/login command (`connect_hotline_server`) with TRTP/HOTL handshake and credential obfuscation, returning server name/version.
-- Credentials form (login/password/username/icon) feeding Connect actions.
-- Build validated via `npm run build`.
+## About
 
-## Project structure (actual)
+Hotline is a classic Internet protocol and community platform from the 1990s that provided chat, file sharing, news, and message boards - predating modern social platforms. This is a **cross-platform port** of the excellent [Swift/macOS Hotline client](https://github.com/mierau/hotline) by Mierau, bringing the protocol to Windows and Linux while maintaining full macOS support.
 
+### Why This Port?
+
+While the original Swift version provides a beautiful, native macOS experience, this Tauri-based port offers:
+
+- **Cross-Platform Reach**: Runs on macOS, Windows, and Linux with a single codebase
+- **Long-Term Sustainability**: Built on widely-supported, modern technologies (React, Rust, Tauri)
+- **Broader Community**: Accessible to developers across all platforms, encouraging contributions
+- **Modern Tooling**: Benefits from the extensive React and Rust ecosystems
+
+This port aims to complement, not replace, the original Swift client. macOS users seeking the most native experience should consider the [original Swift version](https://github.com/mierau/hotline).
+
+## Features
+
+### Currently Implemented
+- ✅ **Server Browser**: Tracker server browsing with bookmark management
+- ✅ **Chat**: Public chat rooms with server broadcasts
+- ✅ **Private Messaging**: Direct messages with persistent history and unread indicators
+- ✅ **User Management**: User lists with admin/idle status indicators
+- ✅ **Message Board**: Read and post to server message boards
+- ✅ **News**: Browse categories, read articles, post news and replies
+- ✅ **File Management**: Browse, download, upload files with progress tracking
+- ✅ **File Preview**: Preview images, audio, and text files before downloading
+- ✅ **Settings**: Username and icon customization with persistent storage
+- ✅ **Server Banners**: Automatic banner download and display
+- ✅ **Server Agreements**: Agreement acceptance flow
+- ✅ **Notifications**: Toast notifications with history log
+- ✅ **Sound Effects**: Classic Hotline sounds (ported from original)
+- ✅ **Keyboard Shortcuts**: macOS-style shortcuts (⌘K to connect, ⌘1-4 for tabs, etc.)
+- ✅ **Context Menus**: Right-click actions throughout the app
+- ✅ **Dark Mode**: Full dark mode support
+- ✅ **Transfer List**: Track active and completed file transfers
+
+### Roadmap
+- [ ] Account management and permissions
+- [ ] Bonjour/mDNS server discovery
+- [ ] Auto-reconnect on disconnect
+- [ ] Message filtering and blocking
+- [ ] Bookmark import/export
+
+## Installation
+
+### Prerequisites
+- **Node.js** 18 or later
+- **Rust** (stable channel)
+- **Tauri Dependencies** - [Platform-specific requirements](https://tauri.app/v1/guides/getting-started/prerequisites)
+
+### Development
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/yourusername/hotline-tauri.git
+   cd hotline-tauri
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Run in development mode**
+   ```bash
+   npm run tauri dev
+   ```
+
+### Building
+
+**Frontend only:**
+```bash
+npm run build
 ```
-hotline-tauri/
-├── src/               # React app (Vite)
-│   ├── App.tsx        # Main UI (tracker + server list + credentials)
-│   ├── App.css        # Layout/styling
-│   ├── styles.css     # Base styles
-│   └── main.tsx       # Entry point
-├── src-tauri/
-│   ├── src/
-│   │   ├── hotline_protocol.rs  # Protocol types + parsing helpers
-│   │   ├── tracker_client.rs    # Tracker fetch over TCP
-│   │   ├── hotline_client.rs    # Handshake/login client
-│   │   └── main.rs              # Tauri commands wiring
-│   └── tauri.conf.json          # Tauri config
-├── package.json
-├── Cargo.toml
-├── README.md (this file)
-└── PROGRESS.md / PORTING-GUIDE.md (planning/notes)
+
+**Full application bundle:**
+```bash
+npm run tauri build
 ```
 
-## Development
-
-Prereqs: Node.js 18+, Rust stable, Tauri system deps.
-
-Run dev (with Tauri IPC):
-```
-npm install
-npm run tauri dev
+**macOS-specific builds:**
+```bash
+npm run build:macos-universal    # Universal binary (Intel + Apple Silicon)
+npm run build:macos-intel        # Intel (x86_64) only
+npm run build:macos-silicon      # Apple Silicon (aarch64) only
 ```
 
-Build:
-```
-npm run build                    # frontend only
-npm run tauri build              # full bundle (default target)
-npm run build:macos              # macOS universal binary (Intel + Apple Silicon)
-npm run build:macos-intel        # macOS Intel (x86_64) only
-npm run build:macos-silicon      # macOS Apple Silicon (aarch64) only
-npm run build:macos-universal    # macOS universal binary (same as build:macos)
-npm run build:release           # signed release build (requires .env file)
-```
-
-**macOS Architecture Support:**
-- Universal binaries work on both Intel (x86_64) and Apple Silicon (aarch64) Macs
-- Both Rust targets must be installed: `rustup target add aarch64-apple-darwin x86_64-apple-darwin`
-- Universal builds are recommended for distribution as they work on all Macs
+**macOS Requirements:**
+- Both Rust targets: `rustup target add aarch64-apple-darwin x86_64-apple-darwin`
 - Minimum macOS version: Big Sur (11.0)
+- Universal binaries recommended for distribution
 
-**Release Builds (Code Signing & Notarization):**
+### Release Builds (macOS Code Signing)
 
-To create a signed, release-ready build for macOS:
+For distribution-ready builds with code signing and notarization:
 
-1. **Create `.env` file** in the project root with your Apple Developer credentials:
+1. **Create `.env` file** in project root:
    ```bash
    APPLE_ID="your-apple-id@example.com"
    APP_PASSWORD="your-app-specific-password"
    TEAM_ID="YOUR_TEAM_ID"
-   SIGNING_IDENTITY="Developer ID Application: Your Name (YOUR_TEAM_ID)"
+   SIGNING_IDENTITY="Developer ID Application: Your Name (TEAM_ID)"
    ```
 
-2. **Run the release build script**:
+2. **Run release build:**
    ```bash
    npm run build:release
    ```
 
    This will:
-   - Build a Universal Binary (Intel + Apple Silicon)
-   - Code sign the app bundle
-   - Verify the code signature
+   - Build a Universal Binary
+   - Code sign the application
+   - Verify signatures
    - Create a DMG (if `create-dmg` is installed)
    - Output to `release/hotline-{version}-macos/`
 
-3. **Optional: Notarization** (uncomment in `build-release.sh`):
-   - Automatically submits the app to Apple for notarization
-   - Staples the notarization ticket to the app
-   - Required for distribution outside the App Store
+**Note:** The `.env` file is gitignored and contains sensitive credentials.
 
-**Note:** The `.env` file is gitignored and should never be committed. It contains sensitive credentials.
+## Project Structure
 
-## Swift/macOS feature map (reference)
+```
+hotline-tauri/
+├── src/                          # React frontend (TypeScript + Vite)
+│   ├── components/
+│   │   ├── tracker/              # Server browser and bookmarks
+│   │   ├── server/               # Server window shell
+│   │   ├── chat/                 # Public and private chat
+│   │   ├── board/                # Message board
+│   │   ├── news/                 # News reader
+│   │   ├── files/                # File browser
+│   │   ├── users/                # User list and info
+│   │   ├── settings/             # Preferences
+│   │   ├── notifications/        # Toast notifications
+│   │   └── transfers/            # Transfer manager
+│   ├── stores/                   # Zustand state management
+│   ├── hooks/                    # Custom React hooks
+│   └── types/                    # TypeScript definitions
+├── src-tauri/                    # Rust backend
+│   ├── src/
+│   │   ├── protocol/             # Hotline protocol implementation
+│   │   │   ├── client/           # Client connection logic
+│   │   │   ├── tracker.rs        # Tracker protocol
+│   │   │   └── types.rs          # Protocol types
+│   │   ├── state/                # Application state
+│   │   ├── commands/             # Tauri IPC commands
+│   │   └── main.rs               # Application entry point
+│   └── tauri.conf.json           # Tauri configuration
+└── public/
+    ├── icons/                    # User icons (629 classic icons)
+    └── sounds/                   # Sound effects
+```
 
-This maps the existing Swift/macOS Hotline client features and their primary source files so we can mirror behavior (iOS/iPadOS ignored):
+## Technology Stack
 
-- **App shell & windows** – `MacApp.swift` wires Tracker/Server/Update/About windows, banner panel toggle, CloudKit readiness.
-- **Updates** – `State/AppUpdate.swift` (GitHub releases, download/remind), `macOS/AppUpdateView.swift` UI.
-- **Trackers & bookmarks** – `macOS/Trackers/TrackerView.swift` (list, expand, search, reorder, delete, context menus, drop import); sheets in `TrackerBookmarkSheet.swift` / `ServerBookmarkSheet.swift`; row views in `TrackerBookmarkServerView.swift` / `TrackerItemView.swift`; data in `Models/Bookmark.swift`.
-- **Bonjour** – `State/BonjourState.swift` browse state; `macOS/Trackers/BonjourServerRow.swift`; Bonjour section inside `TrackerView`.
-- **Connect dialog** – `macOS/ConnectView.swift` address/login/password entry + bookmark save.
-- **Server navigation** – `macOS/ServerView.swift` `NavigationSplitView` hosting Chat/News/Board/Files/Users/Transfers, connection status, login trigger, transfer rows.
-- **Chat** – `macOS/Chat/ChatView.swift` (history, markers, search, banners); `ServerMessageView.swift`, `ServerAgreementView.swift`; `MessageView.swift` for DMs.
-- **Broadcasts** – `macOS/BroadcastMessageSheet.swift`.
-- **Message Board** – `macOS/Board/MessageBoardView.swift` + composer `MessageBoardEditorView.swift`.
-- **News** – `macOS/News/NewsView.swift` split list/view; `NewsItemView.swift`; `NewsEditorView.swift` for posts/replies.
-- **Files & transfers** – `macOS/Files/FilesView.swift` browser/actions; previews (`FilePreview*View.swift`), metadata sheet (`FileDetailsSheet.swift`), folder/new popover; transfers window `macOS/TransfersView.swift`; state in `State/FilePreviewState.swift` and `AppState.transfers`.
-- **Accounts & permissions** – `macOS/Accounts/AccountManagerView.swift` / `AccountDetailsView.swift`; driven by permission flags in `HotlineState`.
-- **Settings** – `macOS/Settings/SettingsView.swift` with tabs (`GeneralSettingsView.swift`, `IconSettingsView.swift`, `SoundSettingsView.swift`); prefs in `State/Preferences.swift`.
-- **About & branding** – `macOS/AboutView.swift`, `macOS/HotlinePanelView.swift`.
-- **State & networking** – `State/HotlineState.swift`, `State/ServerState.swift`, `State/AppState.swift`; protocol/client in `Hotline/HotlineClient.swift`, `Hotline/HotlineProtocol.swift`, `Hotline/HotlineTrackerClient.swift`; sockets in `Library/NetSocket/NetSocket.swift`.
+### Frontend
+- **React 18** - UI framework
+- **TypeScript** - Type safety
+- **Vite** - Build tool and dev server
+- **Tailwind CSS** - Styling
+- **Zustand** - State management
+- **@dnd-kit** - Drag and drop functionality
 
-## Tauri port roadmap
+### Backend
+- **Rust** - Systems programming language
+- **Tauri v2** - Desktop application framework
+- **Tokio** - Async runtime
+- **Serde** - Serialization/deserialization
 
-- **Windowing & layout**: Mirror Tracker window, About, Update, and banner panel behaviors; add server window split view (Chat/News/Board/Files/Users/Transfers).
-- **Tracker/Bonjour parity**: Persist bookmarks (add/edit/delete/reorder/import/export), integrate Bonjour discovery, keep tracker refresh/cancel states.
-- **Connect & session lifecycle**: Full Hotline client in Rust (handshake/login/keep-alive/event stream/reconnect/errors); connect dialog/bookmark save; session status bar.
-- **Chat & messaging**: Chat timeline with markers, search, Markdown, server messages; DMs; broadcasts; agreements.
-- **Users list**: Live list with idle/admin indicators and DM unread badges, context actions.
-- **Message Board & News**: Board view with post composer and permissions; News categories/articles split view with post/reply.
-- **Files & transfers**: File browser actions, previews, metadata, uploads/downloads, transfer list UI.
-- **Accounts & permissions**: Account manager gated by access bits; reflect permissions in affordances.
-- **Settings & branding**: Preferences UI (general/icon/sound), About window styling, app icons/bundle IDs, update flow.
-- **Infrastructure**: Port `HotlineState/ServerState/AppState` analogues; error toasts/banners; logging; cross-platform packaging and auto-update strategy.
+## Architecture
 
-## Porting notes
+### State Management
+- **Frontend**: Zustand stores with persistence to localStorage
+- **Backend**: Rust AppState with Arc<RwLock<T>> for thread-safe access
+- **Communication**: Tauri IPC commands and events
 
-- Start with state: recreate Hotline/App/Server state in TypeScript (or Rust-backed store) so views bind to a single source of truth.
-- Protocol first: finish Rust Hotline client (transaction send/await, receive loop, keep-alive) and emit events to the frontend via Tauri.
-- Tracker/Bonjour: wire tracker fetch to persisted bookmarks; add Bonjour (zeroconf) and surface in the same list model.
-- UI sequencing: sidebar tracker/Bonjour → server window shell → chat/DMs/broadcasts → board/news → files/transfers → accounts/settings → about/update polish.
-- UX: keep macOS-like keyboard shortcuts (cmd+R refresh, etc.), alternating rows, badges; include banner panel toggle when implemented.
-- Persistence: store defaults (bookmarks, username/icon, banner flag) locally; mind download paths per OS.
-- Media: map sound effects/icon assets from Swift assets.
-- Testing: add Rust protocol integration tests; unit-test bookmark parsing/tracker fetch; UI smoke tests where practical.
+### Protocol Implementation
+- Clean-room Rust implementation of the Hotline protocol
+- Uses the original Swift client as reference for protocol details
+- Async/await architecture with Tokio for network operations
+- Event-driven design for real-time updates
+
+### Cross-Platform Considerations
+- Platform-agnostic file paths using Tauri's path API
+- Conditional platform features (keyboard shortcuts adapt to OS)
+- Responsive layout that works on different screen sizes
+
+## Contributing
+
+Contributions are welcome! This project benefits from:
+- Bug reports and feature requests via GitHub Issues
+- Code contributions via Pull Requests
+- Protocol documentation and implementation notes
+- Testing on different platforms
+
+When contributing, please:
+1. Follow the existing code style
+2. Add tests for new features
+3. Update documentation as needed
+4. Test on your target platform
+
+## Credits
+
+This project is a port of the excellent **[Hotline client for macOS](https://github.com/mierau/hotline)** by **Mierau**. The original Swift implementation provided the protocol reference, UI inspiration, and feature set that made this cross-platform port possible.
+
+The Hotline protocol itself was created by **Hotline Communications** in the 1990s.
+
+## License
+
+MIT License - See LICENSE file for details
+
+## Links
+
+- **Original Swift Client**: https://github.com/mierau/hotline
+- **Hotline Protocol Information**: (Coming soon)
+- **Issue Tracker**: https://github.com/yourusername/hotline-tauri/issues
+
+---
+
+*Bringing the classic Hotline experience to modern platforms* 🔥
