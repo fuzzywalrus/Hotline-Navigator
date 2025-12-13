@@ -37,14 +37,18 @@ export default function AboutView({ onClose }: AboutViewProps) {
             <img
               src="/app-icon.png"
               alt="Hotline Navigator"
-              className="w-20 h-20"
+              className="w-20 h-20 rounded-lg object-contain"
               onError={(e) => {
                 // Fallback to placeholder if image fails to load
+                console.error('Failed to load app icon:', e);
                 const target = e.target as HTMLImageElement;
                 target.style.display = 'none';
                 if (target.nextElementSibling) {
                   (target.nextElementSibling as HTMLElement).style.display = 'flex';
                 }
+              }}
+              onLoad={() => {
+                console.log('App icon loaded successfully');
               }}
             />
             <div className="w-20 h-20 hidden items-center justify-center bg-blue-600 rounded-lg">

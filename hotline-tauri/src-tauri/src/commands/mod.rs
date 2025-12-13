@@ -6,6 +6,33 @@ use crate::state::AppState;
 use tauri::State;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateRelease {
+    pub tag_name: String,
+    pub display_version: String,
+    pub version_number: f64,
+    pub build_number: u32,
+    pub notes: String,
+    pub download_url: String,
+    pub asset_name: String,
+    pub published_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct GitHubRelease {
+    tag_name: String,
+    body: Option<String>,
+    published_at: String,
+    assets: Vec<GitHubAsset>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct GitHubAsset {
+    browser_download_url: String,
+    name: String,
+}
 
 #[tauri::command]
 pub async fn connect_to_server(
@@ -446,4 +473,84 @@ pub async fn test_connection(address: String, port: u16) -> Result<String, Strin
     client.connect().await?;
 
     Ok("Connected successfully!".to_string())
+}
+
+#[tauri::command]
+pub async fn check_for_updates() -> Result<Option<UpdateRelease>, String> {
+    println!("Command: check_for_updates");
+    
+    // GitHub releases API URL for fuzzywalrus/hotline
+    let releases_url = "https://api.github.com/repos/fuzzywalrus/hotline/releases?per_page=10";
+    
+    // Fetch releases from GitHub
+    let client = reqwest::Client::new();
+    let response = client
+        .get(releases_url)
+        .header("User-Agent", "Hotline-Navigator")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch releases: {}", e))?;
+    
+    if !response.status().is_success() {
+        return Err(format!("GitHub API returned status: {}", response.status()));
+    }
+    
+    let releases: Vec<GitHubRelease> = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse releases: {}", e))?;
+    
+    // Get current version from package.json (we'll pass it from frontend)
+    // For now, we'll parse the first release and return it
+    // The frontend will handle version comparison
+    
+    if releases.is_empty() {
+        return Ok(None);
+    }
+    
+    // Parse the latest release
+    let latest = &releases[0];
+    
+    // Find macOS asset (look for .dmg, .app, or universal)
+    let macos_asset = latest.assets.iter()
+        .find(|asset| {
+            let name = asset.name.to_lowercase();
+            name.contains(".dmg") || 
+            name.contains("macos") || 
+            name.contains("universal") ||
+            name.contains("darwin")
+        });
+    
+    let asset = macos_asset.ok_or("No macOS release asset found")?;
+    
+    // Parse version from tag_name (e.g., "v0.1.0" or "0.1.0")
+    let tag_name = latest.tag_name.trim_start_matches('v');
+    let version_parts: Vec<&str> = tag_name.split('.').collect();
+    
+    let version_number = if version_parts.len() >= 2 {
+        format!("{}.{}", version_parts[0], version_parts[1])
+            .parse::<f64>()
+            .unwrap_or(0.0)
+    } else {
+        0.0
+    };
+    
+    let build_number = if version_parts.len() >= 3 {
+        version_parts[2].parse::<u32>().unwrap_or(0)
+    } else {
+        0
+    };
+    
+    let display_version = tag_name.to_string();
+    
+    Ok(Some(UpdateRelease {
+        tag_name: latest.tag_name.clone(),
+        display_version,
+        version_number,
+        build_number,
+        notes: latest.body.clone().unwrap_or_default(),
+        download_url: asset.browser_download_url.clone(),
+        asset_name: asset.name.clone(),
+        published_at: latest.published_at.clone(),
+    }))
 }

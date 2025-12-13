@@ -50,6 +50,7 @@ pub fn run() {
             commands::fetch_tracker_servers,
             commands::get_server_info,
             commands::test_connection,
+            commands::check_for_updates,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
