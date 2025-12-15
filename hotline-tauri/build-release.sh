@@ -85,6 +85,16 @@ else
     echo "   The app may need to be signed manually"
 fi
 
+# Create preverified directory for notarization zip
+PREVERIFIED_DIR="$RELEASE_DIR/preverified"
+mkdir -p "$PREVERIFIED_DIR"
+
+# Create zip for notarization (if needed)
+echo "📦 Creating zip archive for notarization..."
+ZIP_FILE="$PREVERIFIED_DIR/$PRODUCT_NAME.app.zip"
+ditto -c -k --keepParent "$DIST_DIR/$PRODUCT_NAME.app" "$ZIP_FILE"
+echo "✅ Zip created: $ZIP_FILE"
+
 # Create DMG (optional - requires create-dmg)
 if command -v create-dmg &> /dev/null; then
     echo "💿 Creating DMG..."
