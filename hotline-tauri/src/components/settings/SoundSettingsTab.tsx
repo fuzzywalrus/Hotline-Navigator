@@ -96,7 +96,7 @@ export default function SoundSettingsTab() {
               className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <span className={`text-sm ${!playSounds ? 'text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'}`}>
-              User Join
+              Join
             </span>
           </label>
 
@@ -109,7 +109,7 @@ export default function SoundSettingsTab() {
               className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <span className={`text-sm ${!playSounds ? 'text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'}`}>
-              User Leave
+              Leave
             </span>
           </label>
 
