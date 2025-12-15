@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { useAppStore, type Tab } from '../../stores/appStore';
+import { useAppStore } from '../../stores/appStore';
 
 export default function TabBar() {
   const { tabs, activeTabId, setActiveTab, removeTab, removeActiveServer } = useAppStore();
