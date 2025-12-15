@@ -6,6 +6,7 @@ interface ChatMessage {
   message: string;
   timestamp: Date;
   type?: 'message' | 'agreement' | 'server' | 'joined' | 'left' | 'signOut';
+  isMention?: boolean; // Indicates if this message mentions the current user
 }
 
 interface ChatTabProps {
@@ -161,11 +162,31 @@ export default function ChatTab({
               );
             }
             
+            // Check if this is a join/leave message
+            if (msg.type === 'joined' || msg.type === 'left') {
+              const uniqueKey = `${msg.type}-${msg.userId}-${msg.timestamp.getTime()}-${index}`;
+              return (
+                <div key={uniqueKey} className="text-sm text-center my-1">
+                  <span className="italic text-gray-500 dark:text-gray-400">
+                    {msg.message}
+                  </span>
+                </div>
+              );
+            }
+            
             const isOwnMessage = msg.userName === 'Me';
+            const isMention = msg.isMention || false;
             // Create unique key from userId, timestamp, message content, and index
             const uniqueKey = `${msg.userId}-${msg.timestamp.getTime()}-${msg.message.substring(0, 20)}-${index}`;
             return (
-              <div key={uniqueKey} className="text-sm">
+              <div 
+                key={uniqueKey} 
+                className={`text-sm ${
+                  isMention 
+                    ? 'bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-400 dark:border-yellow-500 pl-3 py-2 rounded-r my-1' 
+                    : ''
+                }`}
+              >
                 <span
                   className={`font-semibold ${
                     isOwnMessage

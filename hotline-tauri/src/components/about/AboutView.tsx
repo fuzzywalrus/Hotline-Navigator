@@ -6,11 +6,11 @@ interface AboutViewProps {
 }
 
 export default function AboutView({ onClose }: AboutViewProps) {
-  const [version, setVersion] = useState<string>('0.1.0');
+  const [version, setVersion] = useState<string>('0.1.1');
 
   useEffect(() => {
     getVersion().then(setVersion).catch(() => {
-      setVersion('0.1.0');
+      setVersion('0.1.1');
     });
   }, []);
 

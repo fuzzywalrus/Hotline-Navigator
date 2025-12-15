@@ -2,15 +2,36 @@
 
 # Hotline
 
-This a multi-platform spiritual poet of David Miwrau's wonderful Hotline app, built on Tauri currently for macOS Big Sur 11+ (x86/Arm64) Windows (x86) and debian Linux (x86/arm64) with an iOS and iPadOS port likwly.
+A modern, cross-platform Hotline client built with **Tauri**, React, and Rust. This is a spiritual port of David Mierau's wonderful [Hotline app](https://github.com/mierau/hotline), bringing the classic Hotline protocol to modern platforms.
 
-[Download the Latest](https://github.com/fuzzywalrus/hotline/releases/tag/v0.1.0)
+## Platform Support
 
-**Note:** This project (so far) does not include server software. This is a client for connecting to and participating on Hotline servers. If you would like to host your own Hotline server (and you should!), please checkout the very capable Mobius project: https://github.com/jhalter/mobius
+| Platform | Architecture | Status |
+|----------|--------------|--------|
+| **macOS** | x86_64, ARM64 (Universal) | ✅ Supported (macOS 11.0+) |
+| **Windows** | x86_64 | ✅ Supported |
+| **Linux** | x86_64, ARM64 | ✅ Supported |
 
-below is the original readme.
+[Download the Latest Release](https://github.com/fuzzywalrus/hotline/releases/tag/v0.1.0)
 
----------
+## About This Project
+
+This is a **Tauri-based Hotline client** that provides a modern, cross-platform experience for the classic Hotline protocol. Built with React and Rust, it offers:
+
+- **Cross-Platform**: Single codebase for macOS, Windows, and Linux
+- **Modern Stack**: React + TypeScript frontend, Rust backend
+- **Full Protocol Support**: Chat, file sharing, news, message boards, and more
+- **Native Performance**: Tauri's lightweight architecture for fast, efficient apps
+
+**Note:** This project does not include server software. This is a client for connecting to and participating on Hotline servers. If you would like to host your own Hotline server (and you should!), please check out the very capable [Mobius project](https://github.com/jhalter/mobius).
+
+For more details about the Tauri client implementation, see the [`hotline-tauri/README.md`](hotline-tauri/README.md).
+
+---
+
+## Original Swift/macOS Client
+
+The repository also contains the original Swift/macOS Hotline client. Below is information about that version:
 
 # Requirements
 

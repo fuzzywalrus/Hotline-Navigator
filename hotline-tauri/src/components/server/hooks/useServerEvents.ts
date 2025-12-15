@@ -4,7 +4,9 @@ import type { ConnectionStatus } from '../../../types';
 import type { ChatMessage, FileItem, User } from '../serverTypes';
 import { useSound } from '../../../hooks/useSound';
 import { useAppStore } from '../../../stores/appStore';
+import { usePreferencesStore } from '../../../stores/preferencesStore';
 import { showNotification } from '../../../stores/notificationStore';
+import { containsMention } from '../../../utils/mentions';
 
 interface UseServerEventsProps {
   serverId: string;
@@ -52,7 +54,8 @@ export function useServerEvents({
   const sounds = useSound();
   const soundsRef = useRef(sounds);
   const usersRef = useRef<User[]>([]);
-  const { activeTabId, updateTabUnread } = useAppStore();
+  const { updateTabUnread } = useAppStore();
+  const { username } = usePreferencesStore();
   
   // Helper to check if this server's tab is active
   const isTabActive = () => {
@@ -82,14 +85,29 @@ export function useServerEvents({
     const unlistenPromise = listen<ChatMessage>(`chat-message-${serverId}`, (event) => {
       if (!isActive) return; // Prevent processing if effect has been cleaned up
       
-      setMessages((prev) => [...prev, {
+      // Check if message contains a mention of the current user
+      const isMention = containsMention(event.payload.message, username);
+      
+      const messageData = {
         ...event.payload,
         timestamp: new Date(),
-      }]);
+        isMention,
+      };
+      
+      setMessages((prev) => [...prev, messageData]);
       soundsRef.current.playChatSound();
       
-      // Increment unread count if tab is not active
-      if (!isTabActive()) {
+      // If message contains mention and tab is not active, notify
+      if (isMention && !isTabActive()) {
+        incrementUnread();
+        showNotification.info(
+          `@${username} mentioned you in chat`,
+          `Mention from ${event.payload.userName}`,
+          undefined,
+          serverName
+        );
+      } else if (!isTabActive()) {
+        // Increment unread count for regular messages if tab is not active
         incrementUnread();
       }
     });
@@ -98,7 +116,7 @@ export function useServerEvents({
       isActive = false;
       unlistenPromise.then((unlisten) => unlisten()).catch(() => {});
     };
-  }, [serverId, setMessages]);
+  }, [serverId, setMessages, username]);
 
   // Listen for broadcast messages
   useEffect(() => {
@@ -173,11 +191,26 @@ export function useServerEvents({
       (event) => {
         if (!isActive) return;
         
+        // Check if user already exists before updating state
+        const currentUsers = usersRef.current;
+        const userExists = currentUsers.some(u => u.userId === event.payload.userId);
+        
+        if (userExists) {
+          // User already exists, skip (e.g., during initial load or user update)
+          return;
+        }
+        
+        const { isAdmin, isIdle } = parseUserFlags(event.payload.flags);
+        
+        // Add user to list
+        // Note: This handler is primarily for initial user list load from GetUserNameList reply
+        // For actual new user joins, we rely on the user-changed handler which receives NotifyUserChange
         setUsers((prev) => {
+          // Double-check user doesn't exist (race condition protection)
           if (prev.some(u => u.userId === event.payload.userId)) {
             return prev;
           }
-          const { isAdmin, isIdle } = parseUserFlags(event.payload.flags);
+          
           const updated = [...prev, {
             userId: event.payload.userId,
             userName: event.payload.userName,
@@ -189,7 +222,9 @@ export function useServerEvents({
           usersRef.current = updated;
           return updated;
         });
-        soundsRef.current.playJoinSound();
+        
+        // Don't show join messages here - this is for initial load
+        // Join messages are handled by the user-changed handler for actual new user joins
       }
     );
 
@@ -198,11 +233,33 @@ export function useServerEvents({
       (event) => {
         if (!isActive) return;
         
+        // Get username before removing user (check current users ref)
+        const currentUsers = usersRef.current;
+        const userToRemove = currentUsers.find(u => u.userId === event.payload.userId);
+        
+        if (!userToRemove) {
+          // User not found, nothing to remove
+          return;
+        }
+        
+        const userName = userToRemove.userName;
+        
+        // Remove user from list
         setUsers((prev) => {
           const updated = prev.filter(u => u.userId !== event.payload.userId);
           usersRef.current = updated;
           return updated;
         });
+        
+        // Add leave message to chat (always show leave messages)
+        setMessages((prevMessages) => [...prevMessages, {
+          userId: event.payload.userId,
+          userName: userName,
+          message: `${userName} left`,
+          timestamp: new Date(),
+          type: 'left',
+        }]);
+        
         soundsRef.current.playLeaveSound();
       }
     );
@@ -212,20 +269,57 @@ export function useServerEvents({
       (event) => {
         if (!isActive) return;
         
+        // Check if user already exists before updating state
+        const currentUsers = usersRef.current;
+        const prevLength = currentUsers.length;
+        
         setUsers((prev) => {
-          const updated = prev.map(u =>
-            u.userId === event.payload.userId
-              ? {
-                  userId: event.payload.userId,
-                  userName: event.payload.userName,
-                  iconId: event.payload.iconId,
-                  flags: event.payload.flags,
-                  ...parseUserFlags(event.payload.flags),
-                }
-              : u
-          );
-          usersRef.current = updated;
-          return updated;
+          const existingIndex = prev.findIndex(u => u.userId === event.payload.userId);
+          
+          if (existingIndex >= 0) {
+            // User exists, update them (like Swift: self.users[i] = User(hotlineUser: user))
+            const updated = prev.map(u =>
+              u.userId === event.payload.userId
+                ? {
+                    userId: event.payload.userId,
+                    userName: event.payload.userName,
+                    iconId: event.payload.iconId,
+                    flags: event.payload.flags,
+                    ...parseUserFlags(event.payload.flags),
+                  }
+                : u
+            );
+            usersRef.current = updated;
+            return updated;
+          } else {
+            // User doesn't exist, add them as new user (like Swift: self.users.append(User(hotlineUser: user)))
+            const { isAdmin, isIdle } = parseUserFlags(event.payload.flags);
+            const updated = [...prev, {
+              userId: event.payload.userId,
+              userName: event.payload.userName,
+              iconId: event.payload.iconId,
+              flags: event.payload.flags,
+              isAdmin,
+              isIdle,
+            }];
+            usersRef.current = updated;
+            
+            // Show join message for new users (Swift client shows join messages unconditionally)
+            setMessages((prevMessages) => [...prevMessages, {
+              userId: event.payload.userId,
+              userName: event.payload.userName,
+              message: `${event.payload.userName} joined`,
+              timestamp: new Date(),
+              type: 'joined',
+            }]);
+            
+            // Only play sound if users list was not empty (to avoid sound spam during initial load)
+            if (prevLength > 0) {
+              soundsRef.current.playJoinSound();
+            }
+            
+            return updated;
+          }
         });
       }
     );
@@ -236,7 +330,7 @@ export function useServerEvents({
       unlistenLeavePromise.then((fn) => fn()).catch(() => {});
       unlistenChangePromise.then((fn) => fn()).catch(() => {});
     };
-  }, [serverId, setUsers, parseUserFlags]);
+  }, [serverId, setUsers, setMessages, parseUserFlags]);
 
   // Listen for private messages
   useEffect(() => {

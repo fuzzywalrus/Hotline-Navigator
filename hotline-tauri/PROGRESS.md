@@ -1781,3 +1781,160 @@ Created domain-specific components in proper folders:
 - ✅ News article viewer independent of list scroll
 - ✅ TypeScript compilation successful
 - ⏸️ Needs testing with live server to verify all notification scenarios
+
+### 2025-12-13: Tabbed Interface & Multi-Server Support
+
+**What was completed:**
+- **Tabbed Interface**: Browser-like tabbed interface for managing multiple server connections
+- **Tab Management**: Add, remove, and switch between server tabs with keyboard shortcuts
+- **Tab Persistence**: Tabs persist across server connections and disconnections
+- **Unread Indicators**: Tab badges show unread message counts for background tabs
+- **Tracker Tab**: Always-visible tracker/bookmark tab that acts as "home" for opening new servers
+- **Tab Styling**: Dark mode tab styling with active tab highlighting (lighter dark background, purple underline)
+- **Close Tab Disconnect**: Closing a server tab automatically disconnects from the backend
+- **Overscroll Fix**: Fixed white background showing on overscroll in dark mode
+
+**Tab Interface Features:**
+- **Tab Bar**: Always visible at top of application
+- **Tab Types**: Tracker tabs (unclosable) and Server tabs (closable)
+- **Tab Actions**: Click to switch, close button (X) for server tabs
+- **Keyboard Shortcuts**:
+  - `⌘W` - Close active server tab
+  - `⌘Tab` - Switch to next tab
+  - `⌘1-9` - Switch to tab by number
+- **Unread Counts**: Badge showing unread message count on inactive tabs
+- **Tab Titles**: Dynamic tab titles updated from server name
+
+**Implementation Details:**
+- **State Management**: Added `tabs` array and `activeTabId` to `appStore.ts`
+- **Tab Interface**: `Tab` type with `id`, `type`, `serverId`, `title`, `unreadCount`
+- **Tab Component**: `TabBar.tsx` renders tabs with close buttons and unread badges
+- **Content Rendering**: All tabs rendered simultaneously, only active tab visible (`absolute inset-0` with `block`/`hidden`)
+- **Event Handling**: `useServerEvents` hook tracks tab activity and increments unread counts for background tabs
+- **Disconnect on Close**: `TabBar` calls `disconnect_from_server` command before removing tab
+
+**Dark Mode Improvements:**
+- **Active Tab**: `dark:bg-gray-700` (lighter dark) with `dark:text-white` and `dark:border-b-purple-500`
+- **Inactive Tabs**: `dark:bg-gray-800` with `dark:text-gray-300`
+- **Overscroll**: Added `background-color` to `html`, `body`, and `#root` for dark mode (`gray-900`)
+
+**Files created/modified:**
+- `src/components/tabs/TabBar.tsx` - NEW: Tab bar component with close buttons and unread badges
+- `src/stores/appStore.ts` - UPDATED: Added `tabs`, `activeTabId`, `addTab`, `removeTab`, `setActiveTab`, `updateTabUnread`, `updateTabTitle` actions
+- `src/App.tsx` - UPDATED: Refactored to always render `TabBar`, render all tabs with conditional visibility
+- `src/components/server/ServerWindow.tsx` - UPDATED: Changed from `fixed inset-0` to `h-full w-full`, added `updateTabTitle` prop
+- `src/components/tracker/BookmarkList.tsx` - UPDATED: `handleConnect` now uses `addTab()` instead of `setFocusedServer()`
+- `src/components/server/hooks/useServerEvents.ts` - UPDATED: Added `isTabActive()` and `incrementUnread()` helpers
+- `src/App.css` - UPDATED: Added dark mode background colors to prevent white overscroll
+
+**Testing status:**
+- ✅ Tabbed interface working correctly
+- ✅ Multiple server tabs can be open simultaneously
+- ✅ Tracker tab always visible and unclosable
+- ✅ Unread counts update for background tabs
+- ✅ Tab closing disconnects from server
+- ✅ Dark mode tab styling correct
+- ✅ Overscroll no longer shows white background
+- ✅ Keyboard shortcuts working
+- ✅ TypeScript compilation successful
+
+**Next task:** Other features from development goals
+
+### 2025-12-13: @Username Mentions in Chat
+
+**What was completed:**
+- **Mention Detection**: Case-insensitive @username detection in chat messages
+- **Mention Highlighting**: Messages containing mentions highlighted with yellow background and left border
+- **Tab Notifications**: Mentions trigger tab unread count increments and notifications
+- **Mention Utility**: Created reusable mention detection utility with word boundary support
+
+**Mention Features:**
+- **Detection**: Case-insensitive matching (e.g., `@greg` matches `@Greg`, `@GREG`)
+- **Word Boundaries**: Uses regex word boundaries to prevent partial matches (e.g., `@greg` doesn't match `@gregory`)
+- **Visual Highlighting**: 
+  - Light mode: Yellow background (`bg-yellow-50`) with yellow left border
+  - Dark mode: Dark yellow background (`dark:bg-yellow-900/20`) with yellow left border
+  - Rounded corners on right side
+- **Notifications**: 
+  - Toast notification when mentioned in inactive tab
+  - Tab unread count increments
+  - Notification includes server name for context
+
+**Implementation Details:**
+- **Utility Function**: `src/utils/mentions.ts` with `containsMention()` function
+- **Message Interface**: Added `isMention?: boolean` to `ChatMessage` interface
+- **Event Handler**: `useServerEvents` hook detects mentions and sets `isMention` flag
+- **Chat Display**: `ChatTab` component highlights messages with `isMention` flag
+- **Username Source**: Mentions checked against username from preferences store
+
+**Files created/modified:**
+- `src/utils/mentions.ts` - NEW: Mention detection utility with `containsMention()` and `extractMentions()` functions
+- `src/components/chat/ChatTab.tsx` - UPDATED: Added `isMention` to interface, added highlighting styles
+- `src/components/server/serverTypes.ts` - UPDATED: Added `isMention?: boolean` to `ChatMessage` interface
+- `src/components/server/hooks/useServerEvents.ts` - UPDATED: Added mention detection, notification, and unread count increment
+
+**Testing status:**
+- ✅ Mention detection working correctly
+- ✅ Case-insensitive matching works
+- ✅ Word boundaries prevent partial matches
+- ✅ Messages highlighted correctly in light and dark mode
+- ✅ Notifications appear for mentions in inactive tabs
+- ✅ Tab unread counts increment for mentions
+- ✅ TypeScript compilation successful
+
+**Next task:** Other features from development goals
+
+### 2025-12-13: Join/Leave Messages in Chat
+
+**What was completed:**
+- **Join Messages**: Chat messages displayed when users join the server
+- **Leave Messages**: Chat messages displayed when users leave the server
+- **Message Styling**: Join/leave messages styled as centered, italic, gray text
+- **User List Updates**: User list correctly updates when users join or leave
+- **Event Handling**: Proper handling of `NotifyUserChange` for both new users and updates
+
+**Join/Leave Message Features:**
+- **Join Messages**: Format: `"{username} joined"` - shown for all new users
+- **Leave Messages**: Format: `"{username} left"` - shown when users disconnect
+- **Visual Styling**: 
+  - Centered text alignment
+  - Italic font style
+  - Gray color (`text-gray-500` light mode, `text-gray-400` dark mode)
+  - Subtle appearance to distinguish from regular chat messages
+- **Sound Effects**: Join sound plays for new users (only if users list wasn't empty, avoiding spam during initial load)
+
+**Implementation Details:**
+- **Event Handling**: `NotifyUserChange` transaction (type 301) handles both new users and updates
+- **User Detection**: `user-changed` handler checks if user exists - if yes, updates; if no, adds as new user
+- **Message Types**: Join messages use `type: 'joined'`, leave messages use `type: 'left'`
+- **Chat Display**: `ChatTab` component detects join/leave messages and applies special styling
+- **User List**: User list updates correctly for both joins and leaves
+
+**Bug Fixes:**
+- **Duplicate Join Messages**: Fixed by removing join messages from `user-joined` handler (only for initial load)
+- **User List Not Updating**: Fixed by refactoring `user-changed` handler to add new users if they don't exist
+- **Leave Messages Not Showing**: Fixed by getting username before removing user from list
+
+**Files created/modified:**
+- `src/components/server/hooks/useServerEvents.ts` - UPDATED: 
+  - `user-joined` handler: Only adds users silently (for initial load)
+  - `user-changed` handler: Adds new users and shows join messages, updates existing users
+  - `user-left` handler: Gets username before removal, adds leave message
+- `src/components/chat/ChatTab.tsx` - UPDATED: Added join/leave message detection and styling
+
+**Implementation details:**
+- **Initial Load**: `GetUserNameList` reply emits `UserJoined` events - no join messages shown (silent)
+- **New User Joins**: `NotifyUserChange` transaction emits `UserChanged` event - join message shown
+- **User Leaves**: `NotifyUserDelete` transaction emits `UserLeft` event - leave message shown
+- **User Updates**: `NotifyUserChange` for existing users - no message, just updates user info
+
+**Testing status:**
+- ✅ Join messages appear when new users join
+- ✅ Leave messages appear when users leave
+- ✅ User list updates correctly for joins and leaves
+- ✅ No duplicate join messages
+- ✅ Messages styled correctly (centered, italic, gray)
+- ✅ Sound effects play for joins (when appropriate)
+- ✅ TypeScript compilation successful
+
+**Next task:** Other features from development goals

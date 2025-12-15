@@ -5,6 +5,7 @@ export interface ChatMessage {
   userName: string;
   message: string;
   timestamp: Date;
+  isMention?: boolean; // Indicates if this message mentions the current user
 }
 
 export interface User {
