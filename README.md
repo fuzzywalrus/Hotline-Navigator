@@ -1,6 +1,6 @@
 <img width="836" height="188" alt="GitHub Banner" src="https://github.com/user-attachments/assets/73873a25-e18f-4dfd-9454-4c71ce271054" />
 
-# Hotline
+# Hotline Navigator
 
 A modern, cross-platform Hotline client built with **Tauri**, React, and Rust. This is a spiritual port of David Mierau's wonderful [Hotline app](https://github.com/mierau/hotline), bringing the classic Hotline protocol to modern platforms.
 
