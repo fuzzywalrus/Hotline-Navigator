@@ -50,6 +50,10 @@
       "deb": {
         "depends": []
       }
+    },
+    "iOS": {
+      "minimumSystemVersion": "15.0",
+      "developmentTeam": "36SA478KNK"
     }
   }
 }

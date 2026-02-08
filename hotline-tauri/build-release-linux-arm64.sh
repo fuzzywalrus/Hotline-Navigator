@@ -131,4 +131,18 @@ fi
 echo "✅ Linux ARM64 release ready: $RELEASE_DIR"
 ls -la "$RELEASE_DIR" || true
 
+# Optionally deploy if DEPLOY environment variable is set
+if [ "${DEPLOY:-}" = "1" ] || [ "${DEPLOY:-}" = "true" ]; then
+  echo ""
+  echo "🚀 Deploying to remote server..."
+  if [ -f "release/deploy-linux-arm64.sh" ]; then
+    bash "release/deploy-linux-arm64.sh" success || {
+      echo "⚠️  Deployment failed, but build was successful"
+      exit 0
+    }
+  else
+    echo "⚠️  Deployment script not found: release/deploy-linux-arm64.sh"
+  fi
+fi
+
 exit 0

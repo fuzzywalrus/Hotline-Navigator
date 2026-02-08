@@ -461,11 +461,22 @@ impl AppState {
 
             println!("File transfer complete, {} bytes received", file_data.len());
 
-            // Get downloads directory
+            // Get downloads directory (or fallback to app data directory on iOS)
             let downloads_dir = self.app_handle
                 .path()
                 .download_dir()
+                .or_else(|_| {
+                    // On iOS, download_dir might not be available, use app data directory
+                    self.app_handle
+                        .path()
+                        .app_data_dir()
+                        .map(|dir| dir.join("Downloads"))
+                })
                 .map_err(|e| format!("Failed to get downloads directory: {}", e))?;
+
+            // Ensure downloads directory exists
+            fs::create_dir_all(&downloads_dir)
+                .map_err(|e| format!("Failed to create downloads directory: {}", e))?;
 
             // Sanitize filename for filesystem (handle unicode and invalid characters)
             // Replace invalid path characters with underscore
