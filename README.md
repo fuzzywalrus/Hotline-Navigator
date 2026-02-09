@@ -11,6 +11,8 @@ A modern, cross-platform Hotline client built with **Tauri**, React, and Rust. T
 | **macOS** | x86_64, ARM64 (Universal) | ✅ Supported (macOS 11.0+) |
 | **Windows** | x86_64 | ✅ Supported |
 | **Linux** | x86_64, ARM64 | ✅ Supported |
+| **iOS** | ARM64 | ✅ Supported (iOS 18.7+) |
+| **iPadOS** | ARM64 | ✅ Supported (iPadOS 18.7+) |
 
 [Download the Latest Release](https://github.com/fuzzywalrus/hotline/releases/tag/v0.1.0)
 
@@ -54,50 +56,3 @@ At a time when people were chatting over email and file sharing was passing phys
 Perhaps that’s why you can still find Hotline servers and trackers running today 25 years later. Though the company who built Hotline is no longer around, and the software they made is only available through retro Mac software archives, these communities are still operating.
 
 And this project is an attempt to create a modern open source version of Hotline for modern Apple systems. Join in. Contribute. Run your own server! Perhaps Hotline can live on for another 25 years. :)
-
-# Goals
-- Build a Hotline client for modern Apple systems.
-- Keep the HotlineProtocol, HotlineClient, HotlineTrackerClient, and HotlineFileClient Swift code reusable so people can use it in other Swift Hotline projects.
-- Bring a modern Hotline client to iOS, iPadOS, and macOS using one codebase.
-- Ressurect the Hotline brand which has been expunged from trademark databases for over a decade. Look, I want Hotline with the classic big red H and all that on my modern Apple devices, okay? ;)
-- Document the Hotline protocol.
-- Have fun. :)
-
-# macOS Screenshots
-![CleanShot 2024-05-14 at 13 45 55@2x](https://github.com/mierau/hotline/assets/55453/44e02def-d457-4f29-ac5e-30438a7794c3)
-
-# Status
-
-| Feature                    | macOS | iOS   | iPadOS | visionOS |
-|----------------------------|-------|-------|--------|----------|
-| Trackers listing           |   ✓   |   ✓   |        |          |
-| Multiple trackers          |   ✓   |       |        |          |
-| Connect to servers         |   ✓   |   ✓   |        |          |
-| Connect to multiple servers|   ✓   |       |        |          |
-| Server accounts            |   ✓   |       |        |          |
-| Server bookmarks           |   ✓   |       |        |          |
-| Change name & icon         |   ✓   |       |        |          |
-| Privacy settings           |   ✓   |       |        |          |
-| Autoresponse               |   ✓   |       |        |          |
-| Display server agreement   |   ✓   |   ✓   |        |          |
-| Display server banner      |   ✓   |   ✓   |        |          |
-| Public chat                |   ✓   |   ✓   |        |          |
-| Public chat search         |   ✓   |       |        |          |
-| Public chat persistence    |   ✓   |       |        |          |
-| Private messages           |   ✓   |       |        |          |
-| User list                  |   ✓   |   ✓   |        |          |
-| User icons                 |   ✓   |   ✓   |        |          |
-| User administration        |   ✓   |       |        |          |
-| News reading               |   ✓   |   ✓   |        |          |
-| News posting               |   ✓   |       |        |          |
-| Message board reading      |   ✓   |   ✓   |        |          |
-| Message board posting      |   ✓   |       |        |          |
-| File browsing              |   ✓   |   ✓   |        |          |
-| File downloading           |   ✓   |       |        |          |
-| File uploading             |   ✓   |       |        |          |
-| File info                  |   ✓   |       |        |          |
-| File search                |   ✓   |       |        |          |
-| File management            |       |       |        |          |
-| Folder downloading         |   ✓   |       |        |          |
-| Folder uploading           |   ✓   |       |        |          |
-| Custom icon sets           |       |       |        |          |

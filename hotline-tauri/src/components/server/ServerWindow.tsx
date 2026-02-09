@@ -247,8 +247,14 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     if (users.length > 0 && fileCacheDepth > 0) {
       let cancelled = false;
       
+      const visited = new Set<string>();
       const prefetchFiles = async (path: string[], depth: number): Promise<void> => {
         if (depth < 0 || cancelled) return;
+
+        // Guard against cycles (e.g. server returns a subfolder with the same name as its parent)
+        const pathKey = path.join('/');
+        if (visited.has(pathKey)) return;
+        visited.add(pathKey);
 
         // Check if already cached
         const cached = getFileCache(serverId, path);
@@ -268,7 +274,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
             serverId,
             path,
           });
-          
+
           // Wait for the file list event to arrive and be cached
           let attempts = 0;
           while (attempts < 50 && !cancelled) {

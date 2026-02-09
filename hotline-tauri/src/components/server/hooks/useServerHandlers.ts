@@ -1,7 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
+import { openPath } from '@tauri-apps/plugin-opener';
 import type { NewsArticle } from '../serverTypes';
 import { useSound } from '../../../hooks/useSound';
-import { showNotification } from '../../../stores/notificationStore';
+import { showNotification, useNotificationStore } from '../../../stores/notificationStore';
 
 interface UseServerHandlersProps {
   serverId: string;
@@ -126,12 +127,38 @@ export function useServerHandlers({
         return next;
       });
 
-      showNotification.success(
-        result,
-        'Download Complete',
-        undefined,
-        serverName
+      // Extract file path from result string "Downloaded to: <path>"
+      const filePath = result.replace(/^Downloaded to:\s*/, '').trim();
+
+      const isIOS = typeof window !== 'undefined' && (
+        /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
       );
+
+      if (isIOS) {
+        useNotificationStore.getState().addNotification({
+          type: 'success',
+          message: `${fileName} saved to app storage`,
+          title: 'Download Complete',
+          serverName,
+          duration: 8000,
+          action: {
+            label: 'View File',
+            onClick: () => {
+              openPath(filePath).catch((err) =>
+                console.error('Failed to open file:', err)
+              );
+            },
+          },
+        });
+      } else {
+        showNotification.success(
+          result,
+          'Download Complete',
+          undefined,
+          serverName
+        );
+      }
       sounds.playFileTransferCompleteSound();
     } catch (error) {
       console.error('Download failed:', error);
