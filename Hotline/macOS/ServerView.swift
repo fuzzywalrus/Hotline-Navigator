@@ -198,11 +198,7 @@ struct ServerView: View {
       self.state.serverName = self.model.serverTitle
     }
     .onAppear {
-      var address = self.server.address
-      if self.server.port != HotlinePorts.DefaultServerPort {
-        address += ":\(self.server.port)"
-      }
-      self.connectAddress = self.server.address
+      self.connectAddress = self.server.displayAddress
       self.connectLogin = self.server.login
       self.connectPassword = self.server.password
       
