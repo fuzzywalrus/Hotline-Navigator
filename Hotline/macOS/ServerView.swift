@@ -523,8 +523,49 @@ struct ServerTransferRow: View {
       guard transfer.completed, let url = transfer.fileURL else {
         return
       }
-      
+
       NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+    .contextMenu {
+      if transfer.completed, let url = transfer.fileURL {
+        Button("Show in Finder", systemImage: "finder") {
+          NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+
+        Button("Open", systemImage: "arrow.up.right.square") {
+          NSWorkspace.shared.open(url)
+        }
+
+        self.openWithMenu(for: url)
+
+        Divider()
+
+        Button("Move to Trash", systemImage: "trash") {
+          AppState.shared.cancelTransfer(id: transfer.id)
+          NSWorkspace.shared.recycle([url])
+        }
+
+        Button("Remove", systemImage: "xmark") {
+          AppState.shared.cancelTransfer(id: transfer.id)
+        }
+      }
+      else if !transfer.done {
+        Button("Cancel Transfer", systemImage: "xmark") {
+          AppState.shared.cancelTransfer(id: transfer.id)
+        }
+      }
+      else {
+        if let url = transfer.fileURL {
+          Button("Move to Trash", systemImage: "trash") {
+            AppState.shared.cancelTransfer(id: transfer.id)
+            NSWorkspace.shared.recycle([url])
+          }
+        }
+
+        Button("Remove", systemImage: "xmark") {
+          AppState.shared.cancelTransfer(id: transfer.id)
+        }
+      }
     }
     .popover(isPresented: .constant(self.detailsShown && !self.transfer.done), arrowEdge: .trailing) {
       let rows: [(String, String)] = [
@@ -579,5 +620,49 @@ struct ServerTransferRow: View {
       }
     }
     return ""
+  }
+
+  @ViewBuilder
+  private func openWithMenu(for url: URL) -> some View {
+    Menu("Open With") {
+      let defaultAppURL = NSWorkspace.shared.urlForApplication(toOpen: url)
+      let allApps = NSWorkspace.shared.urlsForApplications(toOpen: url)
+        .filter { $0 != defaultAppURL }
+        .sorted { FileManager.default.displayName(atPath: $0.path) < FileManager.default.displayName(atPath: $1.path) }
+
+      if let defaultAppURL {
+        Button {
+          NSWorkspace.shared.open([url], withApplicationAt: defaultAppURL, configuration: NSWorkspace.OpenConfiguration())
+        } label: {
+          Label {
+            Text(FileManager.default.displayName(atPath: defaultAppURL.path).replacing(".app", with: ""))
+          } icon: {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: defaultAppURL.path))
+              .resizable()
+              .scaledToFit()
+              .frame(width: 16, height: 16)
+          }
+        }
+
+        if !allApps.isEmpty {
+          Divider()
+        }
+      }
+
+      ForEach(allApps, id: \.self) { appURL in
+        Button {
+          NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: NSWorkspace.OpenConfiguration())
+        } label: {
+          Label {
+            Text(FileManager.default.displayName(atPath: appURL.path).replacing(".app", with: ""))
+          } icon: {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: appURL.path))
+              .resizable()
+              .scaledToFit()
+              .frame(width: 16, height: 16)
+          }
+        }
+      }
+    }
   }
 }
