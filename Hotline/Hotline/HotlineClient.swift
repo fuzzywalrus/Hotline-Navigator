@@ -183,7 +183,10 @@ public actor HotlineClient {
     print("HotlineClient.connect(): Connecting socket...")
     let socket: NetSocket
     do {
-      socket = try await NetSocket.connect(host: host, port: port)
+      var config = NetSocket.Config()
+      config.enableKeepAlive = true
+      config.keepAliveIdleTime = 60
+      socket = try await NetSocket.connect(host: host, port: port, config: config)
     }
     catch let socketError as NetSocketError {
       if case .failed(_) = socketError {

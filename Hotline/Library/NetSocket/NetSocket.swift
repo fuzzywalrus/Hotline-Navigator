@@ -108,6 +108,10 @@ public actor NetSocket {
     public var receiveChunk: Int = 64 * 1024
     /// Maximum bytes to buffer before disconnecting (default: 8 MB)
     public var maxBufferBytes: Int = 8 * 1024 * 1024
+    /// Enable TCP-level keepalive to detect dead connections (default: false)
+    public var enableKeepAlive: Bool = false
+    /// Idle time in seconds before sending the first keepalive probe (default: 60)
+    public var keepAliveIdleTime: Int = 60
     public init() {}
   }
 
@@ -159,6 +163,12 @@ public actor NetSocket {
   /// - Returns: A connected and ready `NetSocket`
   /// - Throws: Network errors or connection failures
   public static func connect(host: NWEndpoint.Host, port: NWEndpoint.Port, config: Config = .init(), parameters: NWParameters = .tcp) async throws -> NetSocket {
+    if config.enableKeepAlive {
+      if let tcpOptions = parameters.defaultProtocolStack.transportProtocol as? NWProtocolTCP.Options {
+        tcpOptions.enableKeepalive = true
+        tcpOptions.keepaliveIdle = config.keepAliveIdleTime
+      }
+    }
     let conn = NWConnection(host: host, port: port, using: parameters)
     let socket = NetSocket(connection: conn, config: config)
     try await socket.start()
