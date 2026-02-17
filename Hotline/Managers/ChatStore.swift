@@ -1,6 +1,5 @@
 import Foundation
-import CryptoKit
-import Security
+import SQLite3
 
 actor ChatStore {
   static let shared = ChatStore()
@@ -52,40 +51,56 @@ actor ChatStore {
     let metadata: Metadata?
   }
 
-  private struct LogFile: Codable {
-    var metadata: Metadata
-    var entries: [Entry]
-  }
-
-  private enum StoreError: Error {
-    case encryptionFailed
-    case invalidCombinedCiphertext
-    case keyGenerationFailed
-  }
-
-  private let keychainKey = "chatlog-encryption-key"
-  private let applicationFolderName = "Hotline"
-  private let logsFolderName = "ChatLogs"
-  private let fileExtension = "hlchat"
   private let maxEntries = 2000
 
-  private var cache: [SessionKey: LogFile] = [:]
-  private var cachedDirectory: URL?
-  private var cachedKey: SymmetricKey?
+  private var db: OpaquePointer?
+  private var stmtUpsertServer: OpaquePointer?
+  private var stmtGetServerID: OpaquePointer?
+  private var stmtInsertEntry: OpaquePointer?
+  private var stmtLoadEntries: OpaquePointer?
+  private var stmtLoadMetadata: OpaquePointer?
+  private var stmtCountEntries: OpaquePointer?
+  private var stmtTrimEntries: OpaquePointer?
+  private var stmtUpdateMetadata: OpaquePointer?
 
   func append(entry: Entry, for key: SessionKey, serverName: String?) async {
     do {
-      var logFile = try loadLogFile(for: key) ?? newLogFile(for: key, serverName: serverName)
+      try openIfNeeded()
 
-      logFile.entries.append(entry)
-      if logFile.entries.count > maxEntries {
-        logFile.entries = Array(logFile.entries.suffix(maxEntries))
+      let now = entry.date.timeIntervalSince1970
+      let serverID = try upsertServer(key: key, serverName: serverName, timestamp: now)
+
+      let metadataJSON: String?
+      if let meta = entry.metadata {
+        let data = try JSONEncoder().encode(meta)
+        metadataJSON = String(data: data, encoding: .utf8)
+      } else {
+        metadataJSON = nil
       }
 
-      logFile.metadata.update(serverName: serverName, timestamp: entry.date)
-      cache[key] = logFile
+      guard let stmt = stmtInsertEntry else { return }
+      sqlite3_reset(stmt)
+      sqlite3_bind_text(stmt, 1, entry.id.uuidString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+      sqlite3_bind_int64(stmt, 2, Int64(serverID))
+      sqlite3_bind_text(stmt, 3, entry.body, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+      if let username = entry.username {
+        sqlite3_bind_text(stmt, 4, username, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+      } else {
+        sqlite3_bind_null(stmt, 4)
+      }
+      sqlite3_bind_text(stmt, 5, entry.type, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+      sqlite3_bind_double(stmt, 6, entry.date.timeIntervalSince1970)
+      if let json = metadataJSON {
+        sqlite3_bind_text(stmt, 7, json, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+      } else {
+        sqlite3_bind_null(stmt, 7)
+      }
 
-      try persist(logFile, for: key)
+      if sqlite3_step(stmt) != SQLITE_DONE {
+        print("ChatStore: failed to insert entry —", errorMessage())
+      }
+
+      trimEntries(serverID: serverID)
     }
     catch {
       print("ChatStore: failed to append entry —", error)
@@ -94,12 +109,18 @@ actor ChatStore {
 
   func updateMetadata(_ metadata: EntryMetadata, for entryID: UUID, key: SessionKey) async {
     do {
-      guard var logFile = try loadLogFile(for: key) else { return }
+      try openIfNeeded()
 
-      if let index = logFile.entries.firstIndex(where: { $0.id == entryID }) {
-        logFile.entries[index].metadata = metadata
-        cache[key] = logFile
-        try persist(logFile, for: key)
+      let data = try JSONEncoder().encode(metadata)
+      guard let json = String(data: data, encoding: .utf8) else { return }
+
+      guard let stmt = stmtUpdateMetadata else { return }
+      sqlite3_reset(stmt)
+      sqlite3_bind_text(stmt, 1, json, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+      sqlite3_bind_text(stmt, 2, entryID.uuidString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+
+      if sqlite3_step(stmt) != SQLITE_DONE {
+        print("ChatStore: failed to update metadata —", errorMessage())
       }
     }
     catch {
@@ -109,20 +130,16 @@ actor ChatStore {
 
   func loadHistory(for key: SessionKey, limit: Int? = nil) async -> LoadResult {
     do {
-      let logFile = try loadLogFile(for: key)
-      guard let logFile else {
+      try openIfNeeded()
+
+      guard let serverID = findServerID(key: key) else {
         return LoadResult(entries: [], metadata: nil)
       }
 
-      let entries: [Entry]
-      if let limit, limit < logFile.entries.count {
-        entries = Array(logFile.entries.suffix(limit))
-      }
-      else {
-        entries = logFile.entries
-      }
+      let metadata = loadServerMetadata(serverID: serverID)
+      let entries = loadEntries(serverID: serverID, limit: limit)
 
-      return LoadResult(entries: entries, metadata: logFile.metadata)
+      return LoadResult(entries: entries, metadata: metadata)
     }
     catch {
       print("ChatStore: failed to load history —", error)
@@ -131,142 +148,313 @@ actor ChatStore {
   }
 
   func clearAll() async {
+    closeDatabase()
+
     let fm = FileManager.default
-    if let dir = try? directoryURL(), fm.fileExists(atPath: dir.path) {
-      do {
-        try fm.removeItem(at: dir)
-      }
-      catch {
-        print("ChatStore: failed to clear chat logs —", error)
+    if let dbPath = try? databaseURL().path {
+      for suffix in ["", "-wal", "-shm"] {
+        let path = dbPath + suffix
+        if fm.fileExists(atPath: path) {
+          try? fm.removeItem(atPath: path)
+        }
       }
     }
 
-    cache.removeAll()
-    cachedDirectory = nil
+    cleanupLegacyDirectory()
 
     await MainActor.run {
       NotificationCenter.default.post(name: Self.historyClearedNotification, object: nil)
     }
   }
 
-  static func digest(for string: String) -> String {
-    let hash = SHA256.hash(data: Data(string.utf8))
-    return hash.compactMap { String(format: "%02x", $0) }.joined()
+  // MARK: - Database Setup
+
+  private enum StoreError: Error {
+    case databaseOpenFailed(String)
+    case sqlError(String)
   }
 
-  private func newLogFile(for key: SessionKey, serverName: String?) -> LogFile {
-    let now = Date()
-    var metadata = Metadata(address: key.address, port: key.port, serverName: nil, createdAt: now, updatedAt: now)
-    metadata.update(serverName: serverName, timestamp: now)
-    let logFile = LogFile(metadata: metadata, entries: [])
-    cache[key] = logFile
-    return logFile
-  }
-
-  private func loadLogFile(for key: SessionKey) throws -> LogFile? {
-    if let cached = cache[key] {
-      return cached
-    }
-
-    let url = try fileURL(for: key)
-    let fm = FileManager.default
-    guard fm.fileExists(atPath: url.path) else {
-      return nil
-    }
-
-    let encryptedData = try Data(contentsOf: url)
-    let decryptedData = try decrypt(encryptedData)
-
-    let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = .iso8601
-    let logFile = try decoder.decode(LogFile.self, from: decryptedData)
-    cache[key] = logFile
-    return logFile
-  }
-
-  private func persist(_ logFile: LogFile, for key: SessionKey) throws {
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
-    encoder.dateEncodingStrategy = .iso8601
-    let data = try encoder.encode(logFile)
-    let encrypted = try encrypt(data)
-    let url = try fileURL(for: key)
-    let fm = FileManager.default
-    let directory = url.deletingLastPathComponent()
-    if !fm.fileExists(atPath: directory.path) {
-      try fm.createDirectory(at: directory, withIntermediateDirectories: true)
-    }
-    try encrypted.write(to: url, options: .atomic)
-  }
-
-  private func directoryURL() throws -> URL {
-    if let cachedDirectory {
-      return cachedDirectory
-    }
-
+  private func databaseURL() throws -> URL {
     let fm = FileManager.default
     guard let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-      throw StoreError.keyGenerationFailed
+      throw StoreError.databaseOpenFailed("Application Support directory not found")
     }
 
-    let appDirectory = base.appendingPathComponent(applicationFolderName, isDirectory: true)
-    let logsDirectory = appDirectory.appendingPathComponent(logsFolderName, isDirectory: true)
-
+    let appDirectory = base.appendingPathComponent("Hotline", isDirectory: true)
     if !fm.fileExists(atPath: appDirectory.path) {
       try fm.createDirectory(at: appDirectory, withIntermediateDirectories: true)
     }
-    if !fm.fileExists(atPath: logsDirectory.path) {
-      try fm.createDirectory(at: logsDirectory, withIntermediateDirectories: true)
-    }
 
-    cachedDirectory = logsDirectory
-    return logsDirectory
+    return appDirectory.appendingPathComponent("ChatLogs.sqlite")
   }
 
-  private func fileURL(for key: SessionKey) throws -> URL {
-    let directory = try directoryURL()
-    let digest = Self.digest(for: key.identifier)
-    return directory.appendingPathComponent(digest).appendingPathExtension(fileExtension)
+  private func openIfNeeded() throws {
+    if db != nil { return }
+
+    let url = try databaseURL()
+    var handle: OpaquePointer?
+    let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
+    if sqlite3_open_v2(url.path, &handle, flags, nil) != SQLITE_OK {
+      let msg = handle.flatMap { String(cString: sqlite3_errmsg($0)) } ?? "unknown"
+      sqlite3_close(handle)
+      throw StoreError.databaseOpenFailed(msg)
+    }
+
+    db = handle
+
+    try execute("PRAGMA journal_mode = WAL")
+    try execute("PRAGMA foreign_keys = ON")
+
+    try execute("""
+      CREATE TABLE IF NOT EXISTS servers (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        address    TEXT NOT NULL,
+        port       INTEGER NOT NULL,
+        serverName TEXT,
+        createdAt  REAL NOT NULL,
+        updatedAt  REAL NOT NULL,
+        UNIQUE(address, port)
+      )
+      """)
+
+    try execute("""
+      CREATE TABLE IF NOT EXISTS entries (
+        id       TEXT PRIMARY KEY,
+        serverId INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+        body     TEXT NOT NULL,
+        username TEXT,
+        type     TEXT NOT NULL,
+        date     REAL NOT NULL,
+        metadata TEXT
+      )
+      """)
+
+    try execute("CREATE INDEX IF NOT EXISTS idx_entries_server_date ON entries(serverId, date)")
+
+    try prepareStatements()
+    cleanupLegacyDirectory()
   }
 
-  private func encrypt(_ data: Data) throws -> Data {
-    let key = try symmetricKey()
-    let sealedBox = try AES.GCM.seal(data, using: key)
-    guard let combined = sealedBox.combined else {
-      throw StoreError.encryptionFailed
-    }
-    return combined
+  private func prepareStatements() throws {
+    stmtUpsertServer = try prepare("""
+      INSERT INTO servers (address, port, serverName, createdAt, updatedAt)
+      VALUES (?1, ?2, ?3, ?4, ?5)
+      ON CONFLICT(address, port) DO UPDATE SET
+        serverName = COALESCE(NULLIF(?3, ''), serverName),
+        updatedAt = ?5
+      """)
+
+    stmtGetServerID = try prepare(
+      "SELECT id FROM servers WHERE address = ?1 AND port = ?2"
+    )
+
+    stmtInsertEntry = try prepare("""
+      INSERT OR REPLACE INTO entries (id, serverId, body, username, type, date, metadata)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+      """)
+
+    stmtLoadEntries = try prepare("""
+      SELECT id, body, username, type, date, metadata
+      FROM entries WHERE serverId = ?1 ORDER BY date ASC
+      """)
+
+    stmtLoadMetadata = try prepare(
+      "SELECT address, port, serverName, createdAt, updatedAt FROM servers WHERE id = ?1"
+    )
+
+    stmtCountEntries = try prepare(
+      "SELECT COUNT(*) FROM entries WHERE serverId = ?1"
+    )
+
+    stmtTrimEntries = try prepare("""
+      DELETE FROM entries WHERE id IN (
+        SELECT id FROM entries WHERE serverId = ?1 ORDER BY date ASC LIMIT ?2
+      )
+      """)
+
+    stmtUpdateMetadata = try prepare(
+      "UPDATE entries SET metadata = ?1 WHERE id = ?2"
+    )
   }
 
-  private func decrypt(_ data: Data) throws -> Data {
-    let key = try symmetricKey()
-    let sealedBox = try AES.GCM.SealedBox(combined: data)
-    return try AES.GCM.open(sealedBox, using: key)
+  private func prepare(_ sql: String) throws -> OpaquePointer? {
+    var stmt: OpaquePointer?
+    if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) != SQLITE_OK {
+      throw StoreError.sqlError(errorMessage())
+    }
+    return stmt
   }
 
-  private func symmetricKey() throws -> SymmetricKey {
-    if let cachedKey {
-      return cachedKey
+  private func execute(_ sql: String) throws {
+    if sqlite3_exec(db, sql, nil, nil, nil) != SQLITE_OK {
+      throw StoreError.sqlError(errorMessage())
+    }
+  }
+
+  private func errorMessage() -> String {
+    db.flatMap { String(cString: sqlite3_errmsg($0)) } ?? "unknown"
+  }
+
+  private func closeDatabase() {
+    let stmts: [OpaquePointer?] = [
+      stmtUpsertServer, stmtGetServerID, stmtInsertEntry,
+      stmtLoadEntries, stmtLoadMetadata, stmtCountEntries,
+      stmtTrimEntries, stmtUpdateMetadata
+    ]
+    for stmt in stmts {
+      sqlite3_finalize(stmt)
+    }
+    stmtUpsertServer = nil
+    stmtGetServerID = nil
+    stmtInsertEntry = nil
+    stmtLoadEntries = nil
+    stmtLoadMetadata = nil
+    stmtCountEntries = nil
+    stmtTrimEntries = nil
+    stmtUpdateMetadata = nil
+
+    if let db {
+      sqlite3_close(db)
+    }
+    self.db = nil
+  }
+
+  // MARK: - Queries
+
+  private func upsertServer(key: SessionKey, serverName: String?, timestamp: Double) throws -> Int32 {
+    guard let stmt = stmtUpsertServer else {
+      throw StoreError.sqlError("upsert statement not prepared")
+    }
+    sqlite3_reset(stmt)
+    sqlite3_bind_text(stmt, 1, key.address, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+    sqlite3_bind_int(stmt, 2, Int32(key.port))
+    if let name = serverName, !name.isEmpty {
+      sqlite3_bind_text(stmt, 3, name, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+    } else {
+      sqlite3_bind_null(stmt, 3)
+    }
+    sqlite3_bind_double(stmt, 4, timestamp)
+    sqlite3_bind_double(stmt, 5, timestamp)
+
+    if sqlite3_step(stmt) != SQLITE_DONE {
+      throw StoreError.sqlError(errorMessage())
     }
 
-    if let stored = DAKeychain.shared[keychainKey],
-       let storedData = Data(base64Encoded: stored),
-       storedData.count == 32 {
-      let key = SymmetricKey(data: storedData)
-      cachedKey = key
-      return key
+    guard let serverID = findServerID(key: key) else {
+      throw StoreError.sqlError("server row not found after upsert")
+    }
+    return serverID
+  }
+
+  private func findServerID(key: SessionKey) -> Int32? {
+    guard let stmt = stmtGetServerID else { return nil }
+    sqlite3_reset(stmt)
+    sqlite3_bind_text(stmt, 1, key.address, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+    sqlite3_bind_int(stmt, 2, Int32(key.port))
+
+    defer { sqlite3_reset(stmt) }
+    if sqlite3_step(stmt) == SQLITE_ROW {
+      return sqlite3_column_int(stmt, 0)
+    }
+    return nil
+  }
+
+  private func trimEntries(serverID: Int32) {
+    guard let countStmt = stmtCountEntries else { return }
+    sqlite3_reset(countStmt)
+    sqlite3_bind_int(countStmt, 1, serverID)
+
+    guard sqlite3_step(countStmt) == SQLITE_ROW else { return }
+    let count = Int(sqlite3_column_int(countStmt, 0))
+
+    guard count > maxEntries else { return }
+    let excess = count - maxEntries
+
+    guard let trimStmt = stmtTrimEntries else { return }
+    sqlite3_reset(trimStmt)
+    sqlite3_bind_int(trimStmt, 1, serverID)
+    sqlite3_bind_int(trimStmt, 2, Int32(excess))
+    sqlite3_step(trimStmt)
+  }
+
+  private func loadEntries(serverID: Int32, limit: Int?) -> [Entry] {
+    guard let stmt = stmtLoadEntries else { return [] }
+    sqlite3_reset(stmt)
+    sqlite3_bind_int(stmt, 1, serverID)
+
+    let decoder = JSONDecoder()
+    var entries: [Entry] = []
+
+    while sqlite3_step(stmt) == SQLITE_ROW {
+      guard let idStr = columnText(stmt, 0),
+            let uuid = UUID(uuidString: idStr),
+            let body = columnText(stmt, 1),
+            let type = columnText(stmt, 3) else {
+        continue
+      }
+
+      let username = columnText(stmt, 2)
+      let date = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 4))
+
+      var entryMetadata: EntryMetadata?
+      if let metaStr = columnText(stmt, 5),
+         let metaData = metaStr.data(using: .utf8) {
+        entryMetadata = try? decoder.decode(EntryMetadata.self, from: metaData)
+      }
+
+      entries.append(Entry(
+        id: uuid,
+        body: body,
+        username: username,
+        type: type,
+        date: date,
+        metadata: entryMetadata
+      ))
     }
 
-    var bytes = [UInt8](repeating: 0, count: 32)
-    let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-    guard status == errSecSuccess else {
-      throw StoreError.keyGenerationFailed
+    if let limit, limit < entries.count {
+      return Array(entries.suffix(limit))
     }
+    return entries
+  }
 
-    let data = Data(bytes)
-    let key = SymmetricKey(data: data)
-    DAKeychain.shared[keychainKey] = data.base64EncodedString()
-    cachedKey = key
-    return key
+  private func loadServerMetadata(serverID: Int32) -> Metadata? {
+    guard let stmt = stmtLoadMetadata else { return nil }
+    sqlite3_reset(stmt)
+    sqlite3_bind_int(stmt, 1, serverID)
+
+    defer { sqlite3_reset(stmt) }
+    guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+
+    guard let address = columnText(stmt, 0) else { return nil }
+    let port = Int(sqlite3_column_int(stmt, 1))
+    let serverName = columnText(stmt, 2)
+    let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 3))
+    let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 4))
+
+    return Metadata(
+      address: address,
+      port: port,
+      serverName: serverName,
+      createdAt: createdAt,
+      updatedAt: updatedAt
+    )
+  }
+
+  private func columnText(_ stmt: OpaquePointer?, _ index: Int32) -> String? {
+    guard let cStr = sqlite3_column_text(stmt, index) else { return nil }
+    return String(cString: cStr)
+  }
+
+  // MARK: - Legacy Cleanup
+
+  private func cleanupLegacyDirectory() {
+    let fm = FileManager.default
+    guard let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return }
+    let legacyDir = base.appendingPathComponent("Hotline", isDirectory: true)
+      .appendingPathComponent("ChatLogs", isDirectory: true)
+    if fm.fileExists(atPath: legacyDir.path) {
+      try? fm.removeItem(at: legacyDir)
+    }
   }
 }

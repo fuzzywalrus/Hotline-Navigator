@@ -1,4 +1,5 @@
 import SwiftUI
+import Kingfisher
 
 enum FocusedField: Int, Hashable {
   case chatInput
@@ -99,8 +100,6 @@ struct ChatView: View {
   @State private var searchResults: [ChatMessage] = []
   @State private var isSearching: Bool = false
   
-  @State private var stableBannerImage: Image?
-
   @FocusState private var focusedField: FocusedField?
 
   @Namespace var bottomID
@@ -128,21 +127,34 @@ struct ChatView: View {
 //      .opacity(0.2)
 //  }
   
+  private var bannerIsAnimated: Bool {
+    model.bannerImageFormat == .gif
+  }
+
   private var bannerView: some View {
     ZStack {
-      self.stableBannerImage?
-        .resizable()
-        .scaledToFit()
-        .frame(maxWidth: 468.0)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .offset(y: 1.5)
-        .blur(radius: 4)
-        .opacity(0.2)
-      self.stableBannerImage?
-        .resizable()
-        .scaledToFit()
-        .frame(maxWidth: 468.0)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+      if self.bannerIsAnimated {
+        KFAnimatedImage
+          .url(model.bannerFileURL)
+          .cacheMemoryOnly()
+          .cacheOriginalImage()
+          .scaledToFit()
+          .frame(maxWidth: 468.0)
+          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          .id("animated banner \(model.bannerFileURL?.absoluteString ?? "")")
+      }
+      else if model.bannerFileURL != nil {
+        KFImage
+          .url(model.bannerFileURL)
+          .resizable()
+          .interpolation(.high)
+          .cacheMemoryOnly()
+          .cacheOriginalImage()
+          .scaledToFit()
+          .frame(maxWidth: 468.0)
+          .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+          .id("static banner \(model.bannerFileURL?.absoluteString ?? "")")
+      }
     }
   }
   
@@ -209,7 +221,7 @@ struct ChatView: View {
               model.markPublicChatAsRead()
               reader.scrollTo(bottomID, anchor: .bottom)
             }
-            .onChange(of: self.model.bannerImage) {
+            .onChange(of: self.model.bannerFileURL) {
               reader.scrollTo(bottomID, anchor: .bottom)
             }
             .onChange(of: searchQuery) {
@@ -268,12 +280,6 @@ struct ChatView: View {
 //    .navigationTitle(model.serverTitle)
     .onChange(of: searchQuery) {
       performSearch()
-    }
-    .onChange(of: model.bannerImage) { oldValue, newValue in
-      stableBannerImage = newValue
-    }
-    .onAppear {
-      stableBannerImage = model.bannerImage
     }
 //    .toolbar {
 //      ToolbarItem(placement: .primaryAction) {

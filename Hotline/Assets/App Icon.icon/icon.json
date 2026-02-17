@@ -1,8 +1,8 @@
 {
   "fill" : {
     "linear-gradient" : [
-      "display-p3:0.98824,0.15686,0.15686,1.00000",
-      "srgb:0.83024,0.00000,0.00000,1.00000"
+      "display-p3:0.93954,0.15686,0.15686,1.00000",
+      "srgb:0.84215,0.00000,0.00000,1.00000"
     ],
     "orientation" : {
       "start" : {
@@ -17,10 +17,14 @@
   },
   "groups" : [
     {
+      "blur-material" : null,
       "layers" : [
         {
+          "blend-mode" : "normal",
+          "fill" : "none",
           "image-name" : "hl.svg",
           "name" : "hl",
+          "opacity" : 1,
           "position" : {
             "scale" : 1.33,
             "translation-in-points" : [
@@ -30,10 +34,12 @@
           }
         }
       ],
+      "lighting" : "individual",
       "shadow" : {
         "kind" : "neutral",
         "opacity" : 0.5
       },
+      "specular" : true,
       "translucency" : {
         "enabled" : true,
         "value" : 0.5

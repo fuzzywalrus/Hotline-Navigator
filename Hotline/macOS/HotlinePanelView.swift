@@ -214,6 +214,7 @@ struct HotlinePanelView: View {
           .id("static banner \(self.bannerFileURL?.absoluteString ?? "")")
       }
     }
+    .allowsHitTesting(false)
     .animation(.default, value: self.bannerIsAnimated)
     .animation(.default, value: self.bannerFileURL)
   }

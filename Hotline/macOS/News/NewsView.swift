@@ -104,26 +104,30 @@ struct NewsView: View {
         ToolbarSpacer(.fixed)
       }
       
-      ToolbarItem {
-        Button {
-//          if selection?.type == .category || selection?.type == .article {
-//            editorOpen = true
-//          }
-        } label: {
-          Image(systemName: "newspaper")
+      if self.model.access?.contains(.canCreateNewsFolders) == true {
+        ToolbarItem {
+          Button {
+  //          if selection?.type == .category || selection?.type == .article {
+  //            editorOpen = true
+  //          }
+          } label: {
+            Image(systemName: "newspaper")
+          }
+          .help("Create a new topic")
         }
-        .help("Create a new topic")
       }
       
-      ToolbarItem {
-        Button {
-//          if selection?.type == .category || selection?.type == .article {
-//            editorOpen = true
-//          }
-        } label: {
-          Image(systemName: "tray")
+      if self.model.access?.contains(.canCreateNewsCategories) == true {
+        ToolbarItem {
+          Button {
+            //          if selection?.type == .category || selection?.type == .article {
+            //            editorOpen = true
+            //          }
+          } label: {
+            Image(systemName: "tray")
+          }
+          .help("Create a new category")
         }
-        .help("Create a new category")
       }
       
       ToolbarItem {
