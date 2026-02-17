@@ -201,16 +201,24 @@ extension String {
   
   func convertToAttributedStringWithLinks() -> AttributedString {
     let attributedString: NSMutableAttributedString = NSMutableAttributedString(string: self)
-    let matches = self.ranges(of: RegularExpressions.relaxedLink)
-    for match in matches {
-      let matchString = String(self[match])
-      if matchString.isEmailAddress() {
-        attributedString.addAttribute(.link, value: "mailto:\(matchString)", range: NSRange(match, in: self))
-      }
-      else {
-        attributedString.addAttribute(.link, value: matchString, range: NSRange(match, in: self))
-      }
-//      attributedString.addAttribute(.underlineStyle, value: 1, range: NSRange(match, in: self))
+
+    // Apply email links first
+    let emailRanges = self.ranges(of: RegularExpressions.emailAddress)
+    for range in emailRanges {
+      let email = String(self[range])
+      attributedString.addAttribute(.link, value: "mailto:\(email)", range: NSRange(range, in: self))
+    }
+
+    // Apply URL links, skipping any that overlap with email matches
+    let urlRanges = self.ranges(of: RegularExpressions.relaxedLink)
+    for urlRange in urlRanges {
+      let overlapsEmail = emailRanges.contains { $0.overlaps(urlRange) }
+      if overlapsEmail { continue }
+
+      let matchString = String(self[urlRange])
+      let hasScheme = (try? RegularExpressions.supportedLinkScheme.prefixMatch(in: matchString)) != nil
+      let url = hasScheme ? matchString : "https://\(matchString)"
+      attributedString.addAttribute(.link, value: url, range: NSRange(urlRange, in: self))
     }
     return AttributedString(attributedString)
   }
@@ -245,28 +253,46 @@ extension String {
   }
   
   func convertingLinksToMarkdown() -> String {
-//    var cp = String(self)
-    
-    self.replacing(RegularExpressions.relaxedLink) { match in
-      let linkText = self[match.range]
-      
-      // Only add https:// if the link doesn't already have a scheme
-      let hasScheme = (try? RegularExpressions.supportedLinkScheme.prefixMatch(in: linkText)) != nil
-      let url = hasScheme ? String(linkText) : "https://\(linkText)"
-      
-      return "[\(linkText)](\(url))"
+    // Collect email and URL ranges from the original string
+    let emailRanges = self.ranges(of: RegularExpressions.emailAddress)
+    let urlRanges = self.ranges(of: RegularExpressions.relaxedLink)
+
+    struct LinkMatch {
+      let range: Range<String.Index>
+      let isEmail: Bool
     }
-    
-//    cp.replace(RegularExpressions.relaxedLink) { match -> String in
-//      let linkText = self[match.range]
-//      var injectedScheme = "https://"
-//      if let _ = try? RegularExpressions.supportedLinkScheme.prefixMatch(in: linkText) {
-//        injectedScheme = ""
-//      }
-//
-//      return "[\(linkText)](\(injectedScheme)\(linkText))"
-//    }
-//    return cp
+
+    var matches: [LinkMatch] = emailRanges.map { LinkMatch(range: $0, isEmail: true) }
+    for urlRange in urlRanges {
+      let overlapsEmail = emailRanges.contains { $0.overlaps(urlRange) }
+      if !overlapsEmail {
+        matches.append(LinkMatch(range: urlRange, isEmail: false))
+      }
+    }
+
+    matches.sort { $0.range.lowerBound < $1.range.lowerBound }
+
+    // Build result by interleaving original text with markdown links
+    var result = ""
+    var currentIndex = self.startIndex
+
+    for match in matches {
+      result += self[currentIndex..<match.range.lowerBound]
+      let text = String(self[match.range])
+
+      if match.isEmail {
+        result += "[\(text)](mailto:\(text))"
+      } else {
+        let hasScheme = (try? RegularExpressions.supportedLinkScheme.prefixMatch(in: text)) != nil
+        let url = hasScheme ? text : "https://\(text)"
+        result += "[\(text)](\(url))"
+      }
+
+      currentIndex = match.range.upperBound
+    }
+
+    result += self[currentIndex..<self.endIndex]
+    return result
   }
 }
 

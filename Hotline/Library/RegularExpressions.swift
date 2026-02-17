@@ -1,6 +1,90 @@
 import RegexBuilder
 
 struct RegularExpressions {
+  // Known TLD list for schemeless URL matching and email addresses.
+  // URLs with an explicit scheme (http://, https://, hotline://) accept any TLD.
+  private static let knownTLD = ChoiceOf {
+    // Generic TLDs
+    "com"
+    "net"
+    "org"
+    "edu"
+    "gov"
+    "mil"
+    "aero"
+    "asia"
+    "biz"
+    "cat"
+    "coop"
+    "info"
+    "int"
+    "jobs"
+    "mobi"
+    "museum"
+    "name"
+    "pizza"
+    "post"
+    "pro"
+    "red"
+    "tel"
+    "today"
+    "travel"
+    "garden"
+    "online"
+    "app"
+    "cc"
+    "chat"
+    "dev"
+    "gg"
+    "page"
+    "site"
+    "social"
+    "tech"
+    "world"
+    "xyz"
+    // Country code TLDs
+    "ai"
+    "au"
+    "be"
+    "br"
+    "by"
+    "ca"
+    "co"
+    "de"
+    "er"
+    "es"
+    "fi"
+    "fr"
+    "gs"
+    "ie"
+    "im"
+    "in"
+    "io"
+    "is"
+    "it"
+    "jp"
+    "la"
+    "ly"
+    "ma"
+    "md"
+    "me"
+    "my"
+    "nl"
+    "no"
+    "nz"
+    "ps"
+    "pt"
+    "ja"
+    "ru"
+    "se"
+    "st"
+    "to"
+    "tv"
+    "uk"
+    "us"
+    "ws"
+  }
+
   static let messageBoardDivider = Regex {
     Capture {
       OneOrMore {
@@ -20,7 +104,7 @@ struct RegularExpressions {
       }
     }
   }
-  
+
   static let supportedLinkScheme = Regex {
     Anchor.startOfLine
     ChoiceOf {
@@ -30,105 +114,99 @@ struct RegularExpressions {
     }
     "://"
   }.ignoresCase().anchorsMatchLineEndings()
-  
+
+  // MARK: - URL Components
+
+  // Path character class including dot (used inside balanced delimiters)
+  private static let pathCharClass = CharacterClass(
+    .anyOf("#_-/.?=&%\\:+~@"),
+    ("a"..."z"),
+    ("0"..."9")
+  )
+
+  // Path character class without dot (prevents URLs from ending with a period)
+  private static let pathCharNoDot = CharacterClass(
+    .anyOf("#_-/?=&%\\:+~@"),
+    ("a"..."z"),
+    ("0"..."9")
+  )
+
+  // Path segment: balanced parens/brackets, dot-then-content, or regular path characters
+  private static let pathSegment = Regex {
+    ChoiceOf {
+      Regex {
+        "("
+        ZeroOrMore { pathCharClass }
+        ")"
+      }
+      Regex {
+        "["
+        ZeroOrMore { pathCharClass }
+        "]"
+      }
+      Regex { "." ; pathCharNoDot }
+      pathCharNoDot
+    }
+  }.ignoresCase()
+
+  private static let domainName = Regex {
+    OneOrMore {
+      CharacterClass(
+        .anyOf(".-"),
+        ("a"..."z"),
+        ("0"..."9")
+      )
+    }
+  }.ignoresCase()
+
+  private static let portNumber = Regex {
+    Optionally {
+      ":"
+      OneOrMore(.digit)
+    }
+  }
+
+  // Any TLD: 2+ alpha characters (used when scheme is present)
+  private static let anyTLD = Regex {
+    Repeat(2...) {
+      CharacterClass(("a"..."z"))
+    }
+  }.ignoresCase()
+
+  // URL with explicit scheme: accepts any TLD
+  private static let schemeLink = Regex {
+    ChoiceOf {
+      "hotline://"
+      "http://"
+      "https://"
+    }
+    domainName
+    "."
+    anyTLD
+    portNumber
+    ZeroOrMore { pathSegment }
+  }.ignoresCase()
+
+  // URL without scheme: requires known TLD to avoid false positives
+  private static let schemelessLink = Regex {
+    domainName
+    "."
+    knownTLD
+    portNumber
+    ZeroOrMore { pathSegment }
+  }.ignoresCase()
+
+  // MARK: - Relaxed Link
+
   static let relaxedLink = Regex {
     ChoiceOf {
       Anchor.startOfLine
       Anchor.wordBoundary
     }
     Capture {
-      // scheme (optional)
-      Optionally {
-        ChoiceOf {
-          "hotline://"
-          "http://"
-          "https://"
-        }
-      }
-      // domain name
-      OneOrMore {
-        CharacterClass(
-          .anyOf(".-@"),
-          ("a"..."z"),
-          ("0"..."9")
-        )
-      }
-      // top-level domain name
-      "."
       ChoiceOf {
-        "com"
-        "net"
-        "org"
-        "edu"
-        "gov"
-        "mil"
-        "aero"
-        "asia"
-        "biz"
-        "cat"
-        "coop"
-        "info"
-        "int"
-        "jobs"
-        "mobi"
-        "museum"
-        "name"
-        "pizza"
-        "post"
-        "pro"
-        "red"
-        "tel"
-        "today"
-        "travel"
-        "garden"
-        "online"
-        "ai"
-        "be"
-        "by"
-        "ca"
-        "co"
-        "de"
-        "er"
-        "es"
-        "fr"
-        "gs"
-        "ie"
-        "im"
-        "in"
-        "io"
-        "is"
-        "it"
-        "jp"
-        "la"
-        "ly"
-        "ma"
-        "md"
-        "me"
-        "my"
-        "nl"
-        "ps"
-        "pt"
-        "ja"
-        "st"
-        "to"
-        "tv"
-        "uk"
-        "ws"
-      }
-      // Port
-      Optionally {
-        ":"
-        OneOrMore {
-          CharacterClass(.digit)
-        }
-      }
-      // path
-      ZeroOrMore {
-        CharacterClass(
-          .anyOf("#_-/.?=&%\\()[]"),
-          ("a"..."z"),
-          ("0"..."9")
-        )
+        schemeLink
+        schemelessLink
       }
     }
     ChoiceOf {
@@ -138,7 +216,9 @@ struct RegularExpressions {
   }
   .anchorsMatchLineEndings()
   .ignoresCase()
-  
+
+  // MARK: - Email Address
+
   static let emailAddress = Regex {
     ChoiceOf {
       Anchor.startOfLine
@@ -164,66 +244,7 @@ struct RegularExpressions {
       }
       // top-level domain name
       "."
-      ChoiceOf {
-        "com"
-        "net"
-        "org"
-        "edu"
-        "gov"
-        "mil"
-        "aero"
-        "asia"
-        "biz"
-        "cat"
-        "coop"
-        "info"
-        "int"
-        "jobs"
-        "mobi"
-        "museum"
-        "name"
-        "pizza"
-        "post"
-        "pro"
-        "red"
-        "tel"
-        "today"
-        "travel"
-        "garden"
-        "online"
-        "ai"
-        "be"
-        "by"
-        "ca"
-        "co"
-        "de"
-        "er"
-        "es"
-        "fr"
-        "gs"
-        "ie"
-        "im"
-        "in"
-        "io"
-        "is"
-        "it"
-        "jp"
-        "la"
-        "ly"
-        "ma"
-        "md"
-        "me"
-        "my"
-        "nl"
-        "ps"
-        "pt"
-        "ja"
-        "st"
-        "to"
-        "tv"
-        "uk"
-        "ws"
-      }
+      knownTLD
     }
     ChoiceOf {
       Anchor.endOfLine
