@@ -17,22 +17,34 @@ struct FilePreviewQuickLookView: View {
 
   var body: some View {
     Group {
-      if self.preview?.state != .loaded {
+      if self.preview?.state == .failed {
         VStack(alignment: .center, spacing: 0) {
           Spacer()
-          ProgressView(value: max(0.0, min(1.0, self.preview?.progress ?? 0.0)))
-            .focusable(false)
-            .progressViewStyle(.circular)
-            .controlSize(.extraLarge)
-            .frame(maxWidth: 300, alignment: .center)
-            .padding(.bottom, 48)
+
+          Image(systemName: "exclamationmark.triangle")
+            .resizable()
+            .scaledToFit()
+            .frame(maxWidth: .infinity)
+            .frame(height: 48)
+            .foregroundStyle(.secondary)
+            .padding(.bottom)
+          Group {
+            Text("Preview Failed")
+              .bold()
+            Text("The file could not be downloaded for preview.")
+              .foregroundStyle(Color.secondary)
+          }
+          .font(.system(size: 14.0))
+          .frame(maxWidth: 300)
+          .multilineTextAlignment(.center)
+
+          Spacer()
           Spacer()
         }
-        .background(Color(nsColor: .textBackgroundColor))
         .frame(minWidth: 350, maxWidth: .infinity, minHeight: 150, maxHeight: .infinity)
         .padding()
       }
-      else {
+      else if self.preview?.state == .loaded {
         if let fileURL = self.preview?.fileURL {
           QuickLookPreviewView(fileURL: fileURL)
             .frame(minWidth: 400, maxWidth: .infinity, minHeight: 400, maxHeight: .infinity)
@@ -63,6 +75,21 @@ struct FilePreviewQuickLookView: View {
           .frame(minWidth: 350, maxWidth: .infinity, minHeight: 150, maxHeight: .infinity)
           .padding()
         }
+      }
+      else {
+        VStack(alignment: .center, spacing: 0) {
+          Spacer()
+          ProgressView(value: max(0.0, min(1.0, self.preview?.progress ?? 0.0)))
+            .focusable(false)
+            .progressViewStyle(.circular)
+            .controlSize(.extraLarge)
+            .frame(maxWidth: 300, alignment: .center)
+            .padding(.bottom, 48)
+          Spacer()
+        }
+        .background(Color(nsColor: .textBackgroundColor))
+        .frame(minWidth: 350, maxWidth: .infinity, minHeight: 150, maxHeight: .infinity)
+        .padding()
       }
     }
     .focusable()
@@ -103,11 +130,6 @@ struct FilePreviewQuickLookView: View {
       self.preview?.cancel()
       self.preview?.cleanup()
       self.dismiss()
-    }
-    .onChange(of: self.preview?.state) {
-      if self.preview?.state == .failed {
-        self.dismiss()
-      }
     }
     .preferredColorScheme(.dark)
   }

@@ -79,28 +79,22 @@ public class HotlineFilePreviewClient {
     progressHandler: (@Sendable (HotlineTransferProgress) -> Void)?
   ) async throws -> URL {
 
-    // Create temporary file path directly in system temp directory
+    // Create temporary file path in system temp directory
     let tempDir = FileManager.default.temporaryDirectory
     let uniqueFileName = "\(UUID().uuidString)_\(self.fileName)"
     let tempFileURL = tempDir.appendingPathComponent(uniqueFileName)
     self.temporaryFileURL = tempFileURL
 
-    print("HotlineFilePreviewClient[\(self.referenceNumber)]: Downloading to temp: \(tempFileURL.path)")
-
     progressHandler?(.connecting)
 
     // Connect to transfer server
-    print("HotlineFilePreviewClient[\(self.referenceNumber)]: Connecting to \(self.serverAddress):\(self.serverPort + 1)")
     let socket = try await NetSocket.connect(
       host: self.serverAddress,
       port: self.serverPort + 1
     )
     defer { Task { await socket.close() } }
 
-    print("HotlineFilePreviewClient[\(self.referenceNumber)]: Connected!")
-
-    // Send magic header for raw data download
-    print("HotlineFilePreviewClient[\(self.referenceNumber)]: Sending magic header")
+    // Send HTXF magic header
     try await socket.write(Data(endian: .big) {
       "HTXF".fourCharCode()
       self.referenceNumber
@@ -110,12 +104,7 @@ public class HotlineFilePreviewClient {
 
     progressHandler?(.connected)
 
-    // Stream raw data directly to temp file with progress tracking
-    print("HotlineFilePreviewClient[\(self.referenceNumber)]: Streaming \(self.transferSize) bytes to temp file")
-
-    let totalSize = Int(self.transferSize)
-
-    // Create empty file (with HFS attributes if available)
+    // Create temp file
     var attributes: [FileAttributeKey: Any] = [:]
     if let creator = self.fileCreator, !creator.isBlank {
       attributes[.hfsCreatorCode] = creator.fourCharCode() as NSNumber
@@ -123,29 +112,81 @@ public class HotlineFilePreviewClient {
     if let type = self.fileType, !type.isBlank {
       attributes[.hfsTypeCode] = type.fourCharCode() as NSNumber
     }
- 
     guard FileManager.default.createFile(atPath: tempFileURL.path, contents: nil, attributes: attributes) else {
       throw HotlineTransferClientError.failedToTransfer
     }
-    
+
     let fileHandle = try FileHandle(forWritingTo: tempFileURL)
     defer { try? fileHandle.close() }
 
-    let updates = await socket.receiveFile(to: fileHandle, length: totalSize)
-    for try await p in updates {
-      progressHandler?(.transfer(
-        name: uniqueFileName,
-        size: p.sent,
-        total: totalSize,
-        progress: totalSize > 0 ? Double(p.sent) / Double(totalSize) : 0.0,
-        speed: p.bytesPerSecond,
-        estimate: p.estimatedTimeRemaining
-      ))
+    // Read the first 4 bytes to detect whether the server sends a
+    // Flattened File Object (starts with "FILP") or raw file bytes.
+    let magic = try await socket.read(4)
+    let isFILP = magic.count == 4
+      && magic[magic.startIndex] == 0x46       // 'F'
+      && magic[magic.startIndex + 1] == 0x49   // 'I'
+      && magic[magic.startIndex + 2] == 0x4C   // 'L'
+      && magic[magic.startIndex + 3] == 0x50   // 'P'
+
+    if isFILP {
+      // Flattened File Object — read the rest of the header and
+      // extract just the data fork (the actual file content).
+      let restOfHeader = try await socket.read(HotlineFileHeader.DataSize - 4)
+      let headerData = magic + restOfHeader
+      guard let header = HotlineFileHeader(from: headerData) else {
+        throw HotlineTransferClientError.failedToTransfer
+      }
+
+      for _ in 0..<Int(header.forkCount) {
+        let forkHeaderData = try await socket.read(HotlineFileForkHeader.DataSize)
+        guard let forkHeader = HotlineFileForkHeader(from: forkHeaderData) else {
+          throw HotlineTransferClientError.failedToTransfer
+        }
+
+        let forkSize = Int(forkHeader.dataSize)
+
+        if forkHeader.isDataFork {
+          let updates = await socket.receiveFile(to: fileHandle, length: forkSize)
+          for try await p in updates {
+            progressHandler?(.transfer(
+              name: uniqueFileName,
+              size: p.sent,
+              total: forkSize,
+              progress: forkSize > 0 ? Double(p.sent) / Double(forkSize) : 0.0,
+              speed: p.bytesPerSecond,
+              estimate: p.estimatedTimeRemaining
+            ))
+          }
+        } else {
+          if forkSize > 0 {
+            let _ = try await socket.read(forkSize)
+          }
+        }
+      }
+    } else {
+      // Raw file bytes — write the 4 bytes we already read, then
+      // stream the remainder directly to the temp file.
+      fileHandle.write(magic)
+
+      let remaining = Int(self.transferSize) - 4
+      if remaining > 0 {
+        let updates = await socket.receiveFile(to: fileHandle, length: remaining)
+        for try await p in updates {
+          let totalSent = p.sent + 4
+          let totalSize = Int(self.transferSize)
+          progressHandler?(.transfer(
+            name: uniqueFileName,
+            size: totalSent,
+            total: totalSize,
+            progress: totalSize > 0 ? Double(totalSent) / Double(totalSize) : 0.0,
+            speed: p.bytesPerSecond,
+            estimate: p.estimatedTimeRemaining
+          ))
+        }
+      }
     }
 
     progressHandler?(.completed(url: tempFileURL))
-
-    print("HotlineFilePreviewClient[\(self.referenceNumber)]: Preview file ready at \(tempFileURL.path)")
 
     return tempFileURL
   }

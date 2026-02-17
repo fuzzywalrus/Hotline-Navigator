@@ -73,49 +73,19 @@ final class FilePreviewState {
 
           Task { @MainActor in
             switch progress {
-            case .preparing:
-              self.state = .loading
-              self.progress = 0.0
-              
-            case .connecting:
-              self.state = .loading
-              self.progress = 0.0
-
-            case .connected:
-              self.state = .loading
-              self.progress = 0.0
-
             case .transfer(name: _, size: _, total: _, progress: let p, speed: _, estimate: _):
-              self.state = .loading
               self.progress = p
-
-            case .completed(url: let url):
-              self.state = .loaded
-              self.progress = 1.0
-              self.fileURL = url
-//              self.loadPreview(from: url)
-
-            case .error(let error):
-              self.state = .failed
-              self.progress = 0.0
-              print("FilePreviewState: Download failed: \(error)")
-
-            case .unconnected:
+            default:
               break
             }
           }
         }
 
-        // Final load if not already loaded
-        if self.state != .loaded {
-          self.state = .loaded
-          self.progress = 1.0
-          self.fileURL = url
-//          self.loadPreview(from: url)
-        }
+        self.state = .loaded
+        self.progress = 1.0
+        self.fileURL = url
 
       } catch is CancellationError {
-        // Cancelled, do nothing
         return
       } catch {
         self.state = .failed
