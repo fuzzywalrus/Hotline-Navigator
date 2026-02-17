@@ -135,4 +135,5 @@ class Prefs {
   var showJoinLeaveMessages: Bool {
     didSet { UserDefaults.standard.set(self.showJoinLeaveMessages, forKey: PrefsKeys.showJoinLeaveMessages.rawValue) }
   }
+
 }

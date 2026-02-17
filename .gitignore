@@ -24,3 +24,7 @@ IDEWorkspaceSharedSettings.plist
 *.swp
 *.lock
 *~.nib
+
+CLAUDE.md
+AGENTS.md
+.claude/

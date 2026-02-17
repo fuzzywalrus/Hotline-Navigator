@@ -104,7 +104,7 @@ public struct TransferRateEstimator {
       let instantRate = Double(bytes) / seconds
       self.sampleCount += 1
       
-      // Update EMANetSocket
+      // Update EMA
       if self.emaBytesPerSecond == 0 {
         self.emaBytesPerSecond = instantRate
       } else {

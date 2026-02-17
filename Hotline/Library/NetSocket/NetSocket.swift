@@ -126,9 +126,13 @@ public actor NetSocket {
   // Waiters for data/ready
   private var dataWaiters: [CheckedContinuation<Void, Error>] = []
   private var readyWaiters: [CheckedContinuation<Void, Error>] = []
-  
+
+  // Serialized state update stream
+  private var stateContinuation: AsyncStream<NWConnection.State>.Continuation?
+  private var stateTask: Task<Void, Never>?
+
   // MARK: Init
-  
+
   private init(connection: NWConnection, config: Config) {
     self.connection = connection
     self.config = config
@@ -182,6 +186,8 @@ public actor NetSocket {
   public func close() {
     guard !isClosed else { return }
     isClosed = true
+    stateContinuation?.finish()
+    stateTask?.cancel()
     connection.cancel()
     resumeDataWaiters()
     resumeReadyWaiters(with: .failure(NetSocketError.closed))
@@ -197,6 +203,8 @@ public actor NetSocket {
   public func forceClose() {
     guard !isClosed else { return }
     isClosed = true
+    stateContinuation?.finish()
+    stateTask?.cancel()
     connection.forceCancel()
     resumeDataWaiters()
     resumeReadyWaiters(with: .failure(NetSocketError.closed))
@@ -731,11 +739,11 @@ public actor NetSocket {
     do {
       while remaining > 0 {
         try Task.checkCancellation()
-        let n = Int(min(chunkSize, remaining))
+        let n = min(chunkSize, remaining)
         let chunk = try await self.read(n)
         try fh.write(contentsOf: chunk)
-        remaining -= n
-        written += Int(n)
+        remaining -= chunk.count
+        written += chunk.count
         progress?(.init(sent: written, total: length))
       }
     } catch {
@@ -756,9 +764,16 @@ public actor NetSocket {
   // MARK: Internals
   
   private func start() async throws {
+    let (stream, continuation) = AsyncStream.makeStream(of: NWConnection.State.self)
+    self.stateContinuation = continuation
+
     self.connection.stateUpdateHandler = { state in
-      Task { [weak self] in
-        guard let self else { return }
+      continuation.yield(state)
+    }
+
+    self.stateTask = Task { [weak self] in
+      guard let self else { return }
+      for await state in stream {
         switch state {
         case .ready:
           await self.setReady()
@@ -767,7 +782,6 @@ public actor NetSocket {
           await self.failAllWaiters(NetSocketError.failed(underlying: error))
           await self.setClosed()
         case .waiting(let error):
-          // bubble as transient failure for awaiters; reconnect logic could live here
           await self.resumeReadyWaiters(with: .failure(NetSocketError.failed(underlying: error)))
         case .cancelled:
           await self.failAllWaiters(NetSocketError.closed)
@@ -777,7 +791,7 @@ public actor NetSocket {
         }
       }
     }
-    
+
     // Kick off receive loop after .start
     self.connection.start(queue: queue)
     try await self.waitUntilReady()
@@ -817,11 +831,7 @@ public actor NetSocket {
   
   private func handleEOF() {
     self.isClosed = true
-    let waiters = self.dataWaiters
-    self.dataWaiters.removeAll()
-    for w in waiters {
-      w.resume()
-    } // wake so readers can observe closure
+    self.failAllWaiters(NetSocketError.closed)
   }
   
   private func setReady() {
@@ -874,21 +884,18 @@ public actor NetSocket {
   private func search(delimiter: Data) -> Range<Int>? {
     guard !delimiter.isEmpty, availableBytes >= delimiter.count else { return nil }
     let hay = buffer[head..<buffer.count]
-    
+
     // Fast path for single-byte delimiters
     if delimiter.count == 1, let byte = delimiter.first {
       if let idx = hay.firstIndex(of: byte) {
-        let pos = head + hay.distance(from: hay.startIndex, to: idx)
-        return pos..<(pos + 1)
+        return idx..<(idx + 1)
       }
       return nil
     }
-    
+
     // General case
     if let r = hay.firstRange(of: delimiter) {
-      let lower = head + hay.distance(from: hay.startIndex, to: r.lowerBound)
-      let upper = head + hay.distance(from: hay.startIndex, to: r.upperBound)
-      return lower..<upper
+      return r.lowerBound..<r.upperBound
     }
     
     return nil

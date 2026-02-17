@@ -64,6 +64,31 @@ class HotlineState: Equatable {
     return lhs.id == rhs.id
   }
 
+  // MARK: - App Nap Prevention
+
+  #if os(macOS)
+  private static var activeConnectionCount = 0
+  private static var appNapActivity: NSObjectProtocol?
+
+  private static func connectionDidOpen() {
+    activeConnectionCount += 1
+    if activeConnectionCount == 1, appNapActivity == nil {
+      appNapActivity = ProcessInfo.processInfo.beginActivity(
+        options: .idleSystemSleepDisabled,
+        reason: "Maintaining Hotline server connection"
+      )
+    }
+  }
+
+  private static func connectionDidClose() {
+    activeConnectionCount = max(0, activeConnectionCount - 1)
+    if activeConnectionCount == 0, let activity = appNapActivity {
+      ProcessInfo.processInfo.endActivity(activity)
+      appNapActivity = nil
+    }
+  }
+  #endif
+
   // MARK: - Static Icon Data
 
   #if os(macOS)
@@ -184,6 +209,7 @@ class HotlineState: Equatable {
   var users: [User] = []
 
   // Chat
+  private static let maxChatMessages = 2000
   var broadcastMessage: String = ""
   var chat: [ChatMessage] = []
   var chatInput: String = ""
@@ -340,6 +366,10 @@ class HotlineState: Equatable {
       self.status = .loggedIn
       print("HotlineState.login(): Status set to loggedIn")
 
+      #if os(macOS)
+      Self.connectionDidOpen()
+      #endif
+
       if Prefs.shared.playSounds && Prefs.shared.playLoggedInSound {
         SoundEffects.play(.loggedIn)
       }
@@ -458,6 +488,12 @@ class HotlineState: Equatable {
 
     print("HotlineState: Resetting state properties...")
 
+    #if os(macOS)
+    if self.status.isConnected {
+      Self.connectionDidClose()
+    }
+    #endif
+
     // Reset state immediately (constraint loop was caused by something else)
     self.status = .disconnected
     self.serverVersion = 123
@@ -543,26 +579,31 @@ class HotlineState: Equatable {
         guard self.client != nil else { return }
 
         let data = try Data(contentsOf: fileURL)
-        self.bannerImageFormat = data.detectedImageFormat
-        
+        let format = data.detectedImageFormat
+
         print("HotlineState: Banner download complete, data size: \(data.count) bytes")
 
 #if os(macOS)
-        guard let image = NSImage(data: data) else {
+        guard let nsImage = NSImage(data: data) else {
           print("HotlineState: Failed to create NSImage from banner data")
           return
         }
-        let blah = Image(nsImage: image)
+        let swiftUIImage = Image(nsImage: nsImage)
+        let colors = ColorArt.analyze(image: nsImage)
 #elseif os(iOS)
-        guard let image = UIImage(data: data) else {
+        guard let uiImage = UIImage(data: data) else {
           print("HotlineState: Failed to create UIImage from banner data")
           return
         }
-        self.bannerImage = Image(uiImage: image)
+        let swiftUIImage = Image(uiImage: uiImage)
+        let colors: ColorArt? = nil
 #endif
+
+        // Set all banner properties together so SwiftUI coalesces into one layout pass
+        self.bannerImageFormat = format
         self.bannerFileURL = fileURL
-        self.bannerImage = blah
-        self.bannerColors = ColorArt.analyze(image: image)
+        self.bannerImage = swiftUIImage
+        self.bannerColors = colors
         
       } catch {
         print("HotlineState: Banner download failed: \(error)")
@@ -1914,14 +1955,18 @@ class HotlineState: Equatable {
 
   private func recordChatMessage(_ message: ChatMessage, persist: Bool = true, display: Bool = true) {
     let shouldPersist = persist && message.type != .agreement
-    if shouldPersist,
-       message.type == .signOut,
-       self.lastPersistedMessageType == .signOut {
-      return
+
+    // Never allow back-to-back dividers
+    if message.type == .signOut {
+      if display, self.chat.last?.type == .signOut { return }
+      if shouldPersist, self.lastPersistedMessageType == .signOut { return }
     }
 
     if display {
       self.chat.append(message)
+      if self.chat.count > Self.maxChatMessages {
+        self.chat.removeFirst(self.chat.count - Self.maxChatMessages)
+      }
     }
 
     guard shouldPersist, let key = self.chatSessionKey else { return }
@@ -1969,7 +2014,20 @@ class HotlineState: Equatable {
           return message
         }
 
-        self.chat = historyMessages + currentMessages
+        // Ensure a divider between restored history and new session
+        var divider: [ChatMessage] = []
+        if !historyMessages.isEmpty,
+           historyMessages.last?.type != .signOut,
+           currentMessages.first?.type != .signOut {
+          divider.append(ChatMessage(text: "", type: .signOut, date: Date()))
+        }
+
+        let combined = historyMessages + divider + currentMessages
+        if combined.count > Self.maxChatMessages {
+          self.chat = Array(combined.suffix(Self.maxChatMessages))
+        } else {
+          self.chat = combined
+        }
         self.lastPersistedMessageType = historyMessages.last?.type
         self.unreadPublicChat = false
         self.restoredChatSessionKey = key

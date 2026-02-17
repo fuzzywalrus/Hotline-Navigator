@@ -99,7 +99,9 @@ struct ChatView: View {
   @State private var searchQuery: String = ""
   @State private var searchResults: [ChatMessage] = []
   @State private var isSearching: Bool = false
-  
+  @State private var stableBannerFileURL: URL?
+  @State private var stableBannerIsAnimated: Bool = false
+
   @FocusState private var focusedField: FocusedField?
 
   @Namespace var bottomID
@@ -116,46 +118,31 @@ struct ChatView: View {
     searchQuery.isEmpty ? model.chat : searchResults
   }
   
-//  private var blurredBannerImage: some View {
-//    self.stableBannerImage?
-//      .resizable()
-//      .scaledToFit()
-//      .frame(maxWidth: 468.0)
-//      .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-//      .offset(y: 1.5)
-//      .blur(radius: 4)
-//      .opacity(0.2)
-//  }
-  
-  private var bannerIsAnimated: Bool {
-    model.bannerImageFormat == .gif
-  }
-
   private var bannerView: some View {
     ZStack {
-      if self.bannerIsAnimated {
+      if stableBannerIsAnimated {
         KFAnimatedImage
-          .url(model.bannerFileURL)
+          .url(stableBannerFileURL)
           .cacheMemoryOnly()
           .cacheOriginalImage()
-          .scaledToFit()
-          .frame(maxWidth: 468.0)
+          .scaledToFill()
           .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-          .id("animated banner \(model.bannerFileURL?.absoluteString ?? "")")
+          .id("animated banner \(stableBannerFileURL?.absoluteString ?? "")")
       }
-      else if model.bannerFileURL != nil {
+      else if stableBannerFileURL != nil {
         KFImage
-          .url(model.bannerFileURL)
+          .url(stableBannerFileURL)
           .resizable()
           .interpolation(.high)
           .cacheMemoryOnly()
           .cacheOriginalImage()
-          .scaledToFit()
-          .frame(maxWidth: 468.0)
+          .scaledToFill()
           .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-          .id("static banner \(model.bannerFileURL?.absoluteString ?? "")")
+          .id("static banner \(stableBannerFileURL?.absoluteString ?? "")")
       }
     }
+    .frame(maxWidth: 468.0, minHeight: 60, maxHeight: 60)
+    .clipped()
   }
   
   var body: some View {
@@ -221,9 +208,6 @@ struct ChatView: View {
               model.markPublicChatAsRead()
               reader.scrollTo(bottomID, anchor: .bottom)
             }
-            .onChange(of: self.model.bannerFileURL) {
-              reader.scrollTo(bottomID, anchor: .bottom)
-            }
             .onChange(of: searchQuery) {
               reader.scrollTo(bottomID, anchor: .bottom)
             }
@@ -278,6 +262,14 @@ struct ChatView: View {
     }
     .background(Color(nsColor: .textBackgroundColor))
 //    .navigationTitle(model.serverTitle)
+    .onAppear {
+      stableBannerFileURL = model.bannerFileURL
+      stableBannerIsAnimated = model.bannerImageFormat == .gif
+    }
+    .onChange(of: model.bannerFileURL) { _, newValue in
+      stableBannerFileURL = newValue
+      stableBannerIsAnimated = model.bannerImageFormat == .gif
+    }
     .onChange(of: searchQuery) {
       performSearch()
     }
