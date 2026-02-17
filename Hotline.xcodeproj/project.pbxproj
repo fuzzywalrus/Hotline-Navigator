@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -122,6 +122,16 @@
 		DAF5BC6C2EC2727700551E4D /* ConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAF5BC6B2EC2727100551E4D /* ConnectView.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		DA5A6EF62F44F26500060F18 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DA9CAFAF2B126D5700CDA197 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DA9CAFB62B126D5700CDA197;
+			remoteInfo = Hotline;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		11A726072BE0672A000C1DA7 /* FileDetails.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FileDetails.swift; sourceTree = "<group>"; };
 		11A726092BE06759000C1DA7 /* FileDetailsSheet.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FileDetailsSheet.swift; sourceTree = "<group>"; };
@@ -178,6 +188,7 @@
 		DA55AC782BE6A1AD00034857 /* RegularExpressions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegularExpressions.swift; sourceTree = "<group>"; };
 		DA5753672B33E88A00FAC277 /* HotlineTransferClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotlineTransferClient.swift; sourceTree = "<group>"; };
 		DA57536B2B36BA1D00FAC277 /* TextDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextDocument.swift; sourceTree = "<group>"; };
+		DA5A6EF22F44F26500060F18 /* HotlineTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HotlineTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA6549992BEC280E00EDB697 /* ServerMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerMessageView.swift; sourceTree = "<group>"; };
 		DA65499B2BEC3FBD00EDB697 /* ServerAgreementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerAgreementView.swift; sourceTree = "<group>"; };
 		DA65499D2BEC438A00EDB697 /* NSWindowBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NSWindowBridge.swift; sourceTree = "<group>"; };
@@ -237,7 +248,18 @@
 		DAF5BC6B2EC2727100551E4D /* ConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		DA5A6EF32F44F26500060F18 /* HotlineTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = HotlineTests; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
 /* Begin PBXFrameworksBuildPhase section */
+		DA5A6EEF2F44F26500060F18 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DA9CAFB42B126D5700CDA197 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -409,6 +431,7 @@
 			isa = PBXGroup;
 			children = (
 				DA9CAFB92B126D5700CDA197 /* Hotline */,
+				DA5A6EF32F44F26500060F18 /* HotlineTests */,
 				DA9CAFB82B126D5700CDA197 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -417,6 +440,7 @@
 			isa = PBXGroup;
 			children = (
 				DA9CAFB72B126D5700CDA197 /* Hotline.app */,
+				DA5A6EF22F44F26500060F18 /* HotlineTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -557,6 +581,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		DA5A6EF12F44F26500060F18 /* HotlineTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DA5A6EFA2F44F26500060F18 /* Build configuration list for PBXNativeTarget "HotlineTests" */;
+			buildPhases = (
+				DA5A6EEE2F44F26500060F18 /* Sources */,
+				DA5A6EEF2F44F26500060F18 /* Frameworks */,
+				DA5A6EF02F44F26500060F18 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DA5A6EF72F44F26500060F18 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				DA5A6EF32F44F26500060F18 /* HotlineTests */,
+			);
+			name = HotlineTests;
+			packageProductDependencies = (
+			);
+			productName = HotlineTests;
+			productReference = DA5A6EF22F44F26500060F18 /* HotlineTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		DA9CAFB62B126D5700CDA197 /* Hotline */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = DA9CAFC72B126D5800CDA197 /* Build configuration list for PBXNativeTarget "Hotline" */;
@@ -587,9 +634,13 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1500;
+				LastSwiftUpdateCheck = 2610;
 				LastUpgradeCheck = 2600;
 				TargetAttributes = {
+					DA5A6EF12F44F26500060F18 = {
+						CreatedOnToolsVersion = 26.1;
+						TestTargetID = DA9CAFB62B126D5700CDA197;
+					};
 					DA9CAFB62B126D5700CDA197 = {
 						CreatedOnToolsVersion = 15.0.1;
 					};
@@ -615,11 +666,19 @@
 			projectRoot = "";
 			targets = (
 				DA9CAFB62B126D5700CDA197 /* Hotline */,
+				DA5A6EF12F44F26500060F18 /* HotlineTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		DA5A6EF02F44F26500060F18 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DA9CAFB52B126D5700CDA197 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -641,6 +700,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		DA5A6EEE2F44F26500060F18 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DA9CAFB32B126D5700CDA197 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -748,7 +814,59 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		DA5A6EF72F44F26500060F18 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DA9CAFB62B126D5700CDA197 /* Hotline */;
+			targetProxy = DA5A6EF62F44F26500060F18 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		DA5A6EF82F44F26500060F18 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5AEEV7QB2U;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.1;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = co.goodmake.HotlineTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Hotline.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Hotline";
+			};
+			name = Debug;
+		};
+		DA5A6EF92F44F26500060F18 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5AEEV7QB2U;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.1;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = co.goodmake.HotlineTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Hotline.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Hotline";
+			};
+			name = Release;
+		};
 		DA9CAFC52B126D5800CDA197 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -955,6 +1073,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		DA5A6EFA2F44F26500060F18 /* Build configuration list for PBXNativeTarget "HotlineTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DA5A6EF82F44F26500060F18 /* Debug */,
+				DA5A6EF92F44F26500060F18 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		DA9CAFB22B126D5700CDA197 /* Build configuration list for PBXProject "Hotline" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

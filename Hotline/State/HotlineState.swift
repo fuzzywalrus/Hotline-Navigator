@@ -54,6 +54,154 @@ enum FileSearchStatus: Equatable {
   }
 }
 
+// MARK: - Message Board Post
+
+struct MessageBoardPost: Identifiable, Hashable {
+  let id: UUID = UUID()
+  let username: String?
+  let date: Date?
+  let rawDateString: String?
+  let body: String
+  /// True when the date had no explicit year and the year was inferred.
+  let yearInferred: Bool
+
+  private static let headerRegex = /^From\s+(.+)\s*\(([^)]+)\)\s*:\s*$/
+
+  private static let dateFormats: [(format: String, needsYear: Bool)] = [
+    ("EEEE MMMM d, yyyy 'at' HH:mm zzz", false),
+    ("EEEE MMMM d, yyyy 'at' HH:mm", false),
+    ("EEE MMM d HH:mm:ss yyyy", false),
+    ("MMM d, yyyy 'at' HH:mm zzz", false),
+    ("MMM d, yyyy 'at' HH:mm", false),
+    ("MMM d, yyyy HH:mm", false),
+    ("MMM d HH:mm:ss yyyy", false),
+    ("MMM d HH:mm yyyy", false),
+    ("MMM d HH:mm", true),
+  ]
+
+  static func parse(_ rawPost: String) -> MessageBoardPost {
+    let lines = rawPost.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+
+    guard let firstLine = lines.first,
+          let match = firstLine.wholeMatch(of: headerRegex) else {
+      return MessageBoardPost(username: nil, date: nil, rawDateString: nil, body: rawPost, yearInferred: false)
+    }
+
+    let username = String(match.1).trimmingCharacters(in: .whitespaces)
+    let rawDate = String(match.2)
+    let body = lines.count > 1
+      ? String(lines[1]).trimmingCharacters(in: .whitespacesAndNewlines)
+      : ""
+
+    let (date, yearInferred) = parseDate(rawDate)
+    return MessageBoardPost(
+      username: username,
+      date: date,
+      rawDateString: rawDate,
+      body: body,
+      yearInferred: yearInferred
+    )
+  }
+
+  /// Adjust year-inferred dates so that posts stay in reverse chronological
+  /// order.  Message boards are newest-first, so each post must be no newer
+  /// than the one before it.
+  static func adjustDates(_ posts: [MessageBoardPost]) -> [MessageBoardPost] {
+    guard posts.count > 1 else { return posts }
+    var result = posts
+    // Track the last known date across all posts, not just the immediate
+    // predecessor, so gaps from posts without dates don't break the chain.
+    var lastKnownDate: Date?
+    for i in 0..<result.count {
+      guard let current = result[i].date else { continue }
+      if let previous = lastKnownDate, result[i].yearInferred, current > previous {
+        // Decrement year until this post is no newer than the last known date.
+        // Only extract the components we need — using dateComponents(in:from:)
+        // includes week-based fields that conflict when the year changes.
+        var components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: current)
+        components.timeZone = TimeZone.current
+        while let adjusted = Calendar.current.date(from: components), adjusted > previous {
+          components.year = (components.year ?? 2026) - 1
+        }
+        if let fixed = Calendar.current.date(from: components) {
+          result[i] = MessageBoardPost(
+            username: result[i].username,
+            date: fixed,
+            rawDateString: result[i].rawDateString,
+            body: result[i].body,
+            yearInferred: true
+          )
+          lastKnownDate = fixed
+          continue
+        }
+      }
+      lastKnownDate = current
+    }
+    return result
+  }
+
+  private static func parseDate(_ raw: String) -> (Date?, Bool) {
+    // Normalize: collapse multiple spaces
+    var normalized = raw.replacingOccurrences(of: "  +", with: " ", options: .regularExpression)
+    // Insert space in "MMMdd" patterns like "Dec23" → "Dec 23", "Nov04" → "Nov 04"
+    normalized = normalized.replacingOccurrences(
+      of: "([A-Za-z]{3})(\\d{1,2})",
+      with: "$1 $2",
+      options: .regularExpression
+    )
+
+    // Extract and resolve trailing timezone abbreviation. DateFormatter with
+    // en_US_POSIX may not recognize abbreviations like CET/CEST via zzz, so
+    // we strip it and set formatter.timeZone directly instead.
+    var tzAbbrev: String?
+    let tzStripped: String
+    if let range = normalized.range(of: "\\s+([A-Z]{2,5})$", options: .regularExpression) {
+      let abbrev = String(normalized[range]).trimmingCharacters(in: .whitespaces)
+      if TimeZone(abbreviation: abbrev) != nil {
+        tzAbbrev = abbrev
+      }
+      tzStripped = String(normalized[normalized.startIndex..<range.lowerBound])
+    } else {
+      tzStripped = normalized
+    }
+
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+
+    // Try the original string first, then the tz-stripped version with the
+    // resolved timezone set on the formatter.
+    let candidates: [(String, TimeZone?)] = if tzAbbrev != nil {
+      [(normalized, nil), (tzStripped, TimeZone(abbreviation: tzAbbrev!))]
+    } else {
+      [(normalized, nil)]
+    }
+
+    for (candidate, tz) in candidates {
+      formatter.timeZone = tz ?? TimeZone.current
+      for (format, needsYear) in dateFormats {
+        formatter.dateFormat = format
+        if let date = formatter.date(from: candidate) {
+          if needsYear {
+            // Add current year for formats without year, fall back to
+            // previous year if the result would be in the future.
+            let now = Date()
+            var components = Calendar.current.dateComponents([.month, .day, .hour, .minute, .second], from: date)
+            components.year = Calendar.current.component(.year, from: now)
+            components.timeZone = tz ?? TimeZone.current
+            if let result = Calendar.current.date(from: components), result > now {
+              components.year = components.year! - 1
+            }
+            return (Calendar.current.date(from: components), true)
+          }
+          return (date, false)
+        }
+      }
+    }
+
+    return (nil, false)
+  }
+}
+
 // MARK: - HotlineState
 
 @Observable @MainActor
@@ -220,7 +368,7 @@ class HotlineState: Equatable {
   var unreadInstantMessages: [UInt16:UInt16] = [:]
 
   // Message Board
-  var messageBoard: [String] = []
+  var messageBoard: [MessageBoardPost] = []
   var messageBoardLoaded: Bool = false
 
   // News
@@ -1602,12 +1750,14 @@ class HotlineState: Equatable {
   // MARK: - Message Board
 
   @MainActor
-  func getMessageBoard() async throws -> [String] {
+  @discardableResult
+  func getMessageBoard() async throws -> [MessageBoardPost] {
     guard let client = self.client else {
       throw HotlineClientError.notConnected
     }
 
-    self.messageBoard = try await client.getMessageBoard()
+    let rawPosts = try await client.getMessageBoard()
+    self.messageBoard = MessageBoardPost.adjustDates(rawPosts.map { MessageBoardPost.parse($0) })
     self.messageBoardLoaded = true
     return self.messageBoard
   }
@@ -1909,14 +2059,18 @@ class HotlineState: Equatable {
   }
 
   private func handleNewsPost(_ message: String) {
-    let messageBoardRegex = /([\s\r\n]*[_\-]+[\s\r\n]+)/
-    let matches = message.matches(of: messageBoardRegex)
+    let normalized = message.replacing(/\r\n?/, with: "\n")
+    let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false)
+    let dividerRegex = /^[ \t]*([_\-=~*]{15,}|[_\-=~*]{5,}.+[_\-=~*]{5,})[ \t]*$/
 
-    if matches.count == 1 {
-      let range = matches[0].range
-      self.messageBoard.insert(String(message[message.startIndex..<range.lowerBound]), at: 0)
-    } else {
-      self.messageBoard.insert(message, at: 0)
+    // Strip divider lines from the incoming post
+    let cleaned = lines
+      .filter { $0.wholeMatch(of: dividerRegex) == nil }
+      .joined(separator: "\n")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+
+    if !cleaned.isEmpty {
+      self.messageBoard.insert(MessageBoardPost.parse(cleaned), at: 0)
     }
 
     SoundEffects.play(.newNews)

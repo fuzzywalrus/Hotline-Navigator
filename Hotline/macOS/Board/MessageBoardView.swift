@@ -57,21 +57,48 @@ struct MessageBoardView: View {
     }
   }
   
+  private static let relativeDateFormatter: RelativeDateTimeFormatter = {
+    let formatter = RelativeDateTimeFormatter()
+    formatter.unitsStyle = .full
+    formatter.dateTimeStyle = .named
+    formatter.formattingContext = .listItem
+    return formatter
+  }()
+
   private var messageBoardView: some View {
     ScrollView {
       LazyVStack(alignment: .leading) {
-        ForEach(self.model.messageBoard, id: \.self) { msg in
-          Text(LocalizedStringKey(msg))
-            .tint(Color("Link Color"))
-            .lineLimit(100)
-            .lineSpacing(4)
-            .padding()
-            .textSelection(.enabled)
+        ForEach(self.model.messageBoard) { post in
+          VStack(alignment: .leading, spacing: 4) {
+            if post.username != nil || post.date != nil || post.rawDateString != nil {
+              HStack {
+                Text(post.username ?? "Unknown")
+                  .fontWeight(.bold)
+                if let date = post.date {
+                  Text(Self.relativeDateFormatter.localizedString(for: date, relativeTo: Date.now))
+                    .foregroundStyle(.secondary)
+                    .help(post.rawDateString ?? "")
+                } else if let rawDate = post.rawDateString {
+                  Text(rawDate)
+                    .foregroundStyle(.secondary)
+                }
+              }
+              .textSelection(.enabled)
+            }
+            Text(LocalizedStringKey(post.body))
+              .tint(Color("Link Color"))
+              .lineLimit(100)
+              .lineSpacing(4)
+              .textSelection(.enabled)
+          }
+          .padding(.horizontal, 24)
+          .padding(.vertical, 16)
+          
           Divider()
         }
       }
-      Spacer()
     }
+    .defaultScrollAnchor(.top)
     .overlay {
       if !self.model.messageBoardLoaded {
         VStack {

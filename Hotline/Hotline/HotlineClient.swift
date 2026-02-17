@@ -848,13 +848,151 @@ public actor HotlineClient {
     let transaction = HotlineTransaction(id: self.generateTransactionID(), type: .getMessageBoard)
     let reply = try await self.sendTransaction(transaction)
 
-    guard let text = reply.getField(type: .data)?.getString() else {
+    guard let field = reply.getField(type: .data) else {
       return []
     }
 
-    // Parse messages (separated by divider pattern)
-    // TODO: Implement proper divider parsing if needed
-    return [text]
+    // Split raw bytes on dividers BEFORE decoding, so each post gets
+    // decoded individually.  This handles mixed-encoding boards where
+    // some posts are UTF-8 and others are Mac OS Roman.
+    return Self.parseMessageBoardData(Data(field.data))
+  }
+
+  /// Split raw message board bytes into individual posts, decoding each
+  /// post separately so mixed-encoding boards are handled correctly.
+  static func parseMessageBoardData(_ data: Data) -> [String] {
+    if data.isEmpty { return [] }
+
+    // Split raw bytes on line endings (\r, \r\n)
+    let lines = Self.splitRawLines(data)
+
+    var posts: [String] = []
+    var currentPostBytes = Data()
+
+    for line in lines {
+      if Self.isDividerLine(line) {
+        if let post = Self.decodePostBytes(currentPostBytes) {
+          posts.append(post)
+        }
+        currentPostBytes = Data()
+      } else {
+        // Join lines with \n (0x0A) within a post
+        if !currentPostBytes.isEmpty {
+          currentPostBytes.append(0x0A)
+        }
+        currentPostBytes.append(contentsOf: line)
+      }
+    }
+
+    // Capture trailing post after last divider
+    if let post = Self.decodePostBytes(currentPostBytes) {
+      posts.append(post)
+    }
+
+    return posts
+  }
+
+  /// Split message board text (already decoded) into individual posts.
+  /// Used by handleNewsPost which receives already-decoded strings.
+  static func parseMessageBoard(_ text: String) -> [String] {
+    let normalized = text.replacing(/\r\n?/, with: "\n")
+    let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false)
+    let dividerRegex = /^[ \t]*([_\-=~*]{15,}|[_\-=~*]{5,}.+[_\-=~*]{5,})[ \t]*$/
+
+    var posts: [String] = []
+    var currentLines: [Substring] = []
+
+    for line in lines {
+      if line.wholeMatch(of: dividerRegex) != nil {
+        let postText = currentLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !postText.isEmpty {
+          posts.append(postText)
+        }
+        currentLines = []
+      } else {
+        currentLines.append(line)
+      }
+    }
+
+    let lastPost = currentLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    if !lastPost.isEmpty {
+      posts.append(lastPost)
+    }
+
+    return posts
+  }
+
+  // MARK: - Message Board Byte Helpers
+
+  /// Split raw data on \r and \r\n line endings, returning each line as Data.
+  private static func splitRawLines(_ data: Data) -> [Data] {
+    var lines: [Data] = []
+    var start = data.startIndex
+    var i = data.startIndex
+
+    while i < data.endIndex {
+      if data[i] == 0x0D { // \r
+        lines.append(data[start..<i])
+        // Skip \n if \r\n
+        let next = data.index(after: i)
+        if next < data.endIndex && data[next] == 0x0A {
+          i = data.index(after: next)
+        } else {
+          i = next
+        }
+        start = i
+      } else {
+        i = data.index(after: i)
+      }
+    }
+
+    // Remaining bytes after last line ending
+    if start < data.endIndex {
+      lines.append(data[start..<data.endIndex])
+    }
+
+    return lines
+  }
+
+  /// Check if a line of raw bytes is a divider (underscores, dashes, etc.).
+  /// Dividers are pure ASCII so this works regardless of encoding.
+  private static func isDividerLine(_ line: Data) -> Bool {
+    let separators: Set<UInt8> = [0x5F, 0x2D, 0x3D, 0x7E, 0x2A] // _ - = ~ *
+    let whitespace: Set<UInt8> = [0x20, 0x09] // space, tab
+
+    // Trim leading/trailing whitespace
+    let bytes = Array(line)
+    let start = bytes.firstIndex(where: { !whitespace.contains($0) }) ?? bytes.count
+    let end = (bytes.lastIndex(where: { !whitespace.contains($0) }) ?? -1) + 1
+    guard start < end else { return false }
+    let trimmed = bytes[start..<end]
+
+    // All separators, 15+ long
+    if trimmed.count >= 15 && trimmed.allSatisfy({ separators.contains($0) }) {
+      return true
+    }
+
+    // 5+ separators on each side with anything between
+    var leadCount = 0
+    for byte in trimmed {
+      if separators.contains(byte) { leadCount += 1 } else { break }
+    }
+    var trailCount = 0
+    for byte in trimmed.reversed() {
+      if separators.contains(byte) { trailCount += 1 } else { break }
+    }
+    return leadCount >= 5 && trailCount >= 5
+  }
+
+  /// Decode a post's raw bytes into a string, trimming whitespace.
+  /// Returns nil if the bytes are empty after trimming.
+  private static func decodePostBytes(_ data: Data) -> String? {
+    guard !data.isEmpty,
+          let str = data.readString(at: 0, length: data.count) else {
+      return nil
+    }
+    let trimmed = str.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
   }
 
   /// Post to the message board

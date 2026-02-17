@@ -1018,31 +1018,24 @@ extension Data {
     if subdata.count == 0 {
       return ""
     }
-    
-    let allowedEncodings = [
-      NSUTF8StringEncoding,
-      NSShiftJISStringEncoding,
-      NSUnicodeStringEncoding,
-      NSWindowsCP1251StringEncoding
-    ]
 
-    var decodedNSString: NSString?
-    let rawValue = NSString.stringEncoding(for: subdata, encodingOptions: [.allowLossyKey: false], convertedString: &decodedNSString, usedLossyConversion: nil)
-    
-    if allowedEncodings.contains(rawValue) {
-      return decodedNSString as? String
+    // Try UTF-8 first (modern clients, strict all-or-nothing).
+    if let str = String(data: subdata, encoding: .utf8) {
+      return str
     }
-    
-    else if rawValue > 1 {
-      print("ENCODING FOUND \(rawValue)")
+
+    // Try Shift-JIS (Japanese Hotline clients). Only accept the result
+    // if it actually contains CJK characters (hiragana, katakana, kanji)
+    // to avoid false positives from the half-width katakana byte range
+    // (0xA1-0xDF) which overlaps with Mac OS Roman characters like ™ and ƒ.
+    if let str = String(data: subdata, encoding: .shiftJIS),
+       str.unicodeScalars.contains(where: { $0.value >= 0x3000 && $0.value <= 0x9FFF }) {
+      return str
     }
-    
-    var macStr = String(data: subdata, encoding: .macOSRoman)
-    if macStr == nil {
-      macStr = String(data: subdata, encoding: .nonLossyASCII)
-    }
-    
-    return macStr
+
+    // Mac OS Roman fallback (classic Mac Hotline clients).
+    // Accepts all 256 byte values so it always succeeds.
+    return String(data: subdata, encoding: .macOSRoman)
   }
   
   func readPString(at offset: Int) -> (String?, Int) {
