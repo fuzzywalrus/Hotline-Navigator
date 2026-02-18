@@ -307,7 +307,7 @@ struct TransferRow: View {
             .foregroundStyle(.secondary)
         }
         else if self.transfer.completed {
-          Text("Downloaded")
+          Text(self.transfer.isUpload ? "Uploaded" : "Downloaded")
             .font(.subheadline)
             .foregroundStyle(.fileComplete)
         }
