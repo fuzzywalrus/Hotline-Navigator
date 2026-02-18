@@ -82,7 +82,6 @@ struct ServerView: View {
   
   @State private var model: HotlineState = HotlineState()
   @State private var state: ServerState = ServerState(selection: .chat)
-  @State private var agreementShown: Bool = false
   @State private var connectAddress: String = ""
   @State private var connectLogin: String = ""
   @State private var connectPassword: String = ""
@@ -133,6 +132,14 @@ struct ServerView: View {
         .frame(maxWidth: 300)
         .padding()
         .navigationTitle(self.model.serverTitle.isBlank ? "Hotline" : self.model.serverTitle)
+        .sheet(isPresented: Binding(
+          get: { self.model.agreementText != nil },
+          set: { if !$0 { self.model.agreementText = nil } }
+        )) {
+          ServerAgreementSheet()
+            .environment(self.model)
+            .presentationSizing(.fitted)
+        }
       }
       else if self.model.status == .loggedIn {
         self.serverView
@@ -154,6 +161,14 @@ struct ServerView: View {
           }
           .onChange(of: Prefs.shared.automaticMessage) {
             Task { try? await self.model.sendUserPreferences() }
+          }
+          .sheet(isPresented: Binding(
+            get: { self.model.agreementText != nil },
+            set: { if !$0 { self.model.agreementText = nil } }
+          )) {
+            ServerAgreementSheet()
+              .environment(self.model)
+              .presentationSizing(.fitted)
           }
           .sheet(isPresented: self.$state.broadcastShown) {
             BroadcastMessageSheet()

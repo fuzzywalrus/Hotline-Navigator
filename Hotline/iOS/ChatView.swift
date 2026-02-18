@@ -23,36 +23,7 @@ struct ChatView: View {
           ScrollView {
             LazyVStack(alignment: .leading) {
               ForEach(model.chat) { msg in
-                if msg.type == .agreement {
-                  
-                  VStack(alignment: .center) {
-                    if let bannerImage = self.model.bannerImage {
-                      bannerImage
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: 468.0)
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
-                    }
-                    
-                    VStack(alignment: .leading) {
-                      HStack {
-                        Text(msg.text)
-                          .textSelection(.enabled)
-                          .font(.system(size: 12))
-                          .fontDesign(.monospaced)
-                          .lineSpacing(2)
-                          .padding()
-                        Spacer()
-                      }
-                    }
-                    .background(colorScheme == .dark ? Color(white: 0.1) : Color(white: 0.96))
-                    .frame(maxWidth: .infinity)
-                    .cornerRadius(5)
-                  }
-                  .frame(maxWidth: .infinity)
-                  .padding()
-                }
-                else if msg.type == .signOut {
+                if msg.type == .signOut {
                   HStack {
                     Spacer()
                     Label {

@@ -20,8 +20,8 @@ public enum HotlineEvent: Sendable {
   case privateMessage(userID: UInt16, message: String)
   /// Server sent a news post notification
   case newsPost(String)
-  /// Server is requesting agreement acceptance
-  case agreementRequired(String)
+  /// Server sent agreement (nil text means no agreement required)
+  case showAgreement(String?)
   /// Server sent user access permissions
   case userAccess(HotlineUserAccessOptions)
 }
@@ -128,6 +128,7 @@ public actor HotlineClient {
 
   private let socket: NetSocket
   private var serverInfo: HotlineServerInfo?
+  private var loginInfo: HotlineLogin?
   private var isConnected: Bool = true
 
   /// Information about the connected server (name and version)
@@ -141,6 +142,9 @@ public actor HotlineClient {
 
   // Transaction tracking for request/reply pattern
   private var pendingTransactions: [UInt32: CheckedContinuation<HotlineTransaction, Error>] = [:]
+
+  // Server version from login
+  public private(set) var serverVersion: UInt16 = 0
 
   // Receive loop task
   private var receiveTask: Task<Void, Never>?
@@ -239,13 +243,9 @@ public actor HotlineClient {
     print("HotlineClient.connect(): Performing login")
     let serverInfo = try await client.performLogin(login)
     await client.setServerInfo(serverInfo)
-    print("HotlineClient.connect(): Login successful")
-
-    // Start keep-alive
-    print("HotlineClient.connect(): Starting keep-alive")
-    await client.startKeepAlive()
-
-    print("HotlineClient.connect(): Connected to \(serverInfo.name ?? "Server") (v\(serverInfo.version))")
+    await client.setLoginInfo(login)
+    await client.setServerVersion(serverInfo.version)
+    print("HotlineClient.connect(): Login successful, server v\(serverInfo.version)")
 
     return client
   }
@@ -263,6 +263,14 @@ public actor HotlineClient {
 
   private func setServerInfo(_ info: HotlineServerInfo) {
     self.serverInfo = info
+  }
+
+  private func setLoginInfo(_ login: HotlineLogin) {
+    self.loginInfo = login
+  }
+
+  private func setServerVersion(_ version: UInt16) {
+    self.serverVersion = version
   }
 
   // MARK: - Login
@@ -403,10 +411,14 @@ public actor HotlineClient {
       }
 
     case .showAgreement:
+      let text: String?
       if transaction.getField(type: .noServerAgreement) == nil,
          let agreementText = transaction.getField(type: .data)?.getString() {
-        eventContinuation.yield(.agreementRequired(agreementText))
+        text = agreementText
+      } else {
+        text = nil
       }
+      eventContinuation.yield(.showAgreement(text))
 
     case .userAccess:
       if let accessValue = transaction.getField(type: .userAccess)?.getUInt64() {
@@ -482,7 +494,7 @@ public actor HotlineClient {
 
   // MARK: - Keep-Alive
 
-  private func startKeepAlive() {
+  public func startKeepAlive() {
     self.keepAliveTask = Task { [weak self] in
       while !Task.isCancelled {
         try? await Task.sleep(nanoseconds: 180_000_000_000) // 3 minutes
@@ -627,10 +639,23 @@ public actor HotlineClient {
 
   /// Send agreement acceptance to the server
   ///
-  /// Call this after receiving `.agreementRequired` event.
-  public func sendAgree() async throws {
-    let transaction = HotlineTransaction(id: self.generateTransactionID(), type: .agreed)
-    try await socket.send(transaction, endian: .big)
+  /// The agreed transaction includes user info fields (username, icon, options)
+  /// which the server uses to set up the client's identity.
+  public func sendAgree(options: HotlineUserOptions = [], autoresponse: String? = nil) async throws {
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .agreed)
+
+    if let loginInfo {
+      transaction.setFieldString(type: .userName, val: loginInfo.username)
+      transaction.setFieldUInt16(type: .userIconID, val: loginInfo.iconID)
+    }
+
+    transaction.setFieldUInt16(type: .options, val: options.rawValue)
+
+    if let autoresponse {
+      transaction.setFieldString(type: .automaticResponse, val: autoresponse)
+    }
+
+    try await self.sendTransaction(transaction)
   }
 
   // MARK: - Files

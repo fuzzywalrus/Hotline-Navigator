@@ -352,6 +352,7 @@ class HotlineState: Equatable {
   var iconID: Int = 414
   var access: HotlineUserAccessOptions?
   var agreed: Bool = false
+  var agreementText: String? = nil
 
   // Users
   var users: [User] = []
@@ -507,36 +508,15 @@ class HotlineState: Equatable {
       self.status = .connected
       print("HotlineState.login(): Status set to connected")
 
-      // Request initial data before starting event loop
-      print("HotlineState.login(): Requesting user list...")
-      try await self.getUserList()
-      
-      self.status = .loggedIn
-      print("HotlineState.login(): Status set to loggedIn")
+      // Start event loop so showAgreement and other events can flow through.
+      self.startEventLoop()
 
-      #if os(macOS)
-      Self.connectionDidOpen()
-      #endif
-
-      if Prefs.shared.playSounds && Prefs.shared.playLoggedInSound {
-        SoundEffects.play(.loggedIn)
-      }
-
-      print("HotlineState.login(): Connected to \(self.serverTitle)")
-      print("HotlineState.login(): Scheduling post-login tasks...")
-
-      // Defer event loop and post-login work to avoid layout recursion
-      // This allows login() to return and SwiftUI to complete its layout pass
-      // before we start receiving events that trigger state changes
-      Task { @MainActor in
-        print("HotlineState: Post-login: Starting event loop...")
-        self.startEventLoop()
-
-        print("HotlineState: Post-login: Sending preferences...")
-        try? await self.sendUserPreferences()
-
-        print("HotlineState: Post-login: Downloading banner...")
-        self.downloadBanner()
+      // Old servers (<150) don't use the agreement handshake, so proceed immediately.
+      // For new servers, the event loop will receive showAgreement and either
+      // show the agreement sheet or auto-agree.
+      if self.serverVersion < 150 {
+        print("HotlineState.login(): Old server, completing login immediately")
+        try await self.completeLogin()
       }
 
     }
@@ -573,6 +553,48 @@ class HotlineState: Equatable {
   private func displayError(_ error: Error, message: String? = nil) {
     self.errorDisplayed = true
     self.errorMessage = message ?? error.localizedDescription
+  }
+
+  /// Complete the login process after agreement (or immediately if no agreement needed).
+  /// Requests user list, sets status to loggedIn, and starts post-login tasks.
+  @MainActor
+  func completeLogin() async throws {
+    print("HotlineState.completeLogin(): Requesting user list...")
+    try await self.getUserList()
+
+    if self.status != .loggedIn {
+      self.status = .loggedIn
+      print("HotlineState.completeLogin(): Status set to loggedIn")
+    }
+
+    #if os(macOS)
+    Self.connectionDidOpen()
+    #endif
+
+    if Prefs.shared.playSounds && Prefs.shared.playLoggedInSound {
+      SoundEffects.play(.loggedIn)
+    }
+
+    print("HotlineState.completeLogin(): Connected to \(self.serverTitle)")
+
+    // Defer event loop and post-login work to avoid layout recursion
+    Task { @MainActor in
+      guard let client = self.client else { return }
+
+      print("HotlineState: Post-login: Starting keep-alive...")
+      await client.startKeepAlive()
+
+      if self.eventTask == nil {
+        print("HotlineState: Post-login: Starting event loop...")
+        self.startEventLoop()
+      }
+
+      print("HotlineState: Post-login: Sending preferences...")
+      try? await self.sendUserPreferences()
+
+      print("HotlineState: Post-login: Downloading banner...")
+      self.downloadBanner()
+    }
   }
 
   /// Disconnect from the server (user-initiated)
@@ -648,6 +670,7 @@ class HotlineState: Equatable {
     self.serverName = nil
     self.access = nil
     self.agreed = false
+    self.agreementText = nil
     self.users = []
     self.chat = []
     self.instantMessages = [:]
@@ -812,9 +835,20 @@ class HotlineState: Equatable {
     case .newsPost(let message):
       self.handleNewsPost(message)
 
-    case .agreementRequired(let text):
-      let message = ChatMessage(text: text, type: .agreement, date: Date())
-      self.recordChatMessage(message, persist: false)
+    case .showAgreement(let text):
+      if let text {
+        // Server has agreement text — show the sheet
+        self.agreementText = text
+      } else if self.status != .loggedIn {
+        // No agreement required — auto-agree and complete login
+        Task {
+          do {
+            try await self.sendAgree()
+          } catch {
+            print("HotlineState: Auto-agree failed: \(error)")
+          }
+        }
+      }
 
     case .userAccess(let options):
       self.access = options
@@ -875,8 +909,46 @@ class HotlineState: Equatable {
       throw HotlineClientError.notConnected
     }
 
-    try await client.sendAgree()
+    var options: HotlineUserOptions = []
+    if Prefs.shared.refusePrivateMessages {
+      options.update(with: .refusePrivateMessages)
+    }
+    if Prefs.shared.refusePrivateChat {
+      options.update(with: .refusePrivateChat)
+    }
+    if Prefs.shared.enableAutomaticMessage {
+      options.update(with: .automaticResponse)
+    }
+
+    let autoresponse = Prefs.shared.enableAutomaticMessage ? Prefs.shared.automaticMessage : nil
+
+    // Old servers (<150) don't support the agreed transaction.
+    if self.serverVersion >= 150 {
+      print("HotlineState.sendAgree(): Sending agreed transaction...")
+      do {
+        try await client.sendAgree(options: options, autoresponse: autoresponse)
+        print("HotlineState.sendAgree(): Agreed sent successfully")
+      } catch let error as HotlineClientError {
+        // Some third-party servers send showAgreement but don't recognize the
+        // agreed transaction. Treat this as non-fatal since the user already
+        // accepted the agreement in the UI.
+        if case .serverError(_, _) = error {
+          print("HotlineState.sendAgree(): Server rejected agreed transaction (\(error)), continuing anyway")
+        } else {
+          throw error
+        }
+      }
+    } else {
+      print("HotlineState.sendAgree(): Old server (v\(self.serverVersion)), skipping agreed transaction")
+    }
     self.agreed = true
+    self.agreementText = nil
+
+    // For new servers, the login flow was deferred until agreement.
+    // For old servers, login already completed — just dismiss the sheet.
+    if self.status != .loggedIn {
+      try await self.completeLogin()
+    }
   }
 
   @MainActor

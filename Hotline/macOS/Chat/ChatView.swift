@@ -157,19 +157,7 @@ struct ChatView: View {
               LazyVStack(alignment: .leading, spacing: 8) {
 
                 ForEach(displayedMessages) { msg in
-                  if msg.type == .agreement {
-                    VStack(alignment: .center, spacing: 16) {
-                      HStack(spacing: 0) {
-                        Spacer(minLength: 0)
-                        self.bannerView
-                        Spacer(minLength: 0)
-                      }
-
-                      ServerAgreementView(text: msg.text)
-                    }
-                    .padding(.vertical, 24)
-                  }
-                  else if msg.type == .server {
+                  if msg.type == .server {
                     ServerMessageView(message: msg.text)
                   }
                   else if msg.type == .joined {
