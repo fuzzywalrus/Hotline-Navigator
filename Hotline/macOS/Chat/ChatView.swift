@@ -20,30 +20,30 @@ struct ChatView: View {
   @State private var inputHeight: CGFloat = 40
   
   var displayedMessages: [ChatMessage] {
-    debouncedQuery.isEmpty ? model.chat : searchResults
+    self.debouncedQuery.isEmpty ? self.model.chat : self.searchResults
   }
   
   private var bannerView: some View {
     ZStack {
-      if stableBannerIsAnimated {
+      if self.stableBannerIsAnimated {
         KFAnimatedImage
-          .url(stableBannerFileURL)
+          .url(self.stableBannerFileURL)
           .cacheMemoryOnly()
           .cacheOriginalImage()
           .scaledToFill()
           .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-          .id("animated banner \(stableBannerFileURL?.absoluteString ?? "")")
+          .id("animated banner \(self.stableBannerFileURL?.absoluteString ?? "")")
       }
-      else if stableBannerFileURL != nil {
+      else if self.stableBannerFileURL != nil {
         KFImage
-          .url(stableBannerFileURL)
+          .url(self.stableBannerFileURL)
           .resizable()
           .interpolation(.high)
           .cacheMemoryOnly()
           .cacheOriginalImage()
           .scaledToFill()
           .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-          .id("static banner \(stableBannerFileURL?.absoluteString ?? "")")
+          .id("static banner \(self.stableBannerFileURL?.absoluteString ?? "")")
       }
     }
     .frame(maxWidth: 468.0, minHeight: 60, maxHeight: 60)
@@ -51,32 +51,32 @@ struct ChatView: View {
   }
   
   var body: some View {
-    @Bindable var bindModel = model
+    @Bindable var bindModel = self.model
     
     NavigationStack {
       // MARK: Chat Text View
       ChatTextView(
-        messages: displayedMessages,
-        searchQuery: debouncedQuery,
-        isFiltered: !debouncedQuery.isEmpty,
-        cachedText: model.chatRenderedText,
-        cachedCount: model.chatRenderedCount,
+        messages: self.displayedMessages,
+        searchQuery: self.debouncedQuery,
+        isFiltered: !self.debouncedQuery.isEmpty,
+        cachedText: self.model.chatRenderedText,
+        cachedCount: self.model.chatRenderedCount,
         onCacheUpdate: { text, count in
-          model.chatRenderedText = text
-          model.chatRenderedCount = count
+          self.model.chatRenderedText = text
+          self.model.chatRenderedCount = count
         }
       )
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .ignoresSafeArea(edges: .top)
       .modifier(SoftTopScrollEdge())
-      .onChange(of: model.chat.count) {
-        if !searchQuery.isEmpty {
-          performSearch()
+      .onChange(of: self.model.chat.count) {
+        if !self.searchQuery.isEmpty {
+          self.performSearch()
         }
-        model.markPublicChatAsRead()
+        self.model.markPublicChatAsRead()
       }
       .onAppear {
-        model.markPublicChatAsRead()
+        self.model.markPublicChatAsRead()
       }
       .safeAreaInset(edge: .bottom, spacing: 0) {
         VStack(spacing: 0) {
@@ -84,62 +84,62 @@ struct ChatView: View {
           self.inputBar
         }
       }
-      .searchable(text: $searchQuery, isPresented: $isSearching, placement: .toolbar, prompt: "Search")
-      .background(Button("", action: { isSearching = true }).keyboardShortcut("f").hidden())
-      .onChange(of: searchQuery) {
-        searchTask?.cancel()
-        if searchQuery.isEmpty {
-          debouncedQuery = ""
-          searchResults = []
+      .searchable(text: self.$searchQuery, isPresented: self.$isSearching, placement: .toolbar, prompt: "Search")
+      .background(Button("", action: { self.isSearching = true }).keyboardShortcut("f").hidden())
+      .onChange(of: self.searchQuery) {
+        self.searchTask?.cancel()
+        if self.searchQuery.isEmpty {
+          self.debouncedQuery = ""
+          self.searchResults = []
         } else {
           let delay: Int = 50
-          searchTask = Task {
+          self.searchTask = Task {
             try? await Task.sleep(for: .milliseconds(delay))
             guard !Task.isCancelled else { return }
-            performSearch()
+            self.performSearch()
           }
         }
       }
     }
     .background(Color(nsColor: .textBackgroundColor))
     .onAppear {
-      stableBannerFileURL = model.bannerFileURL
-      stableBannerIsAnimated = model.bannerImageFormat == .gif
+      self.stableBannerFileURL = self.model.bannerFileURL
+      self.stableBannerIsAnimated = self.model.bannerImageFormat == .gif
     }
-    .onChange(of: model.bannerFileURL) { _, newValue in
-      stableBannerFileURL = newValue
-      stableBannerIsAnimated = model.bannerImageFormat == .gif
+    .onChange(of: self.model.bannerFileURL) { _, newValue in
+      self.stableBannerFileURL = newValue
+      self.stableBannerIsAnimated = self.model.bannerImageFormat == .gif
     }
   }
   
   private var inputBar: some View {
-    @Bindable var bindModel = model
+    @Bindable var bindModel = self.model
     return ChatInputField(
       text: $bindModel.chatInput,
-      height: $inputHeight,
+      height: self.$inputHeight,
       onSubmit: { announce in
-        let message = model.chatInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let message = self.model.chatInput.trimmingCharacters(in: .whitespacesAndNewlines)
         if !message.isEmpty {
           Task {
-            try? await model.sendChat(message, announce: announce)
+            try? await self.model.sendChat(message, announce: announce)
           }
         }
-        model.chatInput = ""
+        self.model.chatInput = ""
       }
     )
     .frame(maxWidth: .infinity)
-    .frame(height: inputHeight)
+    .frame(height: self.inputHeight)
   }
   
   private func performSearch() {
-    guard !searchQuery.isEmpty else {
-      debouncedQuery = ""
-      searchResults = []
+    guard !self.searchQuery.isEmpty else {
+      self.debouncedQuery = ""
+      self.searchResults = []
       return
     }
-
-    searchResults = model.searchChat(query: searchQuery)
-    debouncedQuery = searchQuery
+    
+    self.searchResults = self.model.searchChat(query: self.searchQuery)
+    self.debouncedQuery = self.searchQuery
   }
 }
 
