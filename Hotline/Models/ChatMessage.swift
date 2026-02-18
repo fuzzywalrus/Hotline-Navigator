@@ -54,10 +54,12 @@ struct ChatMessage: Identifiable {
   let type: ChatMessageType
   let date: Date
   let username: String?
+  let isEmote: Bool
   var metadata: ChatStore.EntryMetadata?
-  
+
   static let parser = /^\s*([^\:]+):\s*([\s\S]+)$/
-  
+  static let emoteParser = /^\s*\*{3}\s+(.+)$/
+
   init(text: String, type: ChatMessageType, date: Date) {
     self.id = UUID()
     self.type = type
@@ -69,10 +71,19 @@ struct ChatMessage: Identifiable {
       let match = text.firstMatch(of: ChatMessage.parser) {
       self.username = String(match.1)
       self.text = String(match.2)
+      self.isEmote = false
+    }
+    else if
+      type == .message,
+      text.firstMatch(of: ChatMessage.emoteParser) != nil {
+      self.username = nil
+      self.text = text
+      self.isEmote = true
     }
     else {
       self.username = nil
       self.text = text
+      self.isEmote = false
     }
   }
 }

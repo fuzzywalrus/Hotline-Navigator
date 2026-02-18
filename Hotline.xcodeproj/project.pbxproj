@@ -61,6 +61,8 @@
 		DA55AC792BE6A1AD00034857 /* RegularExpressions.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA55AC782BE6A1AD00034857 /* RegularExpressions.swift */; };
 		DA5753682B33E88A00FAC277 /* HotlineTransferClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA5753672B33E88A00FAC277 /* HotlineTransferClient.swift */; };
 		DA57536C2B36BA1D00FAC277 /* TextDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA57536B2B36BA1D00FAC277 /* TextDocument.swift */; };
+		DA5A6F122F454D4600060F18 /* ChatTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA5A6F112F454D4600060F18 /* ChatTextView.swift */; };
+		DA5A6F142F456DC900060F18 /* ChatInputField.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA5A6F132F456DC900060F18 /* ChatInputField.swift */; };
 		DA65499A2BEC280E00EDB697 /* ServerMessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA6549992BEC280E00EDB697 /* ServerMessageView.swift */; };
 		DA65499C2BEC3FBD00EDB697 /* ServerAgreementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA65499B2BEC3FBD00EDB697 /* ServerAgreementView.swift */; };
 		DA65499E2BEC438A00EDB697 /* NSWindowBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA65499D2BEC438A00EDB697 /* NSWindowBridge.swift */; platformFilters = (macos, ); };
@@ -189,6 +191,8 @@
 		DA5753672B33E88A00FAC277 /* HotlineTransferClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotlineTransferClient.swift; sourceTree = "<group>"; };
 		DA57536B2B36BA1D00FAC277 /* TextDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextDocument.swift; sourceTree = "<group>"; };
 		DA5A6EF22F44F26500060F18 /* HotlineTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HotlineTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		DA5A6F112F454D4600060F18 /* ChatTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTextView.swift; sourceTree = "<group>"; };
+		DA5A6F132F456DC900060F18 /* ChatInputField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatInputField.swift; sourceTree = "<group>"; };
 		DA6549992BEC280E00EDB697 /* ServerMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerMessageView.swift; sourceTree = "<group>"; };
 		DA65499B2BEC3FBD00EDB697 /* ServerAgreementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerAgreementView.swift; sourceTree = "<group>"; };
 		DA65499D2BEC438A00EDB697 /* NSWindowBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NSWindowBridge.swift; sourceTree = "<group>"; };
@@ -401,6 +405,8 @@
 			isa = PBXGroup;
 			children = (
 				DAE734FE2B2E6750000C56F6 /* ChatView.swift */,
+				DA5A6F112F454D4600060F18 /* ChatTextView.swift */,
+				DA5A6F132F456DC900060F18 /* ChatInputField.swift */,
 				DA6549992BEC280E00EDB697 /* ServerMessageView.swift */,
 				DA65499B2BEC3FBD00EDB697 /* ServerAgreementView.swift */,
 			);
@@ -770,6 +776,7 @@
 				DA72A0DD2B4CD0BF00A0F48A /* NewsEditorView.swift in Sources */,
 				DA52689C2EB0738B00DCB941 /* GeneralSettingsView.swift in Sources */,
 				DA501BE92EBE9589001714F8 /* TrackerItemView.swift in Sources */,
+				DA5A6F142F456DC900060F18 /* ChatInputField.swift in Sources */,
 				DA57536C2B36BA1D00FAC277 /* TextDocument.swift in Sources */,
 				DACCE5E12EABE4B4008CDD92 /* AppUpdate.swift in Sources */,
 				DA5268AD2EB12FE200DCB941 /* ServerState.swift in Sources */,
@@ -801,6 +808,7 @@
 				DA501BF22EBEF415001714F8 /* BonjourServerRow.swift in Sources */,
 				DA501BE72EBE9542001714F8 /* TrackerBookmarkSheet.swift in Sources */,
 				DAB4D87E2B4C8BCA0048A05C /* FilePreviewTextView.swift in Sources */,
+				DA5A6F122F454D4600060F18 /* ChatTextView.swift in Sources */,
 				DA3429B72EBAB1750010784E /* QuickLookPreviewView.swift in Sources */,
 				DABAFBEC2EC599700015E889 /* BroadcastMessageSheet.swift in Sources */,
 				DA4F2C012B1A558E00D8ADDC /* ChatView.swift in Sources */,

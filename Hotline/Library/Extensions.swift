@@ -298,6 +298,60 @@ extension String {
 
 // MARK: -
 
+#if os(macOS)
+extension String {
+  func toNSAttributedStringWithMarkdownAndLinks(
+    baseFont: NSFont,
+    linkColor: NSColor,
+    paragraphStyle: NSParagraphStyle? = nil
+  ) -> NSAttributedString {
+    let markdownText = self.convertingLinksToMarkdown()
+
+    let result: NSMutableAttributedString
+    if let parsed = try? NSAttributedString(
+      markdown: markdownText,
+      options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+    ) {
+      result = NSMutableAttributedString(attributedString: parsed)
+    } else {
+      result = NSMutableAttributedString(string: self)
+    }
+
+    let fullRange = NSRange(location: 0, length: result.length)
+
+    // Set default text color for all text
+    result.addAttribute(.foregroundColor, value: NSColor.textColor, range: fullRange)
+
+    // Preserve bold/italic traits from markdown while applying base font
+    result.enumerateAttribute(.font, in: fullRange, options: []) { value, range, _ in
+      var traits: NSFontDescriptor.SymbolicTraits = []
+      if let existingFont = value as? NSFont {
+        traits = existingFont.fontDescriptor.symbolicTraits
+      }
+      let descriptor = baseFont.fontDescriptor.withSymbolicTraits(traits)
+      let font = NSFont(descriptor: descriptor, size: baseFont.pointSize) ?? baseFont
+      result.addAttribute(.font, value: font, range: range)
+    }
+
+    // Apply link color
+    result.enumerateAttribute(.link, in: fullRange, options: []) { value, range, _ in
+      if value != nil {
+        result.addAttribute(.foregroundColor, value: linkColor, range: range)
+      }
+    }
+
+    // Apply paragraph style
+    if let style = paragraphStyle {
+      result.addAttribute(.paragraphStyle, value: style, range: fullRange)
+    }
+
+    return result
+  }
+}
+#endif
+
+// MARK: -
+
 extension Binding where Value: OptionSet, Value == Value.Element {
   func bindedValue(_ options: Value) -> Bool {
     return wrappedValue.contains(options)
