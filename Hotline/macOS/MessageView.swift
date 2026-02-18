@@ -178,6 +178,6 @@ struct MessageView: View {
 }
 
 #Preview {
-  ChatView()
+  MessageView(userID: 1)
     .environment(HotlineState())
 }

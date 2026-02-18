@@ -67,36 +67,64 @@ struct MessageBoardView: View {
 
   private var messageBoardView: some View {
     ScrollView {
-      LazyVStack(alignment: .leading) {
+      LazyVStack(alignment: .leading, spacing: 16) {
         ForEach(self.model.messageBoard) { post in
-          VStack(alignment: .leading, spacing: 4) {
+          
+          VStack(alignment: .leading, spacing: 0) {
             if post.username != nil || post.date != nil || post.rawDateString != nil {
-              HStack {
+              HStack(spacing: 8) {
                 Text(post.username ?? "Unknown")
                   .fontWeight(.semibold)
+                  .lineLimit(1)
+                  .truncationMode(.tail)
+                
+                Spacer()
+                
                 if let date = post.date {
                   Text(Self.relativeDateFormatter.localizedString(for: date, relativeTo: Date.now))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     .help(post.rawDateString ?? "")
                 } else if let rawDate = post.rawDateString {
                   Text(rawDate)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     .foregroundStyle(.secondary)
                 }
               }
               .textSelection(.enabled)
+              .padding(.vertical, 16)
+              .padding(.horizontal, 16)
+              .background(Color(nsColor: .tertiarySystemFill).opacity(0.5))
+              
+//              Divider()
             }
-            Text(LocalizedStringKey(post.body))
-              .tint(Color("Link Color"))
-              .lineLimit(100)
-              .lineSpacing(4)
-              .textSelection(.enabled)
+            
+            HStack(spacing: 0) {
+              Text(LocalizedStringKey(post.body))
+                .tint(Color("Link Color"))
+                .lineLimit(100)
+                .lineSpacing(4)
+                .textSelection(.enabled)
+                .padding(.horizontal, 16)
+              
+              Spacer(minLength: 0)
+            }
+            .padding(.vertical, 16)
+            
           }
+//          .padding(.bottom, 16)
+          .background(Color(nsColor: .textBackgroundColor))
+          .clipShape(.rect(cornerRadius: 8))
+          .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 2)
           .padding(.horizontal, 24)
-          .padding(.vertical, 16)
           
-          Divider()
+//          Divider()
         }
       }
+      .padding(.top, 16)
+      .padding(.bottom, 24)
     }
     .defaultScrollAnchor(.top)
     .overlay {
@@ -108,7 +136,7 @@ struct MessageBoardView: View {
         .frame(maxWidth: .infinity)
       }
     }
-    .background(Color(nsColor: .textBackgroundColor))
+    .background(Color(nsColor: .tertiarySystemFill))
   }
 }
 

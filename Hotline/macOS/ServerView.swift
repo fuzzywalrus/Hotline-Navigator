@@ -371,7 +371,7 @@ struct ServerView: View {
     } detail: {
         switch state.selection {
         case .chat:
-          ChatView()
+          ChatView(serverState: self.state)
         case .news:
           NewsView()
         case .board:

@@ -9,6 +9,7 @@ struct ChatView: View {
   @Environment(HotlineState.self) private var model: HotlineState
   @Environment(\.colorScheme) var colorScheme
   @Environment(\.dismiss) var dismiss
+  @Bindable var serverState: ServerState
   
   @State private var searchQuery: String = ""
   @State private var debouncedQuery: String = ""
@@ -86,6 +87,18 @@ struct ChatView: View {
       }
       .searchable(text: self.$searchQuery, isPresented: self.$isSearching, placement: .toolbar, prompt: "Search")
       .background(Button("", action: { self.isSearching = true }).keyboardShortcut("f").hidden())
+      .toolbar {
+        if self.model.access?.contains(.canBroadcast) == true {
+          ToolbarItem(placement: .primaryAction) {
+            Button {
+              self.serverState.broadcastShown = true
+            } label: {
+              Label("Broadcast Message", systemImage: "megaphone")
+            }
+            .help("Broadcast Message")
+          }
+        }
+      }
       .onChange(of: self.searchQuery) {
         self.searchTask?.cancel()
         if self.searchQuery.isEmpty {
@@ -154,6 +167,6 @@ private struct SoftTopScrollEdge: ViewModifier {
 }
 
 #Preview {
-  ChatView()
+  ChatView(serverState: ServerState(selection: .chat))
     .environment(HotlineState())
 }

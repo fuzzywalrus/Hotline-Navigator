@@ -1,41 +1,6 @@
 import SwiftUI
 import AppKit
 
-// MARK: - ChatLayoutManager
-
-/// Custom layout manager that draws rounded-rect backgrounds behind server messages.
-private class ChatLayoutManager: NSLayoutManager {
-  static let serverMessageKey = NSAttributedString.Key("serverMessageBackground")
-  
-  private let bubblePaddingH: CGFloat = 20
-  private let bubblePaddingV: CGFloat = 10
-  private let bubbleCornerRadius: CGFloat = 10
-  
-  override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
-    super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
-    
-    guard let textStorage = self.textStorage, let textContainer = self.textContainers.first else { return }
-    let charRange = self.characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
-    
-    textStorage.enumerateAttribute(Self.serverMessageKey, in: charRange, options: []) { value, range, _ in
-      guard value != nil else { return }
-      
-      let glyphRange = self.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-      let boundingRect = self.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-      
-      let bgRect = NSRect(
-        x: origin.x,
-        y: boundingRect.minY - self.bubblePaddingV + origin.y,
-        width: textContainer.size.width,
-        height: boundingRect.height + self.bubblePaddingV * 2
-      )
-      
-      NSColor.textColor.withAlphaComponent(0.06).setFill()
-      NSBezierPath(roundedRect: bgRect, xRadius: self.bubbleCornerRadius, yRadius: self.bubbleCornerRadius).fill()
-    }
-  }
-}
-
 // MARK: - ChatTextView (NSViewRepresentable)
 
 struct ChatTextView: NSViewRepresentable {
@@ -52,7 +17,6 @@ struct ChatTextView: NSViewRepresentable {
   
   func makeNSView(context: Context) -> NSScrollView {
     let textView = BottomAnchoredTextView()
-    textView.textContainer?.replaceLayoutManager(ChatLayoutManager())
     textView.isEditable = false
     textView.isSelectable = true
     textView.drawsBackground = false
@@ -157,9 +121,6 @@ struct ChatTextView: NSViewRepresentable {
       guard let textView = self.textView else { return }
       guard let storage = textView.textStorage else { return }
       
-      // Reset bottom offset before changing content so layout doesn't use a stale value.
-      textView.cachedBottomOffset = 0
-      
       // Try to restore from cache if it matches the current messages
       if let cached = cachedText,
          cachedCount == messages.count,
@@ -238,9 +199,17 @@ struct ChatTextView: NSViewRepresentable {
     
     func scrollToBottom() {
       guard let textView = self.textView else { return }
+      let suppress = !textView.hasRenderedOnce
+      if suppress {
+        textView.pendingScrollToBottom = true
+      }
       DispatchQueue.main.async {
         textView.invalidateBottomOffset()
         textView.scrollToEndOfDocument(nil)
+        if suppress {
+          textView.pendingScrollToBottom = false
+          textView.needsDisplay = true
+        }
       }
     }
     
@@ -489,7 +458,9 @@ struct ChatTextView: NSViewRepresentable {
       paraStyle.paragraphSpacing = 24
       paraStyle.alignment = .center
       paraStyle.lineSpacing = 3
+      paraStyle.firstLineHeadIndent = 16
       paraStyle.headIndent = 28
+      paraStyle.tailIndent = -16
       
       // Icon attachment
       if let image = NSImage(named: "Server Message") {
@@ -518,7 +489,7 @@ struct ChatTextView: NSViewRepresentable {
       
       let fullRange = NSRange(location: 0, length: result.length)
       result.addAttribute(.paragraphStyle, value: paraStyle, range: fullRange)
-      result.addAttribute(ChatLayoutManager.serverMessageKey, value: true, range: fullRange)
+      result.addAttribute(BottomAnchoredTextView.serverMessageKey, value: true, range: fullRange)
       
       return result
     }
@@ -529,7 +500,63 @@ struct ChatTextView: NSViewRepresentable {
 
 /// NSTextView subclass that pushes content to the bottom when content is shorter than the view.
 class BottomAnchoredTextView: NSTextView {
+  static let serverMessageKey = NSAttributedString.Key("serverMessageBackground")
   private var hoveredLinkRange: NSRange?
+
+  private static let bubblePaddingV: CGFloat = 10
+  private static let bubbleCornerRadius: CGFloat = 10
+
+  /// Whether the view has been laid out with a valid frame at least once.
+  /// Suppresses drawing until the bottom offset can be correctly computed,
+  /// preventing a flash where content appears at the top before jumping to the bottom.
+  private var hasValidFrame = false
+
+  /// Suppresses drawing during the initial deferred scroll-to-bottom so the user
+  /// never sees a frame of un-scrolled content on first load. Only used once;
+  /// after the first successful draw, subsequent rebuilds (search, reconnect)
+  /// show content immediately without suppression.
+  var pendingScrollToBottom = false
+
+  /// Whether the view has completed at least one full draw cycle.
+  private(set) var hasRenderedOnce = false
+
+  override func draw(_ dirtyRect: NSRect) {
+    guard self.hasValidFrame, !self.pendingScrollToBottom else { return }
+    self.drawServerMessageBackgrounds(in: dirtyRect)
+    super.draw(dirtyRect)
+    self.hasRenderedOnce = true
+  }
+
+  /// Draws rounded-rect backgrounds behind server messages, before the text is drawn.
+  /// Done here rather than in NSLayoutManager.drawBackground so the bubble padding
+  /// is not clipped to the line fragment rects.
+  private func drawServerMessageBackgrounds(in dirtyRect: NSRect) {
+    guard let storage = self.textStorage,
+          let layoutManager = self.layoutManager,
+          let container = self.textContainer else { return }
+
+    let origin = self.textContainerOrigin
+    let fullRange = NSRange(location: 0, length: storage.length)
+
+    storage.enumerateAttribute(Self.serverMessageKey, in: fullRange, options: []) { value, range, _ in
+      guard value != nil else { return }
+
+      let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+      let boundingRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: container)
+
+      let bgRect = NSRect(
+        x: origin.x,
+        y: boundingRect.minY - Self.bubblePaddingV + origin.y,
+        width: container.size.width,
+        height: boundingRect.height + Self.bubblePaddingV * 2
+      )
+
+      guard bgRect.intersects(dirtyRect) else { return }
+
+      NSColor.textColor.withAlphaComponent(0.06).setFill()
+      NSBezierPath(roundedRect: bgRect, xRadius: Self.bubbleCornerRadius, yRadius: Self.bubbleCornerRadius).fill()
+    }
+  }
   
   override func updateTrackingAreas() {
     super.updateTrackingAreas()
@@ -586,23 +613,34 @@ class BottomAnchoredTextView: NSTextView {
   /// Cached bottom-anchor offset, recalculated when text or frame changes.
   var cachedBottomOffset: CGFloat = 0
   
-  func invalidateBottomOffset() {
+  func invalidateBottomOffset(ensureLayout: Bool = true) {
     guard let container = self.textContainer, let layoutManager = self.layoutManager else {
-      self.cachedBottomOffset = 0
       return
     }
-    
-    layoutManager.ensureLayout(for: container)
-    let usedRect = layoutManager.usedRect(for: container)
-    let contentHeight = usedRect.height + self.textContainerInset.height * 2
+
     let clipHeight = self.enclosingScrollView?.contentView.bounds.height ?? self.bounds.height
     let insets = self.enclosingScrollView?.contentInsets ?? NSEdgeInsets()
     let visibleHeight = clipHeight - insets.top - insets.bottom
-    
-    if contentHeight < visibleHeight {
-      self.cachedBottomOffset = visibleHeight - contentHeight
-    } else {
-      self.cachedBottomOffset = 0
+
+    // Don't compute the offset until the view has been laid out with a real frame.
+    guard visibleHeight > 0 else { return }
+
+    if ensureLayout {
+      layoutManager.ensureLayout(for: container)
+    }
+    let usedRect = layoutManager.usedRect(for: container)
+    let contentHeight = usedRect.height + self.textContainerInset.height * 2
+
+    let newOffset: CGFloat = contentHeight < visibleHeight ? visibleHeight - contentHeight : 0
+
+    let wasReady = self.hasValidFrame
+    self.hasValidFrame = true
+
+    if abs(newOffset - self.cachedBottomOffset) > 0.5 {
+      self.cachedBottomOffset = newOffset
+      self.needsDisplay = true
+    } else if !wasReady {
+      self.needsDisplay = true
     }
   }
   
@@ -645,8 +683,10 @@ class BottomPinningScrollView: NSScrollView {
       self.contentView.setBoundsOrigin(NSPoint(x: 0, y: docHeight - clipHeight))
       self.isAdjusting = false
     }
-    // Defer invalidateBottomOffset to avoid calling ensureLayout during tile(),
-    // which can trigger a Metal validation crash during resize.
+    // Defer offset recalculation to avoid Metal validation crash from accessing
+    // layout manager state during tile(). The view still draws using the previous
+    // cachedBottomOffset, which is close enough during resize (0 for tall content,
+    // slightly stale for short content). The deferred call corrects it next frame.
     DispatchQueue.main.async { [weak self] in
       self?.pinnedTextView?.invalidateBottomOffset()
     }
