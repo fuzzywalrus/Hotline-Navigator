@@ -565,6 +565,10 @@ class HotlineState: Equatable {
     if self.status != .loggedIn {
       self.status = .loggedIn
       print("HotlineState.completeLogin(): Status set to loggedIn")
+
+      // Record a session divider so chat history shows when this session began
+      let message = ChatMessage(text: "", type: .signOut, date: Date())
+      self.recordChatMessage(message, persist: true, display: true)
     }
 
     #if os(macOS)
@@ -594,6 +598,11 @@ class HotlineState: Equatable {
 
       print("HotlineState: Post-login: Downloading banner...")
       self.downloadBanner()
+
+      print("HotlineState: Post-login: Preloading files, news, and message board...")
+      let _ = try? await self.getFileList()
+      try? await self.getNewsList()
+      let _ = try? await self.getMessageBoard()
     }
   }
 
@@ -2240,15 +2249,19 @@ class HotlineState: Equatable {
           return message
         }
 
+        // Skip history that has no real content (only sign-out/divider messages)
+        let hasContent = historyMessages.contains { $0.type != .signOut }
+        let effectiveHistory = hasContent ? historyMessages : []
+
         // Ensure a divider between restored history and new session
         var divider: [ChatMessage] = []
-        if !historyMessages.isEmpty,
-           historyMessages.last?.type != .signOut,
+        if !effectiveHistory.isEmpty,
+           effectiveHistory.last?.type != .signOut,
            currentMessages.first?.type != .signOut {
           divider.append(ChatMessage(text: "", type: .signOut, date: Date()))
         }
 
-        let combined = historyMessages + divider + currentMessages
+        let combined = effectiveHistory + divider + currentMessages
         if combined.count > Self.maxChatMessages {
           self.chat = Array(combined.suffix(Self.maxChatMessages))
         } else {

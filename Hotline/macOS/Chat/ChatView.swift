@@ -56,15 +56,37 @@ struct ChatLeftMessageView: View {
 
 struct ChatDisconnectedMessageView: View {
   let message: ChatMessage
-  
-  var body: some View {
-    HStack {
-      Spacer()
+
+  private var formattedDate: String {
+    let day = Calendar.current.component(.day, from: message.date)
+    let suffix: String
+    switch day {
+    case 11, 12, 13: suffix = "th"
+    default:
+      switch day % 10 {
+      case 1: suffix = "st"
+      case 2: suffix = "nd"
+      case 3: suffix = "rd"
+      default: suffix = "th"
+      }
     }
-    .frame(height: 5)
-    .background(Color.primary)
-    .clipShape(.capsule)
-    .opacity(0.1)
+
+    let f = DateFormatter()
+    f.dateFormat = "MMMM d'\(suffix)', yyyy • h:mm a"
+    return f.string(from: message.date)
+  }
+
+  var body: some View {
+    HStack(spacing: 8) {
+      VStack { Divider() }
+      Text(formattedDate)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .layoutPriority(1)
+      VStack { Divider() }
+    }
+    .opacity(0.6)
   }
 }
 
@@ -197,6 +219,7 @@ struct ChatView: View {
               reader.scrollTo(bottomID, anchor: .bottom)
             }
             .onChange(of: searchQuery) {
+              performSearch()
               reader.scrollTo(bottomID, anchor: .bottom)
             }
             .onChange(of: isSearching) {
@@ -257,9 +280,6 @@ struct ChatView: View {
     .onChange(of: model.bannerFileURL) { _, newValue in
       stableBannerFileURL = newValue
       stableBannerIsAnimated = model.bannerImageFormat == .gif
-    }
-    .onChange(of: searchQuery) {
-      performSearch()
     }
 //    .toolbar {
 //      ToolbarItem(placement: .primaryAction) {
