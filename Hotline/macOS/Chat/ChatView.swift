@@ -17,7 +17,7 @@ struct ChatView: View {
   @State private var searchTask: Task<Void, Never>?
   @State private var stableBannerFileURL: URL?
   @State private var stableBannerIsAnimated: Bool = false
-  @State private var inputHeight: CGFloat = 40
+  @State private var inputHeight: CGFloat = ChatInputField.defaultHeight
   
   var displayedMessages: [ChatMessage] {
     self.debouncedQuery.isEmpty ? self.model.chat : self.searchResults

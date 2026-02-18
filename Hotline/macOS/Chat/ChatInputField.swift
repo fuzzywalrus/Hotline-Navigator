@@ -14,6 +14,14 @@ struct ChatInputField: NSViewRepresentable {
   @Binding var height: CGFloat
   var maxLines: Int = 5
   var onSubmit: (_ announce: Bool) -> Void
+
+  /// Single-line height matching what `recalculateHeight` computes for an empty field.
+  static let defaultHeight: CGFloat = {
+    let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+    let lm = NSLayoutManager()
+    let lineHeight = ceil(lm.defaultLineHeight(for: font))
+    return lineHeight + ChatInputTextView.verticalInset * 2
+  }()
   
   func makeCoordinator() -> Coordinator {
     Coordinator(self)
@@ -34,7 +42,7 @@ struct ChatInputField: NSViewRepresentable {
     // so widthTracksTextView sizes the container correctly), and override
     // textContainerOrigin in the subclass for the asymmetric left inset.
     let avgHorizontal = (textView.leftInset + textView.rightInset) / 2.0
-    textView.textContainerInset = NSSize(width: avgHorizontal, height: textView.verticalInset)
+    textView.textContainerInset = NSSize(width: avgHorizontal, height: ChatInputTextView.verticalInset)
     textView.textContainer?.lineFragmentPadding = 0
     
     textView.isVerticallyResizable = true
@@ -101,7 +109,7 @@ struct ChatInputField: NSViewRepresentable {
       
       let needsScroller = contentHeight > maxContentHeight
       let clampedContent = needsScroller ? maxContentHeight : contentHeight
-      let newHeight = clampedContent + textView.verticalInset * 2
+      let newHeight = clampedContent + ChatInputTextView.verticalInset * 2
       
       self.scrollView?.hasVerticalScroller = needsScroller
       self.scrollView?.verticalScrollElasticity = needsScroller ? .allowed : .none
@@ -119,9 +127,10 @@ struct ChatInputField: NSViewRepresentable {
 class ChatInputTextView: NSTextView {
   var submitHandler: ((_ announce: Bool) -> Void)?
   
+  static let verticalInset: CGFloat = 24
+
   let leftInset: CGFloat = 30
   let rightInset: CGFloat = 12
-  let verticalInset: CGFloat = 24
   
   private lazy var chevronView: NSImageView = {
     let config = NSImage.SymbolConfiguration(pointSize: NSFont.systemFontSize, weight: .semibold)
@@ -147,7 +156,7 @@ class ChatInputTextView: NSTextView {
   }
   
   override var textContainerOrigin: NSPoint {
-    return NSPoint(x: self.leftInset, y: self.verticalInset)
+    return NSPoint(x: self.leftInset, y: Self.verticalInset)
   }
   
   override func viewDidMoveToSuperview() {
