@@ -184,9 +184,15 @@ class ChatInputTextView: NSTextView {
       lineRect = NSRect(x: 0, y: 0, width: 0, height: lineHeight)
     } else {
       let insertionIndex = selectedRange().location
-      let charIndex = min(insertionIndex, length - 1)
-      let glyphIndex = layoutManager.glyphIndexForCharacter(at: charIndex)
-      lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+      let extraRect = layoutManager.extraLineFragmentRect
+      if insertionIndex >= length && extraRect.height > 0 {
+        // Cursor is on the empty line after a trailing newline
+        lineRect = extraRect
+      } else {
+        let charIndex = min(insertionIndex, length - 1)
+        let glyphIndex = layoutManager.glyphIndexForCharacter(at: charIndex)
+        lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+      }
     }
 
     let chevronSize = chevronView.frame.size

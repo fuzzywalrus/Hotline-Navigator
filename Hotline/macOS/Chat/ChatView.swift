@@ -9,7 +9,7 @@ struct ChatView: View {
   @Environment(HotlineState.self) private var model: HotlineState
   @Environment(\.colorScheme) var colorScheme
   @Environment(\.dismiss) var dismiss
-
+  
   @State private var searchQuery: String = ""
   @State private var debouncedQuery: String = ""
   @State private var searchResults: [ChatMessage] = []
@@ -18,11 +18,11 @@ struct ChatView: View {
   @State private var stableBannerFileURL: URL?
   @State private var stableBannerIsAnimated: Bool = false
   @State private var inputHeight: CGFloat = 40
-
+  
   var displayedMessages: [ChatMessage] {
     debouncedQuery.isEmpty ? model.chat : searchResults
   }
-
+  
   private var bannerView: some View {
     ZStack {
       if stableBannerIsAnimated {
@@ -49,40 +49,40 @@ struct ChatView: View {
     .frame(maxWidth: 468.0, minHeight: 60, maxHeight: 60)
     .clipped()
   }
-
+  
   var body: some View {
     @Bindable var bindModel = model
-
+    
     NavigationStack {
-      VStack(alignment: .leading, spacing: 0) {
-
-        // MARK: Chat Text View
-        ChatTextView(
-          messages: displayedMessages,
-          searchQuery: debouncedQuery,
-          cachedText: model.chatRenderedText,
-          cachedCount: model.chatRenderedCount,
-          onCacheUpdate: { text, count in
-            model.chatRenderedText = text
-            model.chatRenderedCount = count
-          }
-        )
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
-          .onChange(of: model.chat.count) {
-            if !searchQuery.isEmpty {
-              performSearch()
-            }
-            model.markPublicChatAsRead()
-          }
-          .onAppear {
-            model.markPublicChatAsRead()
-          }
-
-        // MARK: Input Divider
-        Divider()
-
-        // MARK: Input Bar
-        inputBar
+      // MARK: Chat Text View
+      ChatTextView(
+        messages: displayedMessages,
+        searchQuery: debouncedQuery,
+        isFiltered: !debouncedQuery.isEmpty,
+        cachedText: model.chatRenderedText,
+        cachedCount: model.chatRenderedCount,
+        onCacheUpdate: { text, count in
+          model.chatRenderedText = text
+          model.chatRenderedCount = count
+        }
+      )
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .ignoresSafeArea(edges: .top)
+      .modifier(SoftTopScrollEdge())
+      .onChange(of: model.chat.count) {
+        if !searchQuery.isEmpty {
+          performSearch()
+        }
+        model.markPublicChatAsRead()
+      }
+      .onAppear {
+        model.markPublicChatAsRead()
+      }
+      .safeAreaInset(edge: .bottom, spacing: 0) {
+        VStack(spacing: 0) {
+          Divider()
+          self.inputBar
+        }
       }
       .searchable(text: $searchQuery, isPresented: $isSearching, placement: .toolbar, prompt: "Search")
       .background(Button("", action: { isSearching = true }).keyboardShortcut("f").hidden())
@@ -92,11 +92,7 @@ struct ChatView: View {
           debouncedQuery = ""
           searchResults = []
         } else {
-          let delay: Int = switch searchQuery.count {
-          case 1: 100
-          case 2: 100
-          default: 50
-          }
+          let delay: Int = 50
           searchTask = Task {
             try? await Task.sleep(for: .milliseconds(delay))
             guard !Task.isCancelled else { return }
@@ -115,14 +111,15 @@ struct ChatView: View {
       stableBannerIsAnimated = model.bannerImageFormat == .gif
     }
   }
+  
   private var inputBar: some View {
     @Bindable var bindModel = model
     return ChatInputField(
       text: $bindModel.chatInput,
       height: $inputHeight,
       onSubmit: { announce in
-        if !model.chatInput.isEmpty {
-          let message = model.chatInput
+        let message = model.chatInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !message.isEmpty {
           Task {
             try? await model.sendChat(message, announce: announce)
           }
@@ -133,7 +130,7 @@ struct ChatView: View {
     .frame(maxWidth: .infinity)
     .frame(height: inputHeight)
   }
-
+  
   private func performSearch() {
     guard !searchQuery.isEmpty else {
       debouncedQuery = ""
@@ -143,6 +140,16 @@ struct ChatView: View {
 
     searchResults = model.searchChat(query: searchQuery)
     debouncedQuery = searchQuery
+  }
+}
+
+private struct SoftTopScrollEdge: ViewModifier {
+  func body(content: Content) -> some View {
+    if #available(macOS 26.0, *) {
+      content.scrollEdgeEffectStyle(.soft, for: .top)
+    } else {
+      content
+    }
   }
 }
 

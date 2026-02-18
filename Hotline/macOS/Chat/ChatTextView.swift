@@ -41,6 +41,7 @@ private class ChatLayoutManager: NSLayoutManager {
 struct ChatTextView: NSViewRepresentable {
   let messages: [ChatMessage]
   var searchQuery: String = ""
+  var isFiltered: Bool = false
   var cachedText: NSAttributedString?
   var cachedCount: Int = 0
   var onCacheUpdate: ((NSAttributedString, Int) -> Void)?
@@ -84,10 +85,10 @@ struct ChatTextView: NSViewRepresentable {
 
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
     let coordinator = context.coordinator
-    coordinator.onCacheUpdate = onCacheUpdate
+    coordinator.onCacheUpdate = isFiltered ? nil : onCacheUpdate
 
     if coordinator.needsFullRebuild(for: messages) {
-      coordinator.rebuildAll(messages: messages, cachedText: cachedText, cachedCount: cachedCount)
+      coordinator.rebuildAll(messages: messages, cachedText: isFiltered ? nil : cachedText, cachedCount: isFiltered ? 0 : cachedCount)
     } else if messages.count > coordinator.renderedCount {
       coordinator.appendMessages(messages: messages)
     }
@@ -156,6 +157,9 @@ struct ChatTextView: NSViewRepresentable {
       guard let textView = textView else { return }
       guard let storage = textView.textStorage else { return }
 
+      // Reset bottom offset before changing content so layout doesn't use a stale value.
+      textView.cachedBottomOffset = 0
+
       // Try to restore from cache if it matches the current messages
       if let cached = cachedText,
          cachedCount == messages.count,
@@ -166,6 +170,7 @@ struct ChatTextView: NSViewRepresentable {
 
         renderedCount = cachedCount
         lastMessageIDs = messages.map(\.id)
+        textView.invalidateBottomOffset()
         textView.needsDisplay = true
         scrollToBottom()
         return
@@ -183,6 +188,7 @@ struct ChatTextView: NSViewRepresentable {
 
       renderedCount = messages.count
       lastMessageIDs = messages.map(\.id)
+      textView.invalidateBottomOffset()
       textView.needsDisplay = true
 
       // Save to cache
@@ -578,7 +584,7 @@ class BottomAnchoredTextView: NSTextView {
   }
 
   /// Cached bottom-anchor offset, recalculated when text or frame changes.
-  private var cachedBottomOffset: CGFloat = 0
+  var cachedBottomOffset: CGFloat = 0
 
   func invalidateBottomOffset() {
     guard let container = textContainer, let layoutManager = layoutManager else {
@@ -589,10 +595,12 @@ class BottomAnchoredTextView: NSTextView {
     layoutManager.ensureLayout(for: container)
     let usedRect = layoutManager.usedRect(for: container)
     let contentHeight = usedRect.height + textContainerInset.height * 2
-    let viewHeight = enclosingScrollView?.contentView.bounds.height ?? bounds.height
+    let clipHeight = enclosingScrollView?.contentView.bounds.height ?? bounds.height
+    let insets = enclosingScrollView?.contentInsets ?? NSEdgeInsets()
+    let visibleHeight = clipHeight - insets.top - insets.bottom
 
-    if contentHeight < viewHeight {
-      cachedBottomOffset = viewHeight - contentHeight
+    if contentHeight < visibleHeight {
+      cachedBottomOffset = visibleHeight - contentHeight
     } else {
       cachedBottomOffset = 0
     }
@@ -630,13 +638,17 @@ class BottomPinningScrollView: NSScrollView {
 
   override func tile() {
     super.tile()
-    pinnedTextView?.invalidateBottomOffset()
     let clipHeight = contentView.bounds.height
     let docHeight = documentView?.frame.height ?? 0
     if shouldPinToBottom && docHeight > clipHeight {
       isAdjusting = true
       contentView.setBoundsOrigin(NSPoint(x: 0, y: docHeight - clipHeight))
       isAdjusting = false
+    }
+    // Defer invalidateBottomOffset to avoid calling ensureLayout during tile(),
+    // which can trigger a Metal validation crash during resize.
+    DispatchQueue.main.async { [weak self] in
+      self?.pinnedTextView?.invalidateBottomOffset()
     }
   }
 
