@@ -79,9 +79,17 @@ public class HotlineFilePreviewClient {
     progressHandler: (@Sendable (HotlineTransferProgress) -> Void)?
   ) async throws -> URL {
 
-    // Create temporary file path in system temp directory
+    // Create temporary file path in system temp directory.
+    // If the file has no extension but we know the type code,
+    // add the appropriate extension so QuickLook can identify it.
     let tempDir = FileManager.default.temporaryDirectory
-    let uniqueFileName = "\(UUID().uuidString)_\(self.fileName)"
+    var previewFileName = self.fileName
+    if (previewFileName as NSString).pathExtension.isEmpty,
+       let fileType = self.fileType?.lowercased(),
+       let ext = FileManager.HFSTypeToExtension[fileType] {
+      previewFileName = "\(previewFileName).\(ext)"
+    }
+    let uniqueFileName = "\(UUID().uuidString)_\(previewFileName)"
     let tempFileURL = tempDir.appendingPathComponent(uniqueFileName)
     self.temporaryFileURL = tempFileURL
 
