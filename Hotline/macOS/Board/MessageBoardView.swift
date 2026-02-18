@@ -73,7 +73,7 @@ struct MessageBoardView: View {
             if post.username != nil || post.date != nil || post.rawDateString != nil {
               HStack {
                 Text(post.username ?? "Unknown")
-                  .fontWeight(.bold)
+                  .fontWeight(.semibold)
                 if let date = post.date {
                   Text(Self.relativeDateFormatter.localizedString(for: date, relativeTo: Date.now))
                     .foregroundStyle(.secondary)

@@ -29,7 +29,7 @@ struct NewsItemView: View {
           news.expanded.toggle()
         } label: {
           Text(Image(systemName: news.expanded ? "chevron.down" : "chevron.right"))
-            .bold()
+            .fontWeight(.semibold)
             .font(.system(size: 10))
             .opacity(0.5)
             .frame(alignment: .center)
