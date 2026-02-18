@@ -362,6 +362,8 @@ class HotlineState: Equatable {
   var broadcastMessage: String = ""
   var chat: [ChatMessage] = []
   var chatInput: String = ""
+  var chatRenderedText: NSAttributedString?
+  var chatRenderedCount: Int = 0
   var unreadPublicChat: Bool = false
 
   // Instant Messages
@@ -474,6 +476,8 @@ class HotlineState: Equatable {
     self.lastPersistedMessageType = nil
     self.lastPersistedMessageDate = nil
     self.chat = []
+    self.chatRenderedText = nil
+    self.chatRenderedCount = 0
     self.restoreChatHistory(for: key)
     print("HotlineState.login(): Chat session set up")
 
@@ -683,6 +687,8 @@ class HotlineState: Equatable {
     self.agreementText = nil
     self.users = []
     self.chat = []
+    self.chatRenderedText = nil
+    self.chatRenderedCount = 0
     self.instantMessages = [:]
     self.unreadInstantMessages = [:]
     self.unreadPublicChat = false
@@ -1040,9 +1046,9 @@ class HotlineState: Equatable {
       // Always include disconnect messages to show session boundaries
       let isDisconnect = message.type == .signOut
 
-      // Search in text and username
-      let matchesText = message.text.localizedCaseInsensitiveContains(query)
-      let matchesUsername = message.username?.localizedCaseInsensitiveContains(query) == true
+      // Search in text and username (literal + caseInsensitive skips locale normalization)
+      let matchesText = message.text.range(of: query, options: [.caseInsensitive, .literal]) != nil
+      let matchesUsername = message.username?.range(of: query, options: [.caseInsensitive, .literal]) != nil
       let matchesQuery = matchesText || matchesUsername
 
       return isDisconnect || matchesQuery
@@ -2202,6 +2208,8 @@ class HotlineState: Equatable {
       self.chat.append(message)
       if self.chat.count > Self.maxChatMessages {
         self.chat.removeFirst(self.chat.count - Self.maxChatMessages)
+        self.chatRenderedText = nil
+        self.chatRenderedCount = 0
       }
     }
 
@@ -2303,6 +2311,8 @@ class HotlineState: Equatable {
 
   private func handleChatHistoryCleared() {
     self.chat = []
+    self.chatRenderedText = nil
+    self.chatRenderedCount = 0
     self.unreadPublicChat = false
     self.restoredChatSessionKey = nil
     self.lastPersistedMessageType = nil

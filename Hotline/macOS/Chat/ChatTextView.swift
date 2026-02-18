@@ -40,6 +40,10 @@ private class ChatLayoutManager: NSLayoutManager {
 
 struct ChatTextView: NSViewRepresentable {
   let messages: [ChatMessage]
+  var searchQuery: String = ""
+  var cachedText: NSAttributedString?
+  var cachedCount: Int = 0
+  var onCacheUpdate: ((NSAttributedString, Int) -> Void)?
 
   func makeCoordinator() -> Coordinator {
     Coordinator()
@@ -80,11 +84,16 @@ struct ChatTextView: NSViewRepresentable {
 
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
     let coordinator = context.coordinator
+    coordinator.onCacheUpdate = onCacheUpdate
 
     if coordinator.needsFullRebuild(for: messages) {
-      coordinator.rebuildAll(messages: messages)
+      coordinator.rebuildAll(messages: messages, cachedText: cachedText, cachedCount: cachedCount)
     } else if messages.count > coordinator.renderedCount {
       coordinator.appendMessages(messages: messages)
+    }
+
+    if coordinator.currentSearchQuery != searchQuery {
+      coordinator.applySearchHighlights(query: searchQuery)
     }
   }
 
@@ -92,23 +101,75 @@ struct ChatTextView: NSViewRepresentable {
 
   class Coordinator {
     weak var textView: BottomAnchoredTextView?
-    weak var scrollView: NSScrollView?
+    weak var scrollView: NSScrollView? {
+      didSet { observeScroll() }
+    }
+    var onCacheUpdate: ((NSAttributedString, Int) -> Void)?
     var renderedCount = 0
+    var currentSearchQuery = ""
     private var lastMessageIDs: [UUID] = []
+    private var scrollObserver: NSObjectProtocol?
+    private var highlightedCharRange: NSRange = NSRange(location: NSNotFound, length: 0)
+    private var lastHighlightedVisibleOriginY: CGFloat = -.greatestFiniteMagnitude
+
+    private func observeScroll() {
+      scrollObserver = nil
+      guard let scrollView = scrollView else { return }
+      scrollView.contentView.postsBoundsChangedNotifications = true
+      scrollObserver = NotificationCenter.default.addObserver(
+        forName: NSView.boundsDidChangeNotification,
+        object: scrollView.contentView,
+        queue: .main
+      ) { [weak self] _ in
+        self?.scrollDidChange()
+      }
+    }
+
+    private func scrollDidChange() {
+      guard !currentSearchQuery.isEmpty,
+            let scrollView = scrollView else { return }
+      let visibleY = scrollView.contentView.bounds.origin.y
+      let viewportH = scrollView.contentView.bounds.height
+      // Only re-highlight when scrolled beyond half the viewport from last highlight center
+      if abs(visibleY - lastHighlightedVisibleOriginY) > viewportH * 0.5 {
+        highlightVisibleRange()
+      }
+    }
+
+    deinit {
+      if let observer = scrollObserver {
+        NotificationCenter.default.removeObserver(observer)
+      }
+    }
 
     func needsFullRebuild(for messages: [ChatMessage]) -> Bool {
       if messages.count < renderedCount { return true }
       if renderedCount == 0 && messages.isEmpty { return false }
-      if renderedCount == 0 { return false }
+      if renderedCount == 0 { return true }
       for i in 0..<min(renderedCount, messages.count, lastMessageIDs.count) {
         if messages[i].id != lastMessageIDs[i] { return true }
       }
       return false
     }
 
-    func rebuildAll(messages: [ChatMessage]) {
+    func rebuildAll(messages: [ChatMessage], cachedText: NSAttributedString?, cachedCount: Int) {
       guard let textView = textView else { return }
       guard let storage = textView.textStorage else { return }
+
+      // Try to restore from cache if it matches the current messages
+      if let cached = cachedText,
+         cachedCount == messages.count,
+         cachedCount > 0 {
+        storage.beginEditing()
+        storage.setAttributedString(cached)
+        storage.endEditing()
+
+        renderedCount = cachedCount
+        lastMessageIDs = messages.map(\.id)
+        textView.needsDisplay = true
+        scrollToBottom()
+        return
+      }
 
       storage.beginEditing()
       storage.setAttributedString(NSAttributedString())
@@ -123,6 +184,16 @@ struct ChatTextView: NSViewRepresentable {
       renderedCount = messages.count
       lastMessageIDs = messages.map(\.id)
       textView.needsDisplay = true
+
+      // Save to cache
+      onCacheUpdate?(NSAttributedString(attributedString: storage), renderedCount)
+
+      if !currentSearchQuery.isEmpty {
+        highlightedCharRange = NSRange(location: NSNotFound, length: 0)
+        lastHighlightedVisibleOriginY = -.greatestFiniteMagnitude
+        highlightVisibleRange()
+      }
+
       scrollToBottom()
     }
 
@@ -145,6 +216,15 @@ struct ChatTextView: NSViewRepresentable {
       renderedCount = messages.count
       lastMessageIDs = messages.map(\.id)
 
+      // Update cache
+      onCacheUpdate?(NSAttributedString(attributedString: storage), renderedCount)
+
+      if !currentSearchQuery.isEmpty {
+        highlightedCharRange = NSRange(location: NSNotFound, length: 0)
+        lastHighlightedVisibleOriginY = -.greatestFiniteMagnitude
+        highlightVisibleRange()
+      }
+
       if wasAtBottom || startIndex == 0 {
         scrollToBottom()
       }
@@ -152,10 +232,8 @@ struct ChatTextView: NSViewRepresentable {
 
     func scrollToBottom() {
       guard let textView = textView else { return }
-      guard let layoutManager = textView.layoutManager, let container = textView.textContainer else { return }
-      // Force layout to complete before scrolling
-      layoutManager.ensureLayout(for: container)
       DispatchQueue.main.async {
+        textView.invalidateBottomOffset()
         textView.scrollToEndOfDocument(nil)
       }
     }
@@ -169,6 +247,80 @@ struct ChatTextView: NSViewRepresentable {
       let scrollY = clipView.bounds.origin.y
       let inset = textView?.textContainerInset.height ?? 0
       return scrollY + clipHeight >= docHeight - (inset * 2 + 20)
+    }
+
+    // MARK: - Search Highlighting
+
+    func applySearchHighlights(query: String) {
+      guard let layoutManager = textView?.layoutManager,
+            let storage = textView?.textStorage else { return }
+
+      // Clear all previous highlights when query changes
+      if highlightedCharRange.location != NSNotFound {
+        layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: highlightedCharRange)
+        layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: highlightedCharRange)
+        highlightedCharRange = NSRange(location: NSNotFound, length: 0)
+      }
+
+      currentSearchQuery = query
+      lastHighlightedVisibleOriginY = -.greatestFiniteMagnitude
+
+      if !query.isEmpty {
+        highlightVisibleRange()
+      }
+    }
+
+    func highlightVisibleRange() {
+      guard !currentSearchQuery.isEmpty,
+            let textView = textView,
+            let layoutManager = textView.layoutManager,
+            let textContainer = textView.textContainer,
+            let storage = textView.textStorage,
+            let scrollView = scrollView else { return }
+
+      // Compute a buffer zone: 2x the viewport height centered on the visible area
+      let clipBounds = scrollView.contentView.bounds
+      let viewportH = clipBounds.height
+      let bufferH = viewportH * 2
+      let bufferMinY = max(0, clipBounds.origin.y - bufferH / 2)
+      let bufferMaxY = clipBounds.origin.y + viewportH + bufferH / 2
+      let bufferRect = NSRect(x: 0, y: bufferMinY, width: textView.bounds.width, height: bufferMaxY - bufferMinY)
+
+      // Convert the buffer rect to a character range via the layout manager
+      let glyphRange = layoutManager.glyphRange(forBoundingRect: bufferRect, in: textContainer)
+      let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+
+      guard charRange.length > 0 else { return }
+
+      // Clear previous highlights
+      if highlightedCharRange.location != NSNotFound {
+        layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: highlightedCharRange)
+        layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: highlightedCharRange)
+      }
+
+      // Apply highlights within the buffer zone
+      let highlightBg = NSColor.systemYellow.withAlphaComponent(0.5)
+      let highlightFg = NSColor.black
+      let searchString = storage.string as NSString
+      var searchRange = charRange
+
+      while searchRange.location < NSMaxRange(charRange) && searchRange.length > 0 {
+        let foundRange = searchString.range(
+          of: currentSearchQuery,
+          options: [.caseInsensitive, .literal],
+          range: searchRange
+        )
+        guard foundRange.location != NSNotFound, foundRange.location < NSMaxRange(charRange) else { break }
+
+        layoutManager.addTemporaryAttribute(.backgroundColor, value: highlightBg, forCharacterRange: foundRange)
+        layoutManager.addTemporaryAttribute(.foregroundColor, value: highlightFg, forCharacterRange: foundRange)
+
+        searchRange.location = NSMaxRange(foundRange)
+        searchRange.length = NSMaxRange(charRange) - searchRange.location
+      }
+
+      highlightedCharRange = charRange
+      lastHighlightedVisibleOriginY = clipBounds.origin.y
     }
 
     // MARK: - Message Rendering
@@ -425,9 +577,13 @@ class BottomAnchoredTextView: NSTextView {
     }
   }
 
-  override var textContainerOrigin: NSPoint {
+  /// Cached bottom-anchor offset, recalculated when text or frame changes.
+  private var cachedBottomOffset: CGFloat = 0
+
+  func invalidateBottomOffset() {
     guard let container = textContainer, let layoutManager = layoutManager else {
-      return super.textContainerOrigin
+      cachedBottomOffset = 0
+      return
     }
 
     layoutManager.ensureLayout(for: container)
@@ -436,11 +592,14 @@ class BottomAnchoredTextView: NSTextView {
     let viewHeight = enclosingScrollView?.contentView.bounds.height ?? bounds.height
 
     if contentHeight < viewHeight {
-      let offset = viewHeight - contentHeight
-      return NSPoint(x: textContainerInset.width, y: offset + textContainerInset.height)
+      cachedBottomOffset = viewHeight - contentHeight
+    } else {
+      cachedBottomOffset = 0
     }
+  }
 
-    return NSPoint(x: textContainerInset.width, y: textContainerInset.height)
+  override var textContainerOrigin: NSPoint {
+    return NSPoint(x: textContainerInset.width, y: cachedBottomOffset + textContainerInset.height)
   }
 }
 
@@ -448,7 +607,7 @@ class BottomAnchoredTextView: NSTextView {
 
 /// NSScrollView subclass that pins to the bottom on resize when the user was already scrolled to bottom.
 class BottomPinningScrollView: NSScrollView {
-  weak var pinnedTextView: NSTextView?
+  weak var pinnedTextView: BottomAnchoredTextView?
   private var shouldPinToBottom = true
   private var isAdjusting = false
 
@@ -471,6 +630,7 @@ class BottomPinningScrollView: NSScrollView {
 
   override func tile() {
     super.tile()
+    pinnedTextView?.invalidateBottomOffset()
     let clipHeight = contentView.bounds.height
     let docHeight = documentView?.frame.height ?? 0
     if shouldPinToBottom && docHeight > clipHeight {

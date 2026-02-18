@@ -262,7 +262,7 @@ struct NewsView: View {
           if let poster = selection.articleUsername, let postDate = selection.articleDate {
             HStack(alignment: .firstTextBaseline) {
               Text(poster)
-                .foregroundStyle(.secondary)
+                .fontWeight(.semibold)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .textSelection(.enabled)

@@ -12,7 +12,6 @@ import AppKit
 struct ChatInputField: NSViewRepresentable {
   @Binding var text: String
   @Binding var height: CGFloat
-  var isFocused: Bool = false
   var maxLines: Int = 5
   var onSubmit: (_ announce: Bool) -> Void
 
@@ -70,9 +69,6 @@ struct ChatInputField: NSViewRepresentable {
     if textView.string != text {
       textView.string = text
       context.coordinator.recalculateHeight()
-    }
-    if isFocused, textView.window != nil, textView.window?.firstResponder !== textView {
-      textView.window?.makeFirstResponder(textView)
     }
   }
 
@@ -140,6 +136,15 @@ class ChatInputTextView: NSTextView {
     iv.frame.size = image?.size ?? NSSize(width: 10, height: 12)
     return iv
   }()
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    if window != nil {
+      DispatchQueue.main.async { [weak self] in
+        self?.window?.makeFirstResponder(self)
+      }
+    }
+  }
 
   override var textContainerOrigin: NSPoint {
     return NSPoint(x: leftInset, y: verticalInset)

@@ -17,7 +17,6 @@ struct ChatView: View {
   @State private var searchTask: Task<Void, Never>?
   @State private var stableBannerFileURL: URL?
   @State private var stableBannerIsAnimated: Bool = false
-  @State private var inputFocused: Bool = false
   @State private var inputHeight: CGFloat = 40
 
   var displayedMessages: [ChatMessage] {
@@ -58,7 +57,16 @@ struct ChatView: View {
       VStack(alignment: .leading, spacing: 0) {
 
         // MARK: Chat Text View
-        ChatTextView(messages: displayedMessages)
+        ChatTextView(
+          messages: displayedMessages,
+          searchQuery: debouncedQuery,
+          cachedText: model.chatRenderedText,
+          cachedCount: model.chatRenderedCount,
+          onCacheUpdate: { text, count in
+            model.chatRenderedText = text
+            model.chatRenderedCount = count
+          }
+        )
           .frame(maxWidth: .infinity, maxHeight: .infinity)
           .onChange(of: model.chat.count) {
             if !searchQuery.isEmpty {
@@ -67,7 +75,6 @@ struct ChatView: View {
             model.markPublicChatAsRead()
           }
           .onAppear {
-            inputFocused = true
             model.markPublicChatAsRead()
           }
 
@@ -85,8 +92,13 @@ struct ChatView: View {
           debouncedQuery = ""
           searchResults = []
         } else {
+          let delay: Int = switch searchQuery.count {
+          case 1: 100
+          case 2: 100
+          default: 50
+          }
           searchTask = Task {
-            try? await Task.sleep(for: .milliseconds(200))
+            try? await Task.sleep(for: .milliseconds(delay))
             guard !Task.isCancelled else { return }
             performSearch()
           }
@@ -108,7 +120,6 @@ struct ChatView: View {
     return ChatInputField(
       text: $bindModel.chatInput,
       height: $inputHeight,
-      isFocused: inputFocused,
       onSubmit: { announce in
         if !model.chatInput.isEmpty {
           let message = model.chatInput
