@@ -79,7 +79,7 @@ struct ServerView: View {
   @Environment(\.modelContext) private var modelContext
   
   @Binding var server: Server
-  
+
   @State private var model: HotlineState = HotlineState()
   @State private var state: ServerState = ServerState(selection: .chat)
   @State private var connectAddress: String = ""
@@ -213,16 +213,20 @@ struct ServerView: View {
       self.state.serverName = self.model.serverTitle
     }
     .onAppear {
-      self.connectAddress = self.server.displayAddress
-      self.connectLogin = self.server.login
-      self.connectPassword = self.server.password
-      
+      self.syncFieldsFromServer()
+
       // Connect to server automatically unless the option key is held down.
       if !NSEvent.modifierFlags.contains(.option) {
         self.connectToServer()
       }
-      
-      self.connectionDisplayed = true
+    }
+    .onChange(of: self.server) {
+      // During window restoration, the binding may update after the view
+      // is created with the defaultValue. Sync once when the real value arrives.
+      if !self.connectionDisplayed && !self.server.address.isEmpty {
+        self.syncFieldsFromServer()
+        self.connectionDisplayed = true
+      }
     }
     .alert("Something Went Wrong", isPresented: self.$model.errorDisplayed) {
       Button("OK") {}
@@ -387,6 +391,12 @@ struct ServerView: View {
   
   // MARK: -
   
+  private func syncFieldsFromServer() {
+    self.connectAddress = self.server.displayAddress
+    self.connectLogin = self.server.login
+    self.connectPassword = self.server.password
+  }
+
   @MainActor func connectToServer() {
     guard !self.server.address.isEmpty else {
       return
