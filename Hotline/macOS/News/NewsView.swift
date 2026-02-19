@@ -41,7 +41,6 @@ struct NewsView: View {
           .hide(splitHidden)
           .styling(color: colorScheme == .dark ? .black : Splitter.defaultColor, inset: 0, visibleThickness: 0.5, invisibleThickness: 5, hideSplitter: true)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
-          .background(Color(nsColor: .textBackgroundColor))
         }
       }
     }

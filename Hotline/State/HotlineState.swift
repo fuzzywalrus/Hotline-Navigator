@@ -435,9 +435,10 @@ class HotlineState: Equatable {
   @ObservationIgnored private var chatSessionKey: ChatStore.SessionKey?
   @ObservationIgnored private var restoredChatSessionKey: ChatStore.SessionKey?
   @ObservationIgnored private var chatHistoryObserver: NSObjectProtocol?
+  @ObservationIgnored private var serverHistoryObserver: NSObjectProtocol?
   @ObservationIgnored private var lastPersistedMessageType: ChatMessageType?
   @ObservationIgnored private var lastPersistedMessageDate: Date?
-  
+
   // MARK: - Initialization
 
   init() {
@@ -450,10 +451,29 @@ class HotlineState: Equatable {
         self?.handleChatHistoryCleared()
       }
     }
+
+    self.serverHistoryObserver = NotificationCenter.default.addObserver(
+      forName: ChatStore.serverHistoryClearedNotification,
+      object: nil,
+      queue: .main
+    ) { notification in
+      Task { @MainActor [weak self] in
+        guard let self,
+              let address = notification.userInfo?["address"] as? String,
+              let port = notification.userInfo?["port"] as? Int else { return }
+        let clearedKey = ChatStore.SessionKey(address: address, port: port)
+        if self.chatSessionKey == clearedKey {
+          self.handleChatHistoryCleared()
+        }
+      }
+    }
   }
 
   deinit {
     if let observer = self.chatHistoryObserver {
+      NotificationCenter.default.removeObserver(observer)
+    }
+    if let observer = self.serverHistoryObserver {
       NotificationCenter.default.removeObserver(observer)
     }
   }
@@ -572,8 +592,13 @@ class HotlineState: Equatable {
       self.status = .loggedIn
       print("HotlineState.completeLogin(): Status set to loggedIn")
 
-      // Session divider is deferred to restoreChatHistory where we have full context
-      // to decide based on time gap between last stored message and now.
+      // Record session divider and a "joined" message for yourself.
+      let divider = ChatMessage(text: "", type: .signOut, date: Date())
+      self.recordChatMessage(divider)
+
+      let username = Prefs.shared.username
+      let joinedMessage = ChatMessage(text: "\(username) joined", type: .joined, date: Date())
+      self.recordChatMessage(joinedMessage)
     }
 
     #if os(macOS)
@@ -648,8 +673,10 @@ class HotlineState: Equatable {
 
     // Record disconnect in chat history
     if self.status == .loggedIn {
-      let message = ChatMessage(text: "Disconnected", type: .signOut, date: Date())
-      self.recordChatMessage(message, persist: true, display: false)
+      // Record a "left" message for yourself.
+      let username = Prefs.shared.username
+      let leftMessage = ChatMessage(text: "\(username) left", type: .left, date: Date())
+      self.recordChatMessage(leftMessage, persist: true, display: false)
     }
 
     print("HotlineState: Cancelling banner and downloads...")
@@ -2263,44 +2290,13 @@ class HotlineState: Equatable {
         let hasContent = historyMessages.contains { $0.type != .signOut }
         let effectiveHistory = hasContent ? historyMessages : []
 
-        // Add a session divider if there's a significant time gap between the last
-        // stored message and the start of the new session (first live message or now).
-        let recentThreshold: TimeInterval = 5 * 60 // 5 minutes
-        let lastHistoryDate = effectiveHistory.last?.date
-        let newSessionDate = currentMessages.first?.date ?? Date()
-        let gap = lastHistoryDate.map { newSessionDate.timeIntervalSince($0) }
-        let needsDivider = !effectiveHistory.isEmpty
-          && effectiveHistory.last?.type != .signOut
-          && (gap ?? .greatestFiniteMagnitude) >= recentThreshold
-
-        var divider: [ChatMessage] = []
-        if needsDivider {
-          let dividerMessage = ChatMessage(text: "", type: .signOut, date: Date())
-          divider.append(dividerMessage)
-
-          // Persist the divider so it survives the next restart
-          if let sessionKey = self.chatSessionKey {
-            let entry = ChatStore.Entry(
-              id: dividerMessage.id,
-              body: dividerMessage.text,
-              username: dividerMessage.username,
-              type: dividerMessage.type.storageKey,
-              date: dividerMessage.date
-            )
-            let serverName = self.serverName ?? self.server?.name
-            Task {
-              await ChatStore.shared.append(entry: entry, for: sessionKey, serverName: serverName)
-            }
-          }
-        }
-
-        let combined = effectiveHistory + divider + currentMessages
+        let combined = effectiveHistory + currentMessages
         if combined.count > Self.maxChatMessages {
           self.chat = Array(combined.suffix(Self.maxChatMessages))
         } else {
           self.chat = combined
         }
-        let lastMessage = divider.last ?? historyMessages.last
+        let lastMessage = historyMessages.last
         self.lastPersistedMessageType = lastMessage?.type
         self.lastPersistedMessageDate = lastMessage?.date
         self.unreadPublicChat = false

@@ -25,7 +25,11 @@ struct ChatTextView: NSViewRepresentable {
     textView.textContainerInset = NSSize(width: 24, height: 24)
     textView.isAutomaticLinkDetectionEnabled = false
     textView.font = .systemFont(ofSize: NSFont.systemFontSize)
+    textView.isVerticallyResizable = true
+    textView.isHorizontallyResizable = false
     textView.autoresizingMask = [.width]
+    textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+    textView.textContainer?.widthTracksTextView = true
     
     // Link attributes: asset catalog color + pointing hand cursor, no underline
     textView.linkTextAttributes = [
@@ -34,12 +38,14 @@ struct ChatTextView: NSViewRepresentable {
     ]
     
     let scrollView = BottomPinningScrollView()
+    scrollView.contentView = BottomClipView()
     scrollView.documentView = textView
     scrollView.hasVerticalScroller = true
     scrollView.hasHorizontalScroller = false
     scrollView.drawsBackground = false
     scrollView.autohidesScrollers = true
-    scrollView.pinnedTextView = textView
+    scrollView.scrollerStyle = .overlay
+    scrollView.automaticallyAdjustsContentInsets = false
     
     context.coordinator.textView = textView
     context.coordinator.scrollView = scrollView
@@ -131,7 +137,6 @@ struct ChatTextView: NSViewRepresentable {
         
         self.renderedCount = cachedCount
         self.lastMessageIDs = messages.map(\.id)
-        textView.invalidateBottomOffset()
         textView.needsDisplay = true
         self.scrollToBottom()
         return
@@ -149,7 +154,6 @@ struct ChatTextView: NSViewRepresentable {
       
       self.renderedCount = messages.count
       self.lastMessageIDs = messages.map(\.id)
-      textView.invalidateBottomOffset()
       textView.needsDisplay = true
       
       // Save to cache
@@ -204,7 +208,6 @@ struct ChatTextView: NSViewRepresentable {
         textView.pendingScrollToBottom = true
       }
       DispatchQueue.main.async {
-        textView.invalidateBottomOffset()
         textView.scrollToEndOfDocument(nil)
         if suppress {
           textView.pendingScrollToBottom = false
@@ -220,8 +223,7 @@ struct ChatTextView: NSViewRepresentable {
       let clipHeight = clipView.bounds.height
       if docHeight <= clipHeight { return true }
       let scrollY = clipView.bounds.origin.y
-      let inset = self.textView?.textContainerInset.height ?? 0
-      return scrollY + clipHeight >= docHeight - (inset * 2 + 20)
+      return scrollY + clipHeight >= docHeight - 1
     }
     
     // MARK: - Search Highlighting
@@ -359,11 +361,12 @@ struct ChatTextView: NSViewRepresentable {
     
     private func renderChatMessage(_ msg: ChatMessage) -> NSAttributedString {
       let result = NSMutableAttributedString()
-      
+
       // Hanging indent: first line flush, wrapped lines indented
       let paraStyle = NSMutableParagraphStyle()
+//      paraStyle.alignment = .justified
       paraStyle.firstLineHeadIndent = 0
-      paraStyle.headIndent = 12
+      paraStyle.headIndent = 16
       paraStyle.lineSpacing = 3
       paraStyle.paragraphSpacing = 8
       
@@ -439,14 +442,17 @@ struct ChatTextView: NSViewRepresentable {
       paraStyle.paragraphSpacingBefore = 10 // + 8 from preceding message's paragraphSpacing = 18
       paraStyle.paragraphSpacing = 18
       paraStyle.alignment = .center
-      
-      let attachment = NSTextAttachment()
-      let dateText = ChatDividerCell.formatDate(msg.date)
-      let cell = ChatDividerCell(dateText: dateText)
-      attachment.attachmentCell = cell
-      
-      let result = NSMutableAttributedString(attachment: attachment)
-      result.addAttribute(.paragraphStyle, value: paraStyle, range: NSRange(location: 0, length: result.length))
+
+      let dateText = formatChatDividerDate(msg.date)
+      let result = NSMutableAttributedString(
+        string: dateText,
+        attributes: [
+          .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+          .foregroundColor: NSColor.secondaryLabelColor,
+          .paragraphStyle: paraStyle,
+        ]
+      )
+      result.addAttribute(BottomAnchoredTextView.chatDividerKey, value: true, range: NSRange(location: 0, length: result.length))
       return result
     }
     
@@ -501,15 +507,32 @@ struct ChatTextView: NSViewRepresentable {
 /// NSTextView subclass that pushes content to the bottom when content is shorter than the view.
 class BottomAnchoredTextView: NSTextView {
   static let serverMessageKey = NSAttributedString.Key("serverMessageBackground")
+  static let chatDividerKey = NSAttributedString.Key("chatDividerLine")
   private var hoveredLinkRange: NSRange?
 
   private static let bubblePaddingV: CGFloat = 10
   private static let bubbleCornerRadius: CGFloat = 10
 
+  /// The height of the toolbar/title bar overlapping this scroll view.
+  var toolbarOverlap: CGFloat {
+    guard let scrollView = self.enclosingScrollView,
+          let window = scrollView.window else { return 0 }
+    let scrollViewRect = scrollView.convert(scrollView.bounds, to: nil)
+    return max(0, scrollViewRect.maxY - window.contentLayoutRect.maxY)
+  }
+
+  /// Top padding: at least the configured inset, but enough to clear the toolbar.
+  var topPadding: CGFloat {
+    max(self.textContainerInset.height, self.toolbarOverlap)
+  }
+
   /// Whether the view has been laid out with a valid frame at least once.
   /// Suppresses drawing until the bottom offset can be correctly computed,
   /// preventing a flash where content appears at the top before jumping to the bottom.
   private var hasValidFrame = false
+
+  /// Re-entrancy guard for `updateBottomOffset` ↔ `setFrameSize`.
+  private var isUpdatingOffset = false
 
   /// Suppresses drawing during the initial deferred scroll-to-bottom so the user
   /// never sees a frame of un-scrolled content on first load. Only used once;
@@ -520,11 +543,102 @@ class BottomAnchoredTextView: NSTextView {
   /// Whether the view has completed at least one full draw cycle.
   private(set) var hasRenderedOnce = false
 
+  /// Extra offset added to `textContainerOrigin.y` to push content to the bottom
+  /// when the text view is taller than its natural content height.
+  private var cachedBottomOffset: CGFloat = 0
+
+  /// The minimum frame height needed: topPadding + usedRect + bottomPadding.
+  /// Set by `updateBottomOffset` and enforced by `setFrameSize` so NSTextView's
+  /// auto-sizing can't shrink the frame below what we need.
+  private var minimumContentHeight: CGFloat = 0
+
+  override var textContainerOrigin: NSPoint {
+    return NSPoint(x: self.textContainerInset.width,
+                   y: self.cachedBottomOffset + self.topPadding)
+  }
+
   override func draw(_ dirtyRect: NSRect) {
     guard self.hasValidFrame, !self.pendingScrollToBottom else { return }
     self.drawServerMessageBackgrounds(in: dirtyRect)
     super.draw(dirtyRect)
+    self.drawChatDividerLines(in: dirtyRect)
     self.hasRenderedOnce = true
+  }
+
+  override func viewWillDraw() {
+    super.viewWillDraw()
+    guard !self.pendingScrollToBottom else { return }
+    self.updateBottomOffset()
+    self.hasValidFrame = true
+  }
+
+  override func setFrameSize(_ newSize: NSSize) {
+    var size = newSize
+    // Enforce cached minimum height so NSTextView's auto-sizing can't shrink
+    // the frame below what we need (topPadding + content + bottomPadding).
+    // We intentionally do NOT query the layout manager here — doing so during
+    // live resize interferes with the layout/resize cycle and blocks text reflow.
+    size.height = max(size.height, self.minimumContentHeight)
+    // Ensure the text view always fills the clip view so there's no gap below content.
+    // When content is short, cachedBottomOffset pushes text to the bottom.
+    if let clipHeight = self.enclosingScrollView?.contentView.bounds.height {
+      size.height = max(size.height, clipHeight)
+    }
+    // Avoid no-op calls that could loop with auto-sizing.
+    guard abs(size.width - self.frame.width) > 0.5
+       || abs(size.height - self.frame.height) > 0.5 else { return }
+    super.setFrameSize(size)
+    // Do NOT call updateBottomOffset() here — forcing layout (ensureLayout)
+    // during the resize/tile chain prevents text from reflowing during live
+    // window resize. viewWillDraw calls updateBottomOffset on each draw frame.
+  }
+
+  /// Recomputes `cachedBottomOffset` based on the current layout.
+  /// When the text view frame is taller than the natural content height
+  /// (because of the clip-height clamp), this pushes the text container
+  /// down so content appears at the bottom.
+  func updateBottomOffset() {
+    guard !self.isUpdatingOffset else { return }
+    self.isUpdatingOffset = true
+    defer { self.isUpdatingOffset = false }
+
+    guard let lm = self.layoutManager, let tc = self.textContainer else { return }
+    lm.ensureLayout(for: tc)
+
+    let usedHeight = lm.usedRect(for: tc).height
+    let topPad = self.topPadding
+    let bottomPad = self.textContainerInset.height
+    let naturalHeight = topPad + usedHeight + bottomPad
+
+    // Cache so setFrameSize can enforce without querying the layout manager.
+    self.minimumContentHeight = naturalHeight
+
+    let clipHeight = self.enclosingScrollView?.contentView.bounds.height ?? self.bounds.height
+    let desiredHeight = max(naturalHeight, clipHeight)
+
+    let newOffset = (desiredHeight > naturalHeight) ? (desiredHeight - naturalHeight) : 0
+    let offsetChanged = abs(self.cachedBottomOffset - newOffset) > 0.5
+    let heightChanged = abs(self.frame.height - desiredHeight) > 0.5
+
+    self.cachedBottomOffset = newOffset
+
+    if heightChanged {
+      self.setFrameSize(NSSize(width: self.frame.width, height: desiredHeight))
+    }
+    if offsetChanged || heightChanged {
+      self.needsDisplay = true
+    }
+  }
+
+  override func viewDidEndLiveResize() {
+    // Workaround: NSTextView internally calls _adjustedCenteredScrollRectToVisible:forceCenter:
+    // during viewDidEndLiveResize, which computes an incorrect visible rect when
+    // textContainerInset is non-zero, causing a jarring scroll jump. Temporarily clearing
+    // the inset prevents this.
+    let savedInset = self.textContainerInset
+    self.textContainerInset = .zero
+    super.viewDidEndLiveResize()
+    self.textContainerInset = savedInset
   }
 
   /// Draws rounded-rect backgrounds behind server messages, before the text is drawn.
@@ -555,6 +669,56 @@ class BottomAnchoredTextView: NSTextView {
 
       NSColor.textColor.withAlphaComponent(0.06).setFill()
       NSBezierPath(roundedRect: bgRect, xRadius: Self.bubbleCornerRadius, yRadius: Self.bubbleCornerRadius).fill()
+    }
+  }
+
+  /// Draws horizontal divider lines flanking the centered date text for sign-out messages.
+  /// Drawn after the text so lines don't obscure it.
+  private func drawChatDividerLines(in dirtyRect: NSRect) {
+    guard let storage = self.textStorage,
+          let layoutManager = self.layoutManager,
+          let container = self.textContainer else { return }
+
+    let origin = self.textContainerOrigin
+    let fullRange = NSRange(location: 0, length: storage.length)
+    let gap: CGFloat = 8
+
+    storage.enumerateAttribute(Self.chatDividerKey, in: fullRange, options: []) { value, range, _ in
+      guard value != nil else { return }
+
+      let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+      let textRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: container)
+
+      let lineY = textRect.midY + origin.y
+      let containerWidth = container.size.width
+      let textMinX = textRect.minX + origin.x
+      let textMaxX = textRect.maxX + origin.x
+
+      // Check if any part of the line area intersects the dirty rect
+      let lineArea = NSRect(x: origin.x, y: lineY - 1, width: containerWidth, height: 2)
+      guard lineArea.intersects(dirtyRect) else { return }
+
+      NSColor.secondaryLabelColor.withAlphaComponent(0.25).setStroke()
+      let path = NSBezierPath()
+      path.lineWidth = 0.5
+
+      // Left line
+      let leftStart = origin.x
+      let leftEnd = textMinX - gap
+      if leftEnd > leftStart {
+        path.move(to: NSPoint(x: leftStart, y: lineY))
+        path.line(to: NSPoint(x: leftEnd, y: lineY))
+      }
+
+      // Right line
+      let rightStart = textMaxX + gap
+      let rightEnd = origin.x + containerWidth
+      if rightEnd > rightStart {
+        path.move(to: NSPoint(x: rightStart, y: lineY))
+        path.line(to: NSPoint(x: rightEnd, y: lineY))
+      }
+
+      path.stroke()
     }
   }
   
@@ -610,88 +774,96 @@ class BottomAnchoredTextView: NSTextView {
     }
   }
   
-  /// Cached bottom-anchor offset, recalculated when text or frame changes.
-  var cachedBottomOffset: CGFloat = 0
-  
-  func invalidateBottomOffset(ensureLayout: Bool = true) {
-    guard let container = self.textContainer, let layoutManager = self.layoutManager else {
-      return
+}
+
+// MARK: - BottomClipView
+
+/// NSClipView subclass that prevents scrolling past the document bottom
+/// when content fits entirely in the viewport.
+class BottomClipView: NSClipView {
+  override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
+    var constrained = super.constrainBoundsRect(proposedBounds)
+    let docHeight = self.documentView?.frame.height ?? 0
+    let clipHeight = self.bounds.height
+    // When content fits entirely, pin the origin to zero in both directions.
+    // Without this, mouse wheel scrolling can push the content up or down
+    // within the viewport even though there's nothing to scroll to.
+    // Trackpad rubber-banding is handled by super and snaps back on its own.
+    if docHeight <= clipHeight {
+      constrained.origin.y = 0
     }
-
-    let clipHeight = self.enclosingScrollView?.contentView.bounds.height ?? self.bounds.height
-    let insets = self.enclosingScrollView?.contentInsets ?? NSEdgeInsets()
-    let visibleHeight = clipHeight - insets.top - insets.bottom
-
-    // Don't compute the offset until the view has been laid out with a real frame.
-    guard visibleHeight > 0 else { return }
-
-    if ensureLayout {
-      layoutManager.ensureLayout(for: container)
-    }
-    let usedRect = layoutManager.usedRect(for: container)
-    let contentHeight = usedRect.height + self.textContainerInset.height * 2
-
-    let newOffset: CGFloat = contentHeight < visibleHeight ? visibleHeight - contentHeight : 0
-
-    let wasReady = self.hasValidFrame
-    self.hasValidFrame = true
-
-    if abs(newOffset - self.cachedBottomOffset) > 0.5 {
-      self.cachedBottomOffset = newOffset
-      self.needsDisplay = true
-    } else if !wasReady {
-      self.needsDisplay = true
-    }
-  }
-  
-  override var textContainerOrigin: NSPoint {
-    return NSPoint(x: self.textContainerInset.width, y: self.cachedBottomOffset + self.textContainerInset.height)
+    return constrained
   }
 }
 
 // MARK: - BottomPinningScrollView
 
-/// NSScrollView subclass that pins to the bottom on resize when the user was already scrolled to bottom.
+/// NSScrollView subclass that preserves pin-to-bottom across resize
+/// and zeros SwiftUI-injected content insets.
 class BottomPinningScrollView: NSScrollView {
-  weak var pinnedTextView: BottomAnchoredTextView?
-  private var shouldPinToBottom = true
-  private var isAdjusting = false
-  
+  fileprivate var shouldPinToBottom = true
+  fileprivate var isAdjusting = false
+
   private func isAtBottom() -> Bool {
     let clipHeight = self.contentView.bounds.height
     guard clipHeight > 0 else { return self.shouldPinToBottom }
     let docHeight = self.documentView?.frame.height ?? 0
     if docHeight <= clipHeight { return true }
     let scrollY = self.contentView.bounds.origin.y
-    let inset = self.pinnedTextView?.textContainerInset.height ?? 0
-    return scrollY + clipHeight >= docHeight - (inset * 2 + 20)
+    return scrollY + clipHeight >= docHeight - 1
   }
-  
+
   override func setFrameSize(_ newSize: NSSize) {
     self.shouldPinToBottom = self.isAtBottom()
     self.isAdjusting = true
     super.setFrameSize(newSize)
     self.isAdjusting = false
   }
-  
+
   override func tile() {
+    // Zero out the TOP content inset only. SwiftUI's .ignoresSafeArea injects
+    // a top inset for the toolbar that we don't want — we handle that gap via
+    // topPadding on the text view instead. The BOTTOM inset comes from
+    // SwiftUI's .safeAreaInset(edge: .bottom) for the chat input bar and must
+    // be preserved so the clip view height correctly reflects the visible area.
+    let insets = self.contentInsets
+    if insets.top != 0 {
+      self.contentInsets = NSEdgeInsets(top: 0, left: insets.left, bottom: insets.bottom, right: insets.right)
+    }
+
     super.tile()
-    let clipHeight = self.contentView.bounds.height
+
     let docHeight = self.documentView?.frame.height ?? 0
-    if self.shouldPinToBottom && docHeight > clipHeight {
+    let clipHeight = self.contentView.bounds.height
+
+    if docHeight <= clipHeight {
+      // Content fits entirely — ensure the clip view origin is at zero.
+      // constrainBoundsRect on BottomClipView prevents scroll gestures from
+      // moving it, but reset it here too in case layout changed it.
+      if self.contentView.bounds.origin.y != 0 {
+        self.isAdjusting = true
+        self.contentView.setBoundsOrigin(.zero)
+        self.isAdjusting = false
+      }
+    } else if self.shouldPinToBottom {
       self.isAdjusting = true
       self.contentView.setBoundsOrigin(NSPoint(x: 0, y: docHeight - clipHeight))
       self.isAdjusting = false
     }
-    // Defer offset recalculation to avoid Metal validation crash from accessing
-    // layout manager state during tile(). The view still draws using the previous
-    // cachedBottomOffset, which is close enough during resize (0 for tall content,
-    // slightly stale for short content). The deferred call corrects it next frame.
-    DispatchQueue.main.async { [weak self] in
-      self?.pinnedTextView?.invalidateBottomOffset()
+  }
+
+  override func viewDidEndLiveResize() {
+    let wasAtBottom = self.shouldPinToBottom
+    super.viewDidEndLiveResize()
+    // After live resize, deferred layout may change document height.
+    // reflectScrolledClipView can set shouldPinToBottom = false during
+    // the relayout because the scroll position hasn't caught up yet.
+    // Restore it so the next tile() re-pins correctly.
+    if wasAtBottom {
+      self.shouldPinToBottom = true
     }
   }
-  
+
   override func reflectScrolledClipView(_ cView: NSClipView) {
     super.reflectScrolledClipView(cView)
     if !self.isAdjusting {
@@ -700,92 +872,28 @@ class BottomPinningScrollView: NSScrollView {
   }
 }
 
-// MARK: - Chat Divider Cell
+// MARK: - Chat Divider Date Formatting
 
-/// Custom attachment cell that draws horizontal divider lines flanking a centered date label.
-fileprivate class ChatDividerCell: NSTextAttachmentCell {
-  private let dateText: String
-  private let dateFont = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
-  private let dateColor = NSColor.secondaryLabelColor
-  
-  init(dateText: String) {
-    self.dateText = dateText
-    super.init()
-  }
-  
-  required init(coder: NSCoder) {
-    fatalError("init(coder:) has not been implemented")
-  }
-  
-  private var textAttributes: [NSAttributedString.Key: Any] {
-    [
-      .font: self.dateFont,
-      .foregroundColor: self.dateColor,
-    ]
-  }
-  
-  override func cellSize() -> NSSize {
-    let textSize = (self.dateText as NSString).size(withAttributes: self.textAttributes)
-    return NSSize(width: 10000, height: textSize.height + 4)
-  }
-  
-  override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
-    let textSize = (self.dateText as NSString).size(withAttributes: self.textAttributes)
-    let textX = (cellFrame.width - textSize.width) / 2
-    let textY = (cellFrame.height - textSize.height) / 2
-    
-    // Draw text
-    let textRect = NSRect(x: cellFrame.minX + textX, y: cellFrame.minY + textY, width: textSize.width, height: textSize.height)
-    (self.dateText as NSString).draw(in: textRect, withAttributes: self.textAttributes)
-    
-    // Draw lines
-    let lineY = cellFrame.midY
-    let lineInset: CGFloat = 0
-    let gap: CGFloat = 8
-    
-    self.dateColor.withAlphaComponent(0.25).setStroke()
-    let path = NSBezierPath()
-    path.lineWidth = 0.5
-    
-    // Left line
-    let leftEnd = cellFrame.minX + textX - gap
-    if leftEnd > cellFrame.minX + lineInset {
-      path.move(to: NSPoint(x: cellFrame.minX + lineInset, y: lineY))
-      path.line(to: NSPoint(x: leftEnd, y: lineY))
+private func formatChatDividerDate(_ date: Date) -> String {
+  let day = Calendar.current.component(.day, from: date)
+  let suffix: String
+  switch day {
+  case 11, 12, 13: suffix = "th"
+  default:
+    switch day % 10 {
+    case 1: suffix = "st"
+    case 2: suffix = "nd"
+    case 3: suffix = "rd"
+    default: suffix = "th"
     }
-    
-    // Right line
-    let rightStart = cellFrame.minX + textX + textSize.width + gap
-    let rightEnd = cellFrame.maxX - lineInset
-    if rightEnd > rightStart {
-      path.move(to: NSPoint(x: rightStart, y: lineY))
-      path.line(to: NSPoint(x: rightEnd, y: lineY))
-    }
-    
-    path.stroke()
   }
-  
-  static func formatDate(_ date: Date) -> String {
-    let day = Calendar.current.component(.day, from: date)
-    let suffix: String
-    switch day {
-    case 11, 12, 13: suffix = "th"
-    default:
-      switch day % 10 {
-      case 1: suffix = "st"
-      case 2: suffix = "nd"
-      case 3: suffix = "rd"
-      default: suffix = "th"
-      }
-    }
-    
-    let isCurrentYear = Calendar.current.component(.year, from: date) == Calendar.current.component(.year, from: Date())
-    let f = DateFormatter()
-    f.dateFormat = isCurrentYear
-    ? "MMMM d'\(suffix)' \u{2022} h:mm a"
-    : "MMMM d'\(suffix)', yyyy \u{2022} h:mm a"
-    return f.string(from: date)
-  }
+
+  let isCurrentYear = Calendar.current.component(.year, from: date) == Calendar.current.component(.year, from: Date())
+  let f = DateFormatter()
+  f.dateFormat = isCurrentYear
+  ? "MMMM d'\(suffix)' \u{2022} h:mm a"
+  : "MMMM d'\(suffix)', yyyy \u{2022} h:mm a"
+  return f.string(from: date)
 }
 
 // MARK: - Preview

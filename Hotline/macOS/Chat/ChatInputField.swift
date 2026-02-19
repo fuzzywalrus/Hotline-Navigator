@@ -33,6 +33,7 @@ struct ChatInputField: NSViewRepresentable {
     textView.isAutomaticQuoteSubstitutionEnabled = false
     textView.isAutomaticDashSubstitutionEnabled = false
     textView.isAutomaticTextReplacementEnabled = false
+    textView.inlinePredictionType = .yes
     textView.allowsUndo = true
     textView.font = .systemFont(ofSize: NSFont.systemFontSize)
     textView.textColor = .textColor
@@ -73,10 +74,15 @@ struct ChatInputField: NSViewRepresentable {
   }
   
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
+    context.coordinator.parent = self
     guard let textView = context.coordinator.textView else { return }
     if textView.string != self.text {
       textView.string = self.text
-      context.coordinator.recalculateHeight()
+      // Defer recalculation so the @Binding height update is not dropped
+      // by SwiftUI (setting state during an update pass can be silently ignored).
+      DispatchQueue.main.async {
+        context.coordinator.recalculateHeight()
+      }
     }
   }
   

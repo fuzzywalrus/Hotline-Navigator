@@ -154,11 +154,11 @@ struct Application: App {
     .commandsRemoved() // Remove About that was automatically added to Window menu.
     .commands {
       CommandGroup(replacing: CommandGroupPlacement.appInfo) {
-        Button("About Hotline") {
+        Button("About Hotline", systemImage: "info.circle") {
           openWindow(id: "about")
         }
                 
-        Button("Check for Updates...") {
+        Button("Check for Updates...", systemImage: "questionmark.diamond") {
           Task {
             await AppUpdate.shared.checkForUpdatesManually()
           }
@@ -184,7 +184,6 @@ struct Application: App {
     } defaultValue: {
       Server(name: nil, description: nil, address: "")
     }
-    .windowToolbarStyle(.unified)
 //    .windowStyle(.hiddenTitleBar)
     .defaultSize(width: 780, height: 640)
     .defaultPosition(.center)
@@ -197,7 +196,7 @@ struct Application: App {
     }
     .commands {
       CommandGroup(replacing: .newItem) {
-        Button("Connect to Server...") {
+        Button("Connect to Server...", systemImage: "globe.americas.fill") {
           self.openWindow(id: "server")
         }
         .keyboardShortcut(.init("K"), modifiers: .command)
@@ -210,25 +209,25 @@ struct Application: App {
       }
       CommandGroup(after: .help) {
         Divider()
-        Button("Request Feature...") {
+        Button("Request Feature...", systemImage: "sparkles.2") {
           if let url = URL(string: "https://github.com/mierau/hotline/issues/new?labels=enhancement") {
             self.openURL(url)
           }
         }
-        Button("Report Bug...") {
+        Button("Report Bug...", systemImage: "ladybug") {
           if let url = URL(string: "https://github.com/mierau/hotline/issues/new?labels=bug") {
             self.openURL(url)
           }
         }
         Divider()
-        Button("Open Latest Release Page...") {
+        Button("View Latest Release...", systemImage: "app.gift") {
           if let url = URL(string: "https://github.com/mierau/hotline/releases/latest") {
             self.openURL(url)
           }
         }
       }
       CommandMenu("Server") {
-        Button("Connect") {
+        Button("Connect", systemImage: "globe.americas.fill") {
           guard let selection else {
             return
           }
@@ -236,7 +235,8 @@ struct Application: App {
         }
         .disabled(selection == nil || selection?.server == nil)
         .keyboardShortcut(.downArrow, modifiers: .command)
-        Button("Disconnect") {
+        
+        Button("Disconnect", systemImage: "xmark") {
           if let hotline = activeHotline {
             Task {
               await hotline.disconnect()
@@ -247,7 +247,7 @@ struct Application: App {
         
         Divider()
         
-        Button("Broadcast Message...") {
+        Button("Broadcast Message...", systemImage: "megaphone") {
           activeServerState?.broadcastShown = true
         }
         .disabled(activeHotline?.access?.contains(.canBroadcast) != true)
@@ -255,22 +255,25 @@ struct Application: App {
         
         Divider()
         
-        Button("Chat") {
+        Button("Chat", systemImage: "bubble.left") {
           activeServerState?.selection = .chat
         }
         .disabled(activeHotline?.status != .loggedIn)
         .keyboardShortcut(.init("1"), modifiers: .command)
-        Button("Board") {
+        
+        Button("Board", systemImage: "pin") {
           activeServerState?.selection = .board
         }
         .disabled(activeHotline?.status != .loggedIn)
         .keyboardShortcut(.init("2"), modifiers: .command)
-        Button("News") {
+        
+        Button("News", systemImage: "newspaper") {
           activeServerState?.selection = .news
         }
         .disabled(activeHotline?.status != .loggedIn || (activeHotline?.serverVersion ?? 0) < 151)
         .keyboardShortcut(.init("3"), modifiers: .command)
-        Button("Files") {
+        
+        Button("Files", systemImage: "folder") {
           activeServerState?.selection = .files
         }
         .disabled(activeHotline?.status != .loggedIn)
@@ -278,7 +281,7 @@ struct Application: App {
         
         Divider()
         
-        Button("Manage Accounts...") {
+        Button("Manage Accounts...", systemImage: "person.2") {
           activeServerState?.accountsShown = true
         }
         .disabled(activeHotline?.status != .loggedIn || activeHotline?.access?.contains(.canOpenUsers) != true)

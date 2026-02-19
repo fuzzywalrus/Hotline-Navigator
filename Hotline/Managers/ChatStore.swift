@@ -4,6 +4,7 @@ import SQLite3
 actor ChatStore {
   static let shared = ChatStore()
   static let historyClearedNotification = Notification.Name("ChatStoreHistoryCleared")
+  static let serverHistoryClearedNotification = Notification.Name("ChatStoreServerHistoryCleared")
 
   struct SessionKey: Hashable {
     let address: String
@@ -12,12 +13,14 @@ actor ChatStore {
     var identifier: String { "\(address):\(port)" }
   }
 
-  struct Metadata: Codable {
+  struct Metadata: Codable, Identifiable {
     let address: String
     let port: Int
     var serverName: String?
     var createdAt: Date
     var updatedAt: Date
+
+    var id: String { "\(address):\(port)" }
 
     mutating func update(serverName: String?, timestamp: Date) {
       if let serverName, !serverName.isEmpty {
@@ -25,6 +28,13 @@ actor ChatStore {
       }
       self.updatedAt = timestamp
     }
+  }
+
+  struct ServerListing: Identifiable {
+    let metadata: Metadata
+    let entryCount: Int
+
+    var id: String { metadata.id }
   }
 
   struct EntryMetadata: Codable {
@@ -164,6 +174,82 @@ actor ChatStore {
 
     await MainActor.run {
       NotificationCenter.default.post(name: Self.historyClearedNotification, object: nil)
+    }
+  }
+
+  func listServers() async -> [ServerListing] {
+    do {
+      try openIfNeeded()
+    } catch {
+      print("ChatStore: failed to list servers —", error)
+      return []
+    }
+
+    var results: [ServerListing] = []
+    var stmt: OpaquePointer?
+    let sql = """
+      SELECT s.address, s.port, s.serverName, s.createdAt, s.updatedAt, COUNT(e.id)
+      FROM servers s
+      LEFT JOIN entries e ON e.serverId = s.id
+      GROUP BY s.id
+      ORDER BY s.updatedAt DESC
+      """
+
+    guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+      print("ChatStore: failed to prepare listServers —", errorMessage())
+      return []
+    }
+    defer { sqlite3_finalize(stmt) }
+
+    while sqlite3_step(stmt) == SQLITE_ROW {
+      guard let address = columnText(stmt, 0) else { continue }
+      let port = Int(sqlite3_column_int(stmt, 1))
+      let serverName = columnText(stmt, 2)
+      let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 3))
+      let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 4))
+      let entryCount = Int(sqlite3_column_int(stmt, 5))
+
+      let metadata = Metadata(
+        address: address,
+        port: port,
+        serverName: serverName,
+        createdAt: createdAt,
+        updatedAt: updatedAt
+      )
+      results.append(ServerListing(metadata: metadata, entryCount: entryCount))
+    }
+    return results
+  }
+
+  func clearHistory(for key: SessionKey) async {
+    do {
+      try openIfNeeded()
+    } catch {
+      print("ChatStore: failed to clear server history —", error)
+      return
+    }
+
+    var stmt: OpaquePointer?
+    let sql = "DELETE FROM servers WHERE address = ?1 AND port = ?2"
+    guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+      print("ChatStore: failed to prepare clearHistory —", errorMessage())
+      return
+    }
+    defer { sqlite3_finalize(stmt) }
+
+    sqlite3_bind_text(stmt, 1, key.address, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+    sqlite3_bind_int(stmt, 2, Int32(key.port))
+
+    if sqlite3_step(stmt) != SQLITE_DONE {
+      print("ChatStore: failed to clear history for \(key.identifier) —", errorMessage())
+    }
+
+    await MainActor.run {
+      NotificationCenter.default.post(
+        name: Self.serverHistoryClearedNotification,
+        object: nil,
+        userInfo: ["address": key.address, "port": key.port]
+      )
     }
   }
 

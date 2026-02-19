@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct MessageBoardView: View {
+  @Environment(\.colorScheme) private var colorScheme
   @Environment(HotlineState.self) private var model: HotlineState
   
   @State private var composerDisplayed: Bool = false
@@ -136,7 +137,7 @@ struct MessageBoardView: View {
         .frame(maxWidth: .infinity)
       }
     }
-    .background(Color(nsColor: .tertiarySystemFill))
+    .background(self.colorScheme == .light ? Color(nsColor: .quaternarySystemFill) : nil)
   }
 }
 

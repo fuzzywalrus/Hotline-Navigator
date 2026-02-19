@@ -114,7 +114,6 @@ struct ChatView: View {
         }
       }
     }
-    .background(Color(nsColor: .textBackgroundColor))
     .onAppear {
       self.stableBannerFileURL = self.model.bannerFileURL
       self.stableBannerIsAnimated = self.model.bannerImageFormat == .gif
