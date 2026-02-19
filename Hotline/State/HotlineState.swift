@@ -1335,7 +1335,7 @@ class HotlineState: Equatable {
           let location: HotlineDownloadLocation = if let destination {
             .url(destination)
           } else {
-            .downloads(fileName)
+            .url(Prefs.shared.resolvedDownloadFolder.generateUniqueFileURL(filename: fileName))
           }
 
           let fileURL: URL = try await downloadClient.download(to: location) { progress in
@@ -1456,7 +1456,7 @@ class HotlineState: Equatable {
           let location: HotlineDownloadLocation = if let destination {
             .url(destination)
           } else {
-            .downloads(folderName)
+            .url(Prefs.shared.resolvedDownloadFolder.generateUniqueFileURL(filename: folderName))
           }
 
           let folderURL = try await downloadClient.download(to: location, progress: { progress in

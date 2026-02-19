@@ -22,6 +22,7 @@ enum PrefsKeys: String {
   case playChatInvitationSound = "play chat invitation sound"
   case showBannerToolbar = "show banner toolbar"
   case showJoinLeaveMessages = "show join leave messages"
+  case downloadFolderBookmark = "download folder bookmark"
 }
 
 @Observable
@@ -66,6 +67,7 @@ class Prefs {
     self.playChatInvitationSound = UserDefaults.standard.bool(forKey: PrefsKeys.playChatInvitationSound.rawValue)
     self.showBannerToolbar = UserDefaults.standard.bool(forKey: PrefsKeys.showBannerToolbar.rawValue)
     self.showJoinLeaveMessages = UserDefaults.standard.bool(forKey: PrefsKeys.showJoinLeaveMessages.rawValue)
+    self.downloadFolderBookmark = UserDefaults.standard.data(forKey: PrefsKeys.downloadFolderBookmark.rawValue)
   }
 
   var username: String {
@@ -134,6 +136,48 @@ class Prefs {
   
   var showJoinLeaveMessages: Bool {
     didSet { UserDefaults.standard.set(self.showJoinLeaveMessages, forKey: PrefsKeys.showJoinLeaveMessages.rawValue) }
+  }
+
+  var downloadFolderBookmark: Data? {
+    didSet { UserDefaults.standard.set(self.downloadFolderBookmark, forKey: PrefsKeys.downloadFolderBookmark.rawValue) }
+  }
+
+  var resolvedDownloadFolder: URL {
+    guard let bookmarkData = self.downloadFolderBookmark else {
+      return .downloadsDirectory
+    }
+
+    var isStale = false
+    guard let url = try? URL(resolvingBookmarkData: bookmarkData, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &isStale) else {
+      self.downloadFolderBookmark = nil
+      return .downloadsDirectory
+    }
+
+    if isStale {
+      // Re-create the bookmark with current data
+      if let newBookmark = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) {
+        self.downloadFolderBookmark = newBookmark
+      } else {
+        self.downloadFolderBookmark = nil
+        return .downloadsDirectory
+      }
+    }
+
+    // Verify the folder still exists
+    guard FileManager.default.fileExists(atPath: url.path) else {
+      self.downloadFolderBookmark = nil
+      return .downloadsDirectory
+    }
+
+    _ = url.startAccessingSecurityScopedResource()
+    return url
+  }
+
+  var downloadFolderDisplay: String? {
+    guard self.downloadFolderBookmark != nil else { return nil }
+    let url = self.resolvedDownloadFolder
+    if url == .downloadsDirectory { return nil }
+    return url.lastPathComponent
   }
 
 }
