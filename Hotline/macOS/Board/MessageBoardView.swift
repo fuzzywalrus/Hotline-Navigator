@@ -19,6 +19,9 @@ struct MessageBoardView: View {
         self.messageBoardView
       }
     }
+    .background(self.colorScheme == .light ? Color(nsColor: .tertiarySystemFill).ignoresSafeArea() : nil)
+//    .containerBackground(.hotlineRed, for: .window)
+//    .background(Color(nsColor: .underPageBackgroundColor))
     .sheet(isPresented: $composerDisplayed) {
       MessageBoardEditorView()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -95,10 +98,13 @@ struct MessageBoardView: View {
                 }
               }
               .textSelection(.enabled)
-              .padding(.vertical, 16)
+              .padding(.top, 16)
               .padding(.horizontal, 16)
-              .background(Color(nsColor: .tertiarySystemFill).opacity(0.5))
-              
+              .background(
+                self.colorScheme == .light
+                ? LinearGradient(colors: [.white.opacity(0.2), .white.opacity(0.0)], startPoint: .top, endPoint: .bottom).blendMode(.softLight)
+                : LinearGradient(colors: [.white.opacity(0.1), .white.opacity(0.0)], startPoint: .top, endPoint: .bottom).blendMode(.softLight)
+              )
 //              Divider()
             }
             
@@ -116,9 +122,10 @@ struct MessageBoardView: View {
             
           }
 //          .padding(.bottom, 16)
-          .background(Color(nsColor: .textBackgroundColor))
-          .clipShape(.rect(cornerRadius: 8))
-          .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 2)
+          .background(self.colorScheme == .light ? AnyShapeStyle(Color.clear) : AnyShapeStyle(.thickMaterial))
+          .background(self.colorScheme == .light ? Color(nsColor: .controlBackgroundColor) : Color.clear)
+          .clipShape(.rect(cornerRadius: 12))
+          .shadow(color: .black.opacity(0.04), radius: 3, x: 0, y: 1)
           .padding(.horizontal, 24)
           
 //          Divider()
@@ -137,7 +144,6 @@ struct MessageBoardView: View {
         .frame(maxWidth: .infinity)
       }
     }
-    .background(self.colorScheme == .light ? Color(nsColor: .quaternarySystemFill) : nil)
   }
 }
 

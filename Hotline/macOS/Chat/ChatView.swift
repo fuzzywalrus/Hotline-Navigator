@@ -122,6 +122,7 @@ struct ChatView: View {
       self.stableBannerFileURL = newValue
       self.stableBannerIsAnimated = self.model.bannerImageFormat == .gif
     }
+    .background(.windowBackground)
   }
   
   private var inputBar: some View {

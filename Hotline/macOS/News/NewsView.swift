@@ -311,6 +311,7 @@ struct NewsView: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .transition(.move(edge: .bottom))
+    .background(.windowBackground)
   }
 }
 

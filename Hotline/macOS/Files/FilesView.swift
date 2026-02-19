@@ -365,6 +365,7 @@ struct FilesView: View {
         .padding(.top, 8)
       }
     }
+    .background(.windowBackground)
   }
   
   private var isShowingSearchResults: Bool {

@@ -54,6 +54,10 @@ struct ChatInputField: NSViewRepresentable {
     textView.submitHandler = { announce in
       context.coordinator.parent.onSubmit(announce)
     }
+    let coordinator = context.coordinator
+    textView.frameResizeHandler = { [weak coordinator] in
+      coordinator?.recalculateHeight()
+    }
     
     let scrollView = NSScrollView()
     scrollView.documentView = textView
@@ -123,6 +127,10 @@ struct ChatInputField: NSViewRepresentable {
       if abs(newHeight - self.parent.height) > 0.5 {
         self.parent.height = newHeight
       }
+
+      if needsScroller {
+        textView.scrollRangeToVisible(textView.selectedRange())
+      }
     }
   }
 }
@@ -132,6 +140,7 @@ struct ChatInputField: NSViewRepresentable {
 /// Shows a chevron indicator next to the line containing the insertion point.
 class ChatInputTextView: NSTextView {
   var submitHandler: ((_ announce: Bool) -> Void)?
+  var frameResizeHandler: (() -> Void)?
   
   static let verticalInset: CGFloat = 24
 
@@ -173,6 +182,12 @@ class ChatInputTextView: NSTextView {
     }
   }
   
+  override func setFrameSize(_ newSize: NSSize) {
+    super.setFrameSize(newSize)
+    self.updateChevronPosition()
+    self.frameResizeHandler?()
+  }
+
   override func resetCursorRects() {
     self.addCursorRect(self.bounds, cursor: .iBeam)
   }
