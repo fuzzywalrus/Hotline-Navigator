@@ -1985,14 +1985,97 @@ class HotlineState: Equatable {
     return try await client.getNewsArticle(id: UInt32(articleID), path: path, flavor: flavor)
   }
 
+  @discardableResult
   @MainActor
-  func postNewsArticle(title: String, body: String, at path: [String], parentID: UInt32 = 0) async throws {
+  func postNewsArticle(title: String, body: String, at path: [String], parentID: UInt32 = 0) async throws -> NewsInfo? {
     guard let client = self.client else {
       throw HotlineClientError.notConnected
     }
 
     try await client.postNewsArticle(title: title, text: body, path: path, parentID: parentID)
     print("HotlineState: News article posted")
+
+    // Refresh article list and parent category count
+    try await self.getNewsList(at: path)
+    let parentPath = path.count > 1 ? Array(path.dropLast()) : [String]()
+    try await self.getNewsList(at: parentPath)
+
+    // Expand the category so the new post is visible
+    if let category = self.findNews(in: self.news, at: path) {
+      category.expanded = true
+
+      // Find and expand the parent article if this is a reply, then return the new post
+      if parentID != 0 {
+        if let parentArticle = self.findArticle(id: UInt(parentID), in: category.children) {
+          parentArticle.expanded = true
+          // The reply should be in the parent's children — find by title
+          return parentArticle.children.first { $0.name == title }
+        }
+      }
+      else {
+        // New top-level post — find by title among direct children
+        return category.children.first { $0.name == title }
+      }
+    }
+
+    return nil
+  }
+
+  private func findArticle(id: UInt, in items: [NewsInfo]) -> NewsInfo? {
+    for item in items {
+      if item.articleID == id {
+        return item
+      }
+      if let found = self.findArticle(id: id, in: item.children) {
+        return found
+      }
+    }
+    return nil
+  }
+
+  @MainActor
+  func newNewsFolder(name: String, path: [String] = []) async throws {
+    guard let client = self.client else {
+      throw HotlineClientError.notConnected
+    }
+
+    try await client.newNewsFolder(name: name, path: path)
+    try await self.getNewsList(at: path)
+  }
+
+  @MainActor
+  func newNewsCategory(name: String, path: [String] = []) async throws {
+    guard let client = self.client else {
+      throw HotlineClientError.notConnected
+    }
+
+    try await client.newNewsCategory(name: name, path: path)
+    try await self.getNewsList(at: path)
+  }
+
+  @MainActor
+  func deleteNewsItem(path: [String]) async throws {
+    guard let client = self.client else {
+      throw HotlineClientError.notConnected
+    }
+
+    let parentPath = path.count > 1 ? Array(path.dropLast()) : [String]()
+    try await client.deleteNewsItem(path: path)
+    try await self.getNewsList(at: parentPath)
+  }
+
+  @MainActor
+  func deleteNewsArticle(id: UInt, path: [String]) async throws {
+    guard let client = self.client else {
+      throw HotlineClientError.notConnected
+    }
+
+    try await client.deleteNewsArticle(id: UInt32(id), path: path)
+    try await self.getNewsList(at: path)
+
+    // Refresh parent level to update article counts
+    let parentPath = path.count > 1 ? Array(path.dropLast()) : [String]()
+    try await self.getNewsList(at: parentPath)
   }
 
   // MARK: - File Search

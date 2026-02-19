@@ -15,23 +15,25 @@ struct NewsEditorView: View {
   let isReply: Bool
   let path: [String]
   let parentID: UInt32
-  
+  @Binding var selection: NewsInfo?
+
   @State var title: String = ""
   @State private var text: String = ""
   @State private var sending: Bool = false
-  
+
   @FocusState private var focusedField: FocusFields?
-  
+
   func sendArticle() async -> Bool {
-    sending = true
+    self.sending = true
 
     do {
-      try await model.postNewsArticle(title: title, body: text, at: path, parentID: parentID)
-      try? await model.getNewsList(at: path)
-      sending = false
+      if let newPost = try await self.model.postNewsArticle(title: self.title, body: self.text, at: self.path, parentID: self.parentID) {
+        self.selection = newPost
+      }
+      self.sending = false
       return true
     } catch {
-      sending = false
+      self.sending = false
       return false
     }
   }

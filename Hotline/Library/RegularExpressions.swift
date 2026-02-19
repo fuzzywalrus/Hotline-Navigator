@@ -149,13 +149,21 @@ struct RegularExpressions {
     }
   }.ignoresCase()
 
-  private static let domainName = Regex {
+  private static let domainLabel = Regex {
     OneOrMore {
       CharacterClass(
-        .anyOf(".-"),
+        .anyOf("-"),
         ("a"..."z"),
         ("0"..."9")
       )
+    }
+  }.ignoresCase()
+
+  private static let domainName = Regex {
+    domainLabel
+    ZeroOrMore {
+      "."
+      domainLabel
     }
   }.ignoresCase()
 

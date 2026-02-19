@@ -72,6 +72,8 @@ struct FilesGridView: View {
   @Binding var gridPath: [String]
   @Binding var fileDetails: FileDetails?
   @Binding var confirmDeleteShown: Bool
+  @Binding var uploadFileSelectorDisplayed: Bool
+  @Binding var newFolderShown: Bool
 
   var actions: FileActions
   var isShowingSearchResults: Bool
@@ -125,6 +127,9 @@ struct FilesGridView: View {
             self.didSelectItem = false
           }
       )
+      .contextMenu {
+        self.itemContextMenu(for: nil)
+      }
       .background(
         GeometryReader { geo in
           Color.clear
@@ -271,45 +276,76 @@ struct FilesGridView: View {
           }
       )
       .contextMenu {
-        Button {
-          self.actions.downloadFile(file)
-        } label: {
-          Label("Download", systemImage: "arrow.down")
-        }
-        .onAppear {
-          self.selection = file
-        }
+        self.itemContextMenu(for: file)
+      }
+  }
 
-        Divider()
+  @ViewBuilder
+  private func itemContextMenu(for file: FileInfo?) -> some View {
+    Button {
+      if let file = file {
+        self.actions.downloadFile(file)
+      }
+    } label: {
+      Label("Download", systemImage: "arrow.down")
+    }
+    .onAppear {
+      if let file = file {
+        self.selection = file
+      }
+    }
+    .disabled(file == nil || self.model.access?.contains(.canDownloadFiles) != true)
 
-        Button {
-          Task {
-            if let details = await self.actions.getFileInfo(file) {
-              self.fileDetails = details
-            }
-          }
-        } label: {
-          Label("Get Info", systemImage: "info.circle")
-        }
+    Button {
+      self.selection = file
+      self.uploadFileSelectorDisplayed = true
+    } label: {
+      Label("Upload...", systemImage: "arrow.up")
+    }
+    .disabled(file != nil && !file!.isFolder || self.model.access?.contains(.canUploadFiles) != true)
 
-        Button {
-          self.actions.previewFile(file)
-        } label: {
-          Label("Preview", systemImage: "eye")
-        }
-        .disabled(!file.isPreviewable)
+    Divider()
 
-        if self.model.access?.contains(.canDeleteFiles) == true {
-          Divider()
-
-          Button {
-            self.selection = file
-            self.confirmDeleteShown = true
-          } label: {
-            Label("Delete...", systemImage: "trash")
+    Button {
+      if let file = file {
+        Task {
+          if let details = await self.actions.getFileInfo(file) {
+            self.fileDetails = details
           }
         }
       }
+    } label: {
+      Label("Get Info", systemImage: "info.circle")
+    }
+    .disabled(file == nil)
+
+    Button {
+      if let file = file {
+        self.actions.previewFile(file)
+      }
+    } label: {
+      Label("Quick Look", systemImage: "eye")
+    }
+    .disabled(file == nil || file?.isPreviewable != true)
+
+    Button {
+      self.newFolderShown = true
+    } label: {
+      Label("New Folder", systemImage: "folder.badge.plus")
+    }
+    .disabled((file != nil && !file!.isFolder) || self.model.access?.contains(.canCreateFolders) != true)
+
+    Divider()
+
+    Button {
+      if let file = file {
+        self.selection = file
+        self.confirmDeleteShown = true
+      }
+    } label: {
+      Label(file?.isFolder == true ? "Delete Folder..." : "Delete File...", systemImage: "trash")
+    }
+    .disabled(file == nil || (self.model.access?.contains(.canDeleteFiles) != true && self.model.access?.contains(.canDeleteFolders) != true))
   }
 
   private func moveSelectionHorizontally(by offset: Int) -> KeyPress.Result {

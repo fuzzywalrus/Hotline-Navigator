@@ -30,6 +30,8 @@ struct FilesView: View {
             gridPath: $gridPath,
             fileDetails: $fileDetails,
             confirmDeleteShown: $confirmDeleteShown,
+            uploadFileSelectorDisplayed: $uploadFileSelectorDisplayed,
+            newFolderShown: $newFolderShown,
             actions: actions,
             isShowingSearchResults: isShowingSearchResults
           )

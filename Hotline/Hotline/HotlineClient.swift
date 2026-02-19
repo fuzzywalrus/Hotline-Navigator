@@ -864,6 +864,61 @@ public actor HotlineClient {
     try await self.sendTransaction(transaction)
   }
 
+  /// Create a new news folder (bundle) on the server
+  ///
+  /// - Parameters:
+  ///   - name: Folder name
+  ///   - path: Parent news path (empty for root)
+  public func newNewsFolder(name: String, path: [String] = []) async throws {
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .newNewsFolder)
+    transaction.setFieldString(type: .fileName, val: name)
+    if !path.isEmpty {
+      transaction.setFieldPath(type: .newsPath, val: path)
+    }
+
+    try await self.sendTransaction(transaction)
+  }
+
+  /// Create a new news category on the server
+  ///
+  /// - Parameters:
+  ///   - name: Category name
+  ///   - path: Parent news path (empty for root)
+  public func newNewsCategory(name: String, path: [String] = []) async throws {
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .newNewsCategory)
+    transaction.setFieldString(type: .newsCategoryName, val: name)
+    if !path.isEmpty {
+      transaction.setFieldPath(type: .newsPath, val: path)
+    }
+
+    try await self.sendTransaction(transaction)
+  }
+
+  /// Delete a news folder or category from the server
+  ///
+  /// - Parameter path: Full path to the folder or category to delete
+  public func deleteNewsItem(path: [String]) async throws {
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .deleteNewsItem)
+    transaction.setFieldPath(type: .newsPath, val: path)
+
+    try await self.sendTransaction(transaction)
+  }
+
+  /// Delete a news article from the server
+  ///
+  /// - Parameters:
+  ///   - id: Article ID
+  ///   - path: Category path containing the article
+  ///   - recursive: Whether to delete child articles (replies)
+  public func deleteNewsArticle(id: UInt32, path: [String], recursive: Bool = true) async throws {
+    var transaction = HotlineTransaction(id: self.generateTransactionID(), type: .deleteNewsArticle)
+    transaction.setFieldPath(type: .newsPath, val: path)
+    transaction.setFieldUInt32(type: .newsArticleID, val: id)
+    transaction.setFieldUInt32(type: .newsArticleRecursiveDelete, val: recursive ? 1 : 0)
+
+    try await self.sendTransaction(transaction)
+  }
+
   // MARK: - Message Board
 
   /// Get message board posts

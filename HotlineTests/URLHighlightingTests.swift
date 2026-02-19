@@ -159,6 +159,20 @@ struct URLHighlightingTests {
     #expect(urls == ["example.com", "example.org"])
   }
 
+  // MARK: - False Positives
+
+  @Test func ellipsisNotMatchedAsURL() {
+    // "is...not" should NOT be detected as a URL (was matching is..no as domain.tld)
+    let urls = matchedURLs(in: "my placeholder art is...not good :|")
+    #expect(urls.isEmpty)
+  }
+
+  @Test func consecutiveDotsNotMatchedAsURL() {
+    #expect(matchedURLs(in: "wait..what").isEmpty)
+    #expect(matchedURLs(in: "no...way").isEmpty)
+    #expect(matchedURLs(in: "test....com").isEmpty)
+  }
+
   // MARK: - Trailing Punctuation
 
   @Test func trailingPeriodNotIncluded() {
