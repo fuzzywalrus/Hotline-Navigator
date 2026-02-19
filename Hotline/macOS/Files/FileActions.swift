@@ -1,0 +1,97 @@
+import SwiftUI
+
+@MainActor
+struct FileActions {
+  let model: HotlineState
+  let openWindow: OpenWindowAction
+
+  func downloadFile(_ file: FileInfo) {
+    if file.isFolder {
+      model.downloadFolder(file.name, path: file.path)
+    }
+    else {
+      model.downloadFile(file.name, path: file.path)
+    }
+  }
+
+  func previewFile(_ file: FileInfo) {
+    guard file.isPreviewable else {
+      return
+    }
+
+    model.previewFile(file.name, path: file.path) { info in
+      if let info = info {
+        var extendedInfo = info
+        extendedInfo.creator = file.creator
+        extendedInfo.type = file.type
+        openPreviewWindow(extendedInfo)
+      }
+    }
+  }
+
+  func deleteFile(_ file: FileInfo) async {
+    var parentPath: [String] = []
+    if file.path.count > 1 {
+      parentPath = Array(file.path[0..<file.path.count-1])
+    }
+
+    do {
+      try await model.deleteFile(file.name, path: file.path)
+      try await model.getFileList(path: parentPath)
+    }
+    catch {
+      print("Error deleting file: \(error)")
+    }
+  }
+
+  func getFileInfo(_ file: FileInfo) async -> FileDetails? {
+    return try? await model.getFileDetails(file.name, path: file.path)
+  }
+
+  func upload(file fileURL: URL, to path: [String]) {
+    var fileIsDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: fileURL.path(percentEncoded: false), isDirectory: &fileIsDirectory) else {
+      return
+    }
+
+    if fileIsDirectory.boolValue {
+      model.uploadFolder(url: fileURL, path: path, complete: { _ in
+        Task {
+          try? await model.getFileList(path: path)
+        }
+      })
+    }
+    else {
+      model.uploadFile(url: fileURL, path: path) { _ in
+        Task {
+          try? await model.getFileList(path: path)
+        }
+      }
+    }
+  }
+
+  func newFolder(name: String, parent: FileInfo?) {
+    Task {
+      var parentFolder: FileInfo? = nil
+      if parent?.isFolder == true {
+        parentFolder = parent
+      }
+
+      let path: [String] = parentFolder?.path ?? []
+      if try await model.newFolder(name: name, parentPath: path) {
+        try await model.getFileList(path: path)
+      }
+    }
+  }
+
+  private func openPreviewWindow(_ previewInfo: PreviewFileInfo) {
+    switch previewInfo.previewType {
+    case .image:
+      openWindow(id: "preview-quicklook", value: previewInfo)
+    case .text:
+      openWindow(id: "preview-quicklook", value: previewInfo)
+    case .unknown:
+      openWindow(id: "preview-quicklook", value: previewInfo)
+    }
+  }
+}

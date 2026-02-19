@@ -17,6 +17,7 @@ struct QuickLookPreviewView: NSViewRepresentable {
   }
 
   func updateNSView(_ nsView: QLPreviewView, context: Context) {
-    nsView.previewItem = fileURL as QLPreviewItem
+    guard nsView.window != nil else { return }
+    nsView.previewItem = self.fileURL as QLPreviewItem
   }
 }

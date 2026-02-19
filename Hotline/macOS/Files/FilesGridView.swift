@@ -1,0 +1,398 @@
+import SwiftUI
+
+private let gridColumnSpacing: CGFloat = 12
+private let gridPadding: CGFloat = 12
+private let gridColumnMin: CGFloat = 100
+private let gridColumnMax: CGFloat = 120
+
+struct FileGridItemView: View {
+  let file: FileInfo
+  let isSelected: Bool
+
+  var body: some View {
+    VStack(spacing: 2) {
+      Group {
+        if self.file.isUnavailable {
+          Image(systemName: "questionmark.app.fill")
+            .resizable()
+            .scaledToFit()
+        }
+        else if self.file.isFolder {
+          if self.file.isAdminDropboxFolder {
+            Image("Admin Drop Box")
+              .resizable()
+              .scaledToFit()
+          }
+          else if self.file.isDropboxFolder {
+            Image("Drop Box")
+              .resizable()
+              .scaledToFit()
+          }
+          else {
+            Image("Folder")
+              .resizable()
+              .scaledToFit()
+          }
+        }
+        else {
+          FileIconView(filename: self.file.name, fileType: self.file.type)
+        }
+      }
+      .frame(width: 48, height: 48)
+      .padding(4)
+      .background(
+        RoundedRectangle(cornerRadius: 6)
+          .fill(self.isSelected ? Color(nsColor: .tertiaryLabelColor).opacity(0.3) : Color.clear)
+      )
+
+      Text(self.file.name)
+        .font(.subheadline)
+        .lineLimit(2)
+        .truncationMode(.middle)
+        .multilineTextAlignment(.center)
+        .foregroundStyle(self.isSelected ? Color.white : Color.primary)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 1)
+        .background(
+          RoundedRectangle(cornerRadius: 4)
+            .fill(self.isSelected ? Color(nsColor: .selectedContentBackgroundColor) : Color.clear)
+        )
+        .frame(width: 90, alignment: .center)
+        .help(self.file.name.count > 10 ? self.file.name : "")
+    }
+    .opacity(self.file.isUnavailable ? 0.5 : 1.0)
+    .frame(width: 100, height: 90, alignment: .top)
+  }
+}
+
+struct FilesGridView: View {
+  @Environment(HotlineState.self) private var model: HotlineState
+
+  @Binding var selection: FileInfo?
+  @Binding var gridPath: [String]
+  @Binding var fileDetails: FileDetails?
+  @Binding var confirmDeleteShown: Bool
+
+  var actions: FileActions
+  var isShowingSearchResults: Bool
+
+  @State private var loading: Bool = false
+  @State private var showSpinner: Bool = false
+  @State private var dragOver: Bool = false
+  @State private var gridWidth: CGFloat = 0
+  @State private var didSelectItem: Bool = false
+
+  private var columnsPerRow: Int {
+    let available = self.gridWidth - (gridPadding * 2)
+    return max(1, Int((available + gridColumnSpacing) / (gridColumnMin + gridColumnSpacing)))
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      ScrollViewReader { proxy in
+        ScrollView {
+          LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: gridColumnMin, maximum: gridColumnMax), spacing: gridColumnSpacing)],
+            alignment: .leading,
+            spacing: 12
+          ) {
+            ForEach(self.currentItems, id: \.self) { file in
+              self.gridItemView(for: file)
+                .id(file.id)
+            }
+          }
+          .padding(gridPadding)
+        }
+        .onChange(of: self.selection) { _, newValue in
+          if let file = newValue {
+            withAnimation {
+              proxy.scrollTo(file.id, anchor: nil)
+            }
+          }
+        }
+      }
+      .contentShape(Rectangle())
+      .simultaneousGesture(
+        DragGesture(minimumDistance: 0)
+          .onChanged { _ in
+            DispatchQueue.main.async {
+              if !self.didSelectItem {
+                self.selection = nil
+              }
+            }
+          }
+          .onEnded { _ in
+            self.didSelectItem = false
+          }
+      )
+      .background(
+        GeometryReader { geo in
+          Color.clear
+            .onAppear { self.gridWidth = geo.size.width }
+            .onChange(of: geo.size.width) { _, newWidth in self.gridWidth = newWidth }
+        }
+      )
+    }
+    .focusable()
+    .focusEffectDisabled()
+    .onDrop(of: [.fileURL], isTargeted: self.$dragOver) { items in
+      guard self.model.access?.contains(.canUploadFiles) == true,
+            let item = items.first,
+            let identifier = item.registeredTypeIdentifiers.first else {
+        return false
+      }
+
+      item.loadItem(forTypeIdentifier: identifier, options: nil) { (urlData, error) in
+        DispatchQueue.main.async {
+          if let urlData = urlData as? Data,
+             let fileURL = URL(dataRepresentation: urlData, relativeTo: nil, isAbsolute: true) {
+            let didStartAccessing = fileURL.startAccessingSecurityScopedResource()
+            defer {
+              if didStartAccessing {
+                fileURL.stopAccessingSecurityScopedResource()
+              }
+            }
+            self.actions.upload(file: fileURL, to: self.gridPath)
+          }
+        }
+      }
+      return true
+    }
+    .task(id: self.gridPath) {
+      if !self.gridPath.isEmpty {
+        self.loading = true
+        self.showSpinner = false
+        let _ = try? await self.model.getFileList(path: self.gridPath)
+        self.loading = false
+        withAnimation(.easeOut(duration: 0.2)) {
+          self.showSpinner = false
+        }
+      }
+    }
+    .task(id: self.loading) {
+      if self.loading {
+        try? await Task.sleep(for: .seconds(1))
+        if self.loading {
+          withAnimation(.easeIn(duration: 0.2)) {
+            self.showSpinner = true
+          }
+        }
+      }
+    }
+    .overlay {
+      if self.showSpinner || (!self.model.filesLoaded && self.gridPath.isEmpty) {
+        VStack {
+          ProgressView()
+            .controlSize(.large)
+        }
+        .frame(maxWidth: .infinity)
+        .transition(.opacity)
+      }
+    }
+    .onKeyPress(.escape) {
+      if !self.gridPath.isEmpty && !self.isShowingSearchResults {
+        self.gridPath.removeLast()
+        return .handled
+      }
+      return .ignored
+    }
+    .onKeyPress(.return) {
+      if let s = self.selection {
+        if s.isFolder {
+          self.gridPath = s.path
+        }
+        else {
+          self.actions.downloadFile(s)
+        }
+        return .handled
+      }
+      return .ignored
+    }
+    .onKeyPress(.space) {
+      if let s = self.selection, s.isPreviewable {
+        self.actions.previewFile(s)
+        return .handled
+      }
+      return .ignored
+    }
+    .onKeyPress(.rightArrow) {
+      self.moveSelectionHorizontally(by: 1)
+    }
+    .onKeyPress(.leftArrow) {
+      self.moveSelectionHorizontally(by: -1)
+    }
+    .onKeyPress(keys: [.downArrow]) { press in
+      if press.modifiers.contains(.command) {
+        if let s = self.selection {
+          if s.isFolder {
+            self.gridPath = s.path
+          }
+          else {
+            self.actions.downloadFile(s)
+          }
+          return .handled
+        }
+        return .ignored
+      }
+      return self.moveSelectionVertically(by: 1)
+    }
+    .onKeyPress(keys: [.upArrow]) { press in
+      if press.modifiers.contains(.command) {
+        if !self.gridPath.isEmpty && !self.isShowingSearchResults {
+          self.gridPath.removeLast()
+          return .handled
+        }
+        return .ignored
+      }
+      return self.moveSelectionVertically(by: -1)
+    }
+  }
+
+  @ViewBuilder
+  private func gridItemView(for file: FileInfo) -> some View {
+    FileGridItemView(file: file, isSelected: self.selection == file)
+      .padding(6)
+      .simultaneousGesture(
+        DragGesture(minimumDistance: 0)
+          .onChanged { _ in
+            self.didSelectItem = true
+            self.selection = file
+          }
+      )
+      .simultaneousGesture(
+        TapGesture(count: 2)
+          .onEnded {
+            if file.isFolder {
+              self.gridPath = file.path
+            }
+            else {
+              self.actions.downloadFile(file)
+            }
+          }
+      )
+      .contextMenu {
+        Button {
+          self.actions.downloadFile(file)
+        } label: {
+          Label("Download", systemImage: "arrow.down")
+        }
+        .onAppear {
+          self.selection = file
+        }
+
+        Divider()
+
+        Button {
+          Task {
+            if let details = await self.actions.getFileInfo(file) {
+              self.fileDetails = details
+            }
+          }
+        } label: {
+          Label("Get Info", systemImage: "info.circle")
+        }
+
+        Button {
+          self.actions.previewFile(file)
+        } label: {
+          Label("Preview", systemImage: "eye")
+        }
+        .disabled(!file.isPreviewable)
+
+        if self.model.access?.contains(.canDeleteFiles) == true {
+          Divider()
+
+          Button {
+            self.selection = file
+            self.confirmDeleteShown = true
+          } label: {
+            Label("Delete...", systemImage: "trash")
+          }
+        }
+      }
+  }
+
+  private func moveSelectionHorizontally(by offset: Int) -> KeyPress.Result {
+    let items = self.currentItems
+    guard !items.isEmpty else { return .handled }
+
+    guard let current = self.selection, let index = items.firstIndex(of: current) else {
+      self.selection = items.first
+      return .handled
+    }
+
+    let newIndex = index + offset
+    guard newIndex >= 0, newIndex < items.count else {
+      return .handled
+    }
+
+    // Don't wrap across rows
+    let cols = self.columnsPerRow
+    if index / cols != newIndex / cols {
+      return .handled
+    }
+
+    self.selection = items[newIndex]
+    return .handled
+  }
+
+  private func moveSelectionVertically(by rows: Int) -> KeyPress.Result {
+    let items = self.currentItems
+    let cols = self.columnsPerRow
+    guard !items.isEmpty else { return .handled }
+
+    guard let current = self.selection, let index = items.firstIndex(of: current) else {
+      self.selection = items.first
+      return .handled
+    }
+
+    let newIndex = index + (rows * cols)
+
+    // Exact target exists
+    if newIndex >= 0, newIndex < items.count {
+      self.selection = items[newIndex]
+      return .handled
+    }
+
+    // Moving down: snap to last item if there's a partial row below
+    if rows > 0, newIndex >= items.count {
+      let lastIndex = items.count - 1
+      // Only snap if the last item is on a row below the current one
+      if lastIndex / cols > index / cols {
+        self.selection = items[lastIndex]
+      }
+      return .handled
+    }
+
+    return .handled
+  }
+
+  private var currentItems: [FileInfo] {
+    if self.isShowingSearchResults {
+      return self.model.fileSearchResults
+    }
+
+    if self.gridPath.isEmpty {
+      return self.model.files
+    }
+
+    return self.findFolder(in: self.model.files, at: self.gridPath)?.children ?? []
+  }
+
+  private func findFolder(in files: [FileInfo], at path: [String]) -> FileInfo? {
+    guard !path.isEmpty, !files.isEmpty else { return nil }
+
+    let currentName = path[0]
+    for file in files {
+      if file.name == currentName {
+        if path.count == 1 {
+          return file
+        }
+        else if let children = file.children {
+          return self.findFolder(in: children, at: Array(path[1...]))
+        }
+      }
+    }
+    return nil
+  }
+}

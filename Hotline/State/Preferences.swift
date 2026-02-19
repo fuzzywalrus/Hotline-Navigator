@@ -23,6 +23,7 @@ enum PrefsKeys: String {
   case showBannerToolbar = "show banner toolbar"
   case showJoinLeaveMessages = "show join leave messages"
   case downloadFolderBookmark = "download folder bookmark"
+  case filesViewMode = "files view mode"
 }
 
 @Observable
@@ -48,6 +49,7 @@ class Prefs {
       PrefsKeys.playChatInvitationSound.rawValue: true,
       PrefsKeys.showBannerToolbar.rawValue: true,
       PrefsKeys.showJoinLeaveMessages.rawValue: true,
+      PrefsKeys.filesViewMode.rawValue: "grid",
     ])
     
     self.username = UserDefaults.standard.string(forKey: PrefsKeys.username.rawValue)!
@@ -68,6 +70,7 @@ class Prefs {
     self.showBannerToolbar = UserDefaults.standard.bool(forKey: PrefsKeys.showBannerToolbar.rawValue)
     self.showJoinLeaveMessages = UserDefaults.standard.bool(forKey: PrefsKeys.showJoinLeaveMessages.rawValue)
     self.downloadFolderBookmark = UserDefaults.standard.data(forKey: PrefsKeys.downloadFolderBookmark.rawValue)
+    self.filesViewMode = UserDefaults.standard.string(forKey: PrefsKeys.filesViewMode.rawValue)!
   }
 
   var username: String {
@@ -136,6 +139,10 @@ class Prefs {
   
   var showJoinLeaveMessages: Bool {
     didSet { UserDefaults.standard.set(self.showJoinLeaveMessages, forKey: PrefsKeys.showJoinLeaveMessages.rawValue) }
+  }
+
+  var filesViewMode: String {
+    didSet { UserDefaults.standard.set(self.filesViewMode, forKey: PrefsKeys.filesViewMode.rawValue) }
   }
 
   var downloadFolderBookmark: Data? {

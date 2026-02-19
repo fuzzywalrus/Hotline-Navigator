@@ -230,7 +230,7 @@ struct ChatTextView: NSViewRepresentable {
     
     func applySearchHighlights(query: String) {
       guard let layoutManager = self.textView?.layoutManager,
-            let storage = self.textView?.textStorage else { return }
+            let _ = self.textView?.textStorage else { return }
       
       // Clear all previous highlights when query changes
       if self.highlightedCharRange.location != NSNotFound {

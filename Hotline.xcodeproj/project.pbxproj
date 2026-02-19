@@ -83,6 +83,8 @@
 		DA9CAFC12B126D5800CDA197 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DA9CAFC02B126D5800CDA197 /* Assets.xcassets */; };
 		DA9CAFC42B126D5800CDA197 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DA9CAFC32B126D5800CDA197 /* Preview Assets.xcassets */; };
 		DA9CAFCB2B126E3300CDA197 /* HotlineTrackerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA9CAFCA2B126E3300CDA197 /* HotlineTrackerClient.swift */; };
+		DAA98C3F2F479C20002C6334 /* FilesGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA98C3E2F479C20002C6334 /* FilesGridView.swift */; };
+		DAA98C412F479C32002C6334 /* FileActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA98C402F479C32002C6334 /* FileActions.swift */; };
 		DAAEE66B2B3FBC2100A5BA07 /* TransferInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAAEE66A2B3FBC2100A5BA07 /* TransferInfo.swift */; };
 		DAAEE66D2B475F1400A5BA07 /* PreviewFileInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAAEE66C2B475F1400A5BA07 /* PreviewFileInfo.swift */; };
 		DAAEE66F2B47625600A5BA07 /* FilePreviewImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAAEE66E2B47625600A5BA07 /* FilePreviewImageView.swift */; platformFilters = (macos, ); };
@@ -213,6 +215,8 @@
 		DA9CAFC02B126D5800CDA197 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		DA9CAFC32B126D5800CDA197 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		DA9CAFCA2B126E3300CDA197 /* HotlineTrackerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotlineTrackerClient.swift; sourceTree = "<group>"; };
+		DAA98C3E2F479C20002C6334 /* FilesGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesGridView.swift; sourceTree = "<group>"; };
+		DAA98C402F479C32002C6334 /* FileActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileActions.swift; sourceTree = "<group>"; };
 		DAAEE66A2B3FBC2100A5BA07 /* TransferInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferInfo.swift; sourceTree = "<group>"; };
 		DAAEE66C2B475F1400A5BA07 /* PreviewFileInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewFileInfo.swift; sourceTree = "<group>"; };
 		DAAEE66E2B47625600A5BA07 /* FilePreviewImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePreviewImageView.swift; sourceTree = "<group>"; };
@@ -374,6 +378,8 @@
 				DAE735002B2E71F2000C56F6 /* FilesView.swift */,
 				DA5268A42EB0743000DCB941 /* FileItemView.swift */,
 				DA5268A22EB0741B00DCB941 /* FolderItemView.swift */,
+				DAA98C3E2F479C20002C6334 /* FilesGridView.swift */,
+				DAA98C402F479C32002C6334 /* FileActions.swift */,
 				DA32F1CB2EC4175F00B243BC /* NewFolderPopover.swift */,
 				11A726092BE06759000C1DA7 /* FileDetailsSheet.swift */,
 				DAAEE66E2B47625600A5BA07 /* FilePreviewImageView.swift */,
@@ -742,6 +748,7 @@
 				DA55AC772BE589F700034857 /* AboutView.swift in Sources */,
 				DA72A0E22B4DAA4000A0F48A /* NewsArticle.swift in Sources */,
 				DAE734FB2B2E41F9000C56F6 /* TrackerView.swift in Sources */,
+				DAA98C412F479C32002C6334 /* FileActions.swift in Sources */,
 				DA5268A32EB0741B00DCB941 /* FolderItemView.swift in Sources */,
 				DAE136BA2B9D1147007D8307 /* HotlinePanelView.swift in Sources */,
 				DA501BE22EBE9018001714F8 /* GroupedIconView.swift in Sources */,
@@ -799,6 +806,7 @@
 				DA0D698D2B1E7CF700C71DF5 /* UsersView.swift in Sources */,
 				DAE735052B3218D8000C56F6 /* NewsView.swift in Sources */,
 				DA5268A52EB0743000DCB941 /* FileItemView.swift in Sources */,
+				DAA98C3F2F479C20002C6334 /* FilesGridView.swift in Sources */,
 				DAE734F92B2E4185000C56F6 /* ServerView.swift in Sources */,
 				DA2D98122BF29D5F0027E4BD /* NewsItemView.swift in Sources */,
 				DADDB28B2B22B31F0024040D /* Tracker.swift in Sources */,

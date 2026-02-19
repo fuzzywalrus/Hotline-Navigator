@@ -5,7 +5,7 @@ import AppKit
 struct FilesView: View {
   @Environment(HotlineState.self) private var model: HotlineState
   @Environment(\.openWindow) private var openWindow
-  
+
   @State private var selection: FileInfo?
   @State private var fileDetails: FileDetails?
   @State private var uploadFileSelectorDisplayed: Bool = false
@@ -14,215 +14,157 @@ struct FilesView: View {
   @State private var dragOver: Bool = false
   @State private var confirmDeleteShown: Bool = false
   @State private var newFolderShown: Bool = false
-  
+  @State private var viewMode: String = Prefs.shared.filesViewMode
+  @State private var gridPath: [String] = []
+
+  private var actions: FileActions {
+    FileActions(model: model, openWindow: openWindow)
+  }
+
   var body: some View {
     NavigationStack {
-      List(self.displayedFiles, id: \.self, selection: self.$selection) { file in
-        if file.isFolder {
-          FolderItemView(file: file, depth: 0).tag(file.id)
+      Group {
+        if viewMode == "grid" {
+          FilesGridView(
+            selection: $selection,
+            gridPath: $gridPath,
+            fileDetails: $fileDetails,
+            confirmDeleteShown: $confirmDeleteShown,
+            actions: actions,
+            isShowingSearchResults: isShowingSearchResults
+          )
         }
         else {
-          FileItemView(file: file, depth: 0).tag(file.id)
+          listView
         }
-      }
-      .environment(\.defaultMinListRowHeight, 28)
-      .listStyle(.inset)
-      .alternatingRowBackgrounds(.enabled)
-      .onDrop(of: [.fileURL], isTargeted: self.$dragOver) { items in
-        guard self.model.access?.contains(.canUploadFiles) == true,
-              let item = items.first,
-              let identifier = item.registeredTypeIdentifiers.first else {
-          return false
-        }
-        
-        item.loadItem(forTypeIdentifier: identifier, options: nil) { (urlData, error) in
-          DispatchQueue.main.async {
-            if let urlData = urlData as? Data,
-               let fileURL = URL(dataRepresentation: urlData, relativeTo: nil, isAbsolute: true) {
-
-              // Access security-scoped resource for drag-and-drop
-              let didStartAccessing = fileURL.startAccessingSecurityScopedResource()
-              defer {
-                if didStartAccessing {
-                  fileURL.stopAccessingSecurityScopedResource()
-                }
-              }
-
-              self.upload(file: fileURL, to: [])
-            }
-          }
-        }
-        
-        return true
       }
       .task {
         if !self.model.filesLoaded {
           let _ = try? await self.model.getFileList()
         }
       }
-      .contextMenu(forSelectionType: FileInfo.self) { items in
-        let selectedFile = items.first
-        
-        Button {
-          if let s = selectedFile {
-            downloadFile(s)
-          }
-        } label: {
-          Label("Download", systemImage: "arrow.down")
-        }
-        .disabled(selectedFile == nil)
-        
-        Divider()
-                
-        Button {
-          if let s = selectedFile {
-            getFileInfo(s)
-          }
-        } label: {
-          Label("Get Info", systemImage: "info.circle")
-        }
-        .disabled(selectedFile == nil)
-        
-        Button {
-          if let s = selectedFile {
-            previewFile(s)
-          }
-        } label: {
-          Label("Preview", systemImage: "eye")
-        }
-        .disabled(selectedFile == nil || (selectedFile != nil && !selectedFile!.isPreviewable))
-        
-        if model.access?.contains(.canDeleteFiles) == true {
-          Divider()
-          
-          Button {
-            self.confirmDeleteShown = true
-          } label: {
-            Label("Delete...", systemImage: "trash")
-          }
-          .disabled(selectedFile == nil)
-        }
-      } primaryAction: { items in
-        guard let clickedFile = items.first else {
-          return
-        }
-        
-        self.selection = clickedFile
-        if clickedFile.isFolder {
-          clickedFile.expanded.toggle()
-        }
-        else {
-          downloadFile(clickedFile)
-        }
-      }
-      .onKeyPress(.rightArrow) {
-        if let s = selection, s.isFolder {
-          s.expanded = true
-          return .handled
-        }
-        return .ignored
-      }
-      .onKeyPress(.leftArrow) {
-        if let s = selection, s.isFolder {
-          s.expanded = false
-          return .handled
-        }
-        return .ignored
-      }
-      .onKeyPress(.space) {
-        if let s = selection, s.isPreviewable {
-          previewFile(s)
-          return .handled
-        }
-        return .ignored
-      }
-      .overlay {
-        if !model.filesLoaded {
-          VStack {
-            ProgressView()
-              .controlSize(.large)
-          }
-          .frame(maxWidth: .infinity)
-        }
-      }
       .searchable(text: $searchText, isPresented: $isSearching, placement: .automatic, prompt: "Search")
       .background(Button("", action: { isSearching = true }).keyboardShortcut("f").hidden())
+      .navigationSubtitle(viewMode == "grid" && !gridPath.isEmpty ? gridPath.last ?? "" : "")
       .toolbar {
+        if viewMode == "grid" && !gridPath.isEmpty && !isShowingSearchResults {
+          ToolbarItem {
+            Button {
+              self.gridPath.removeLast()
+            } label: {
+              Label("Back", systemImage: "chevron.left")
+            }
+            .help("Back")
+          }
+        }
+
         ToolbarItem {
-          Button {
-            if let selectedFile = selection, selectedFile.isPreviewable {
-              self.previewFile(selectedFile)
+          Menu {
+            Button {
+              self.viewMode = "list"
+            } label: {
+              Label("as List", systemImage: "list.bullet")
+            }
+
+            Button {
+              self.viewMode = "grid"
+            } label: {
+              Label("as Icons", systemImage: "square.grid.2x2")
             }
           } label: {
-            Label("Preview", systemImage: "eye")
+            Label("View", systemImage: self.viewMode == "grid" ? "square.grid.2x2" : "list.bullet")
           }
-          .help("Preview")
-          .disabled(selection == nil || selection?.isPreviewable != true)
+          .help("View Mode")
         }
-        
         ToolbarItem {
           Button {
-            if let selectedFile = selection {
-              self.getFileInfo(selectedFile)
+            if let selectedFile = self.selection, selectedFile.isPreviewable {
+              self.actions.previewFile(selectedFile)
             }
           } label: {
-            Label("Get Info", systemImage: "info.circle")
+            Label("Quick Look", systemImage: "eye")
           }
-          .help("Get Info")
-          .disabled(selection == nil)
+          .help("Quick Look")
+          .disabled(self.selection == nil || self.selection?.isPreviewable != true)
         }
-        
+
         ToolbarItem {
           Button {
-            self.uploadFileSelectorDisplayed = true
-          } label: {
-            Label("Upload", systemImage: "arrow.up")
-          }
-          .help("Upload")
-          .disabled(model.access?.contains(.canUploadFiles) != true)
-        }
-        
-        ToolbarItem {
-          Button {
-            if let selectedFile = selection {
-              self.downloadFile(selectedFile)
+            if let selectedFile = self.selection {
+              self.actions.downloadFile(selectedFile)
             }
           } label: {
             Label("Download", systemImage: "arrow.down")
           }
           .help("Download")
-          .disabled(selection == nil || model.access?.contains(.canDownloadFiles) != true)
+          .disabled(self.selection == nil || self.model.access?.contains(.canDownloadFiles) != true)
         }
-        
-        if #available(macOS 26.0, *) {
-          ToolbarSpacer()
-        }
-        
-        if self.model.access?.contains(.canCreateFolders) == true {
-          ToolbarItem {
+
+        ToolbarItem {
+          Menu {
+            Button {
+              self.uploadFileSelectorDisplayed = true
+            } label: {
+              Label("Upload...", systemImage: "arrow.up")
+            }
+            .disabled(self.model.access?.contains(.canUploadFiles) != true)
+            
+            Button {
+              if let selectedFile = self.selection {
+                self.actions.downloadFile(selectedFile)
+              }
+            } label: {
+              Label("Download", systemImage: "arrow.down")
+            }
+            .disabled(self.selection == nil || self.model.access?.contains(.canDownloadFiles) != true)
+
+            Divider()
+            
+            Button {
+              if let selectedFile = self.selection {
+                Task {
+                  if let details = await self.actions.getFileInfo(selectedFile) {
+                    self.fileDetails = details
+                  }
+                }
+              }
+            } label: {
+              Label("Get Info", systemImage: "info.circle")
+            }
+            .disabled(self.selection == nil)
+            
+            Button {
+              if let selectedFile = self.selection, selectedFile.isPreviewable {
+                self.actions.previewFile(selectedFile)
+              }
+            } label: {
+              Label("Quick Look", systemImage: "eye")
+            }
+            .disabled(self.selection == nil || self.selection?.isPreviewable != true)
+            
             Button {
               self.newFolderShown = true
             } label: {
               Label("New Folder", systemImage: "folder.badge.plus")
             }
-            .help("New Folder")
-            .popover(isPresented: self.$newFolderShown, arrowEdge: .bottom) {
-              NewFolderPopover { folderName in
-                self.newFolder(name: folderName, parent: self.selection)
-              }
-            }
-          }
-        }
-        
-        if self.model.access?.contains(.canDeleteFiles) == true || self.model.access?.contains(.canDeleteFolders) == true {
-          ToolbarItem {
+            .disabled(self.model.access?.contains(.canCreateFolders) != true)
+
+            Divider()
+
             Button {
               self.confirmDeleteShown = true
             } label: {
-              Label("Delete", systemImage: "trash")
+              Label(self.selection?.isFolder == true ? "Delete Folder..." : "Delete File...", systemImage: "trash")
             }
-            .disabled(self.selection == nil)
-            .help("Delete")
+            .disabled(self.selection == nil || (self.model.access?.contains(.canDeleteFiles) != true && self.model.access?.contains(.canDeleteFolders) != true))
+          } label: {
+            Label("Actions", systemImage: "ellipsis")
+          }
+          .help("More Actions")
+          .popover(isPresented: self.$newFolderShown, arrowEdge: .bottom) {
+            NewFolderPopover { folderName in
+              self.actions.newFolder(name: folderName, parent: self.selection)
+            }
           }
         }
       }
@@ -231,7 +173,7 @@ struct FilesView: View {
       Button("Delete", role: .destructive) {
         if let s = self.selection {
           Task {
-            await self.deleteFile(s)
+            await actions.deleteFile(s)
           }
         }
       }
@@ -249,10 +191,13 @@ struct FilesView: View {
         else {
           return
         }
-        
+
         var uploadPath: [String] = []
-        
-        if let selection = selection {
+
+        if viewMode == "grid" && !gridPath.isEmpty {
+          uploadPath = gridPath
+        }
+        else if let selection = selection {
           if selection.isFolder {
             uploadPath = selection.path
           }
@@ -261,11 +206,9 @@ struct FilesView: View {
             uploadPath.removeLast()
           }
         }
-        
-        print("UPLOAD PATH: \(uploadPath)")
-        self.upload(file: fileURL, to: uploadPath)
-//        uploadFile(file: fileURL, to: uploadPath)
-        
+
+        actions.upload(file: fileURL, to: uploadPath)
+
       case .failure(let error):
         print(error)
       }
@@ -298,6 +241,9 @@ struct FilesView: View {
         searchText = newValue
       }
     }
+    .onChange(of: viewMode) { _, newValue in
+      Prefs.shared.filesViewMode = newValue
+    }
     .onAppear {
       if searchText != model.fileSearchQuery {
         searchText = model.fileSearchQuery
@@ -328,20 +274,19 @@ struct FilesView: View {
               .aspectRatio(contentMode: .fit)
               .frame(width: 16, height: 16)
           }
-          
+
           Text(message)
             .lineLimit(1)
             .font(.body)
             .foregroundStyle(.white)
-          
+
           Spacer()
-          
+
           if let pathMessage = searchStatusPath {
             Text(pathMessage)
               .lineLimit(1)
               .truncationMode(.tail)
               .font(.footnote)
-//              .fontWeight(.semibold)
               .foregroundStyle(.white)
               .opacity(0.5)
               .padding(.top, 2)
@@ -367,7 +312,138 @@ struct FilesView: View {
     }
     .background(.windowBackground)
   }
-  
+
+  // MARK: - List View
+
+  private var listView: some View {
+    List(self.displayedFiles, id: \.self, selection: self.$selection) { file in
+      if file.isFolder {
+        FolderItemView(file: file, depth: 0).tag(file.id)
+      }
+      else {
+        FileItemView(file: file, depth: 0).tag(file.id)
+      }
+    }
+    .environment(\.defaultMinListRowHeight, 28)
+    .listStyle(.inset)
+    .alternatingRowBackgrounds(.enabled)
+    .onDrop(of: [.fileURL], isTargeted: self.$dragOver) { items in
+      guard self.model.access?.contains(.canUploadFiles) == true,
+            let item = items.first,
+            let identifier = item.registeredTypeIdentifiers.first else {
+        return false
+      }
+
+      item.loadItem(forTypeIdentifier: identifier, options: nil) { (urlData, error) in
+        DispatchQueue.main.async {
+          if let urlData = urlData as? Data,
+             let fileURL = URL(dataRepresentation: urlData, relativeTo: nil, isAbsolute: true) {
+            let didStartAccessing = fileURL.startAccessingSecurityScopedResource()
+            defer {
+              if didStartAccessing {
+                fileURL.stopAccessingSecurityScopedResource()
+              }
+            }
+            actions.upload(file: fileURL, to: [])
+          }
+        }
+      }
+
+      return true
+    }
+    .contextMenu(forSelectionType: FileInfo.self) { items in
+      let selectedFile = items.first
+
+      Button {
+        if let s = selectedFile {
+          actions.downloadFile(s)
+        }
+      } label: {
+        Label("Download", systemImage: "arrow.down")
+      }
+      .disabled(selectedFile == nil)
+
+      Divider()
+
+      Button {
+        if let s = selectedFile {
+          Task {
+            if let details = await actions.getFileInfo(s) {
+              self.fileDetails = details
+            }
+          }
+        }
+      } label: {
+        Label("Get Info", systemImage: "info.circle")
+      }
+      .disabled(selectedFile == nil)
+
+      Button {
+        if let s = selectedFile {
+          actions.previewFile(s)
+        }
+      } label: {
+        Label("Quick Look", systemImage: "eye")
+      }
+      .disabled(selectedFile == nil || (selectedFile != nil && !selectedFile!.isPreviewable))
+
+      if model.access?.contains(.canDeleteFiles) == true {
+        Divider()
+
+        Button {
+          self.confirmDeleteShown = true
+        } label: {
+          Label("Delete...", systemImage: "trash")
+        }
+        .disabled(selectedFile == nil)
+      }
+    } primaryAction: { items in
+      guard let clickedFile = items.first else {
+        return
+      }
+
+      self.selection = clickedFile
+      if clickedFile.isFolder {
+        clickedFile.expanded.toggle()
+      }
+      else {
+        actions.downloadFile(clickedFile)
+      }
+    }
+    .onKeyPress(.rightArrow) {
+      if let s = selection, s.isFolder {
+        s.expanded = true
+        return .handled
+      }
+      return .ignored
+    }
+    .onKeyPress(.leftArrow) {
+      if let s = selection, s.isFolder {
+        s.expanded = false
+        return .handled
+      }
+      return .ignored
+    }
+    .onKeyPress(.space) {
+      if let s = selection, s.isPreviewable {
+        actions.previewFile(s)
+        return .handled
+      }
+      return .ignored
+    }
+    .overlay {
+      if !model.filesLoaded {
+        VStack {
+          ProgressView()
+            .controlSize(.large)
+        }
+        .frame(maxWidth: .infinity)
+      }
+    }
+  }
+
+  // MARK: - Computed Properties
+
   private var isShowingSearchResults: Bool {
     switch model.fileSearchStatus {
     case .idle:
@@ -406,7 +482,7 @@ struct FilesView: View {
       return nil
     }
   }
-  
+
   private var searchStatusPath: String? {
     guard let path = model.fileSearchCurrentPath else {
       return nil
@@ -415,112 +491,6 @@ struct FilesView: View {
       return "/"
     }
     return path.joined(separator: "/")
-  }
-    
-  private func openPreviewWindow(_ previewInfo: PreviewFileInfo) {
-    switch previewInfo.previewType {
-    case .image:
-      self.openWindow(id: "preview-quicklook", value: previewInfo)
-    case .text:
-      self.openWindow(id: "preview-quicklook", value: previewInfo)
-    case .unknown:
-      self.openWindow(id: "preview-quicklook", value: previewInfo)
-      return
-    }
-  }
-  
-  @MainActor private func newFolder(name: String, parent: FileInfo?) {
-    Task {
-      var parentFolder: FileInfo? = nil
-      if parent?.isFolder == true {
-        parentFolder = parent
-      }
-      
-      let path: [String] = parentFolder?.path ?? []
-      if try await self.model.newFolder(name: name, parentPath: path) {
-        try await self.model.getFileList(path: path)
-      }
-    }
-  }
-  
-  @MainActor private func getFileInfo(_ file: FileInfo) {
-    Task {
-      if let fileInfo = try? await model.getFileDetails(file.name, path: file.path) {
-        self.fileDetails = fileInfo
-      }
-    }
-  }
-  
-  @MainActor private func downloadFile(_ file: FileInfo) {
-    if file.isFolder {
-      self.model.downloadFolder(file.name, path: file.path)
-    }
-    else {
-      self.model.downloadFile(file.name, path: file.path)
-    }
-  }
-  
-  @MainActor private func uploadFile(file fileURL: URL, to path: [String]) throws {
-    self.model.uploadFile(url: fileURL, path: path) { info in
-      Task {
-        // Refresh file listing to display newly uploaded file.
-        try? await self.model.getFileList(path: path)
-      }
-    }
-  }
-  
-  @MainActor private func upload(file fileURL: URL, to path: [String]) {
-    var fileIsDirectory: ObjCBool = false
-    guard FileManager.default.fileExists(atPath: fileURL.path(percentEncoded: false), isDirectory: &fileIsDirectory) else {
-      return
-    }
-
-    if fileIsDirectory.boolValue {
-      self.model.uploadFolder(url: fileURL, path: path, complete: { info in
-        Task {
-          // Refresh file listing to display newly uploaded file.
-          try? await model.getFileList(path: path)
-        }
-      })
-    }
-    else {
-      self.model.uploadFile(url: fileURL, path: path) { info in
-        Task {
-          // Refresh file listing to display newly uploaded file.
-          try? await model.getFileList(path: path)
-        }
-      }
-    }
-  }
-  
-  @MainActor private func previewFile(_ file: FileInfo) {
-    guard file.isPreviewable else {
-      return
-    }
-  
-    self.model.previewFile(file.name, path: file.path) { info in
-      if let info = info {
-        var extendedInfo = info
-        extendedInfo.creator = file.creator
-        extendedInfo.type = file.type
-        self.openPreviewWindow(extendedInfo)
-      }
-    }
-  }
-  
-  private func deleteFile(_ file: FileInfo) async {
-    var parentPath: [String] = []
-    if file.path.count > 1 {
-      parentPath = Array(file.path[0..<file.path.count-1])
-    }
-    
-    do {
-      try await self.model.deleteFile(file.name, path: file.path)
-      try await self.model.getFileList(path: parentPath)
-    }
-    catch {
-      print("Error deleting file: \(error)")
-    }
   }
 }
 
