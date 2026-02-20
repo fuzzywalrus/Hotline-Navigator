@@ -36,7 +36,7 @@ struct FolderItemView: View {
         }
       } label: {
         Text(Image(systemName: file.expanded ? "chevron.down" : "chevron.right"))
-          .bold()
+          .fontWeight(.semibold)
           .font(.system(size: 10))
           .foregroundStyle(dragOver ? Color.white : Color.primary)
           .opacity(0.5)

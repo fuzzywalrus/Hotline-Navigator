@@ -45,7 +45,7 @@ struct FilesView: View {
           let _ = try? await self.model.getFileList()
         }
       }
-      .searchable(text: $searchText, isPresented: $isSearching, placement: .automatic, prompt: "Search")
+      .searchable(text: $searchText, isPresented: $isSearching, placement: .automatic, prompt: self.folderPath.last.map { "Search \($0)" } ?? "Search")
       .background(Button("", action: { isSearching = true }).keyboardShortcut("f").hidden())
       .navigationSubtitle(!folderPath.isEmpty ? folderPath.last ?? "" : "")
       .toolbar {
@@ -223,7 +223,7 @@ struct FilesView: View {
         return
       }
       searchText = trimmed
-      model.startFileSearch(query: trimmed)
+      model.startFileSearch(query: trimmed, startPath: self.folderPath)
     }
     .onChange(of: searchText) { _, newValue in
       if newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

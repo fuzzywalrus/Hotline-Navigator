@@ -2081,7 +2081,7 @@ class HotlineState: Equatable {
   // MARK: - File Search
 
   @MainActor
-  func startFileSearch(query: String) {
+  func startFileSearch(query: String, startPath: [String] = []) {
     let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else {
       self.cancelFileSearch()
@@ -2095,7 +2095,7 @@ class HotlineState: Equatable {
     self.fileSearchScannedFolders = 0
     self.fileSearchCurrentPath = []
 
-    let session = HotlineStateFileSearchSession(hotlineState: self, query: trimmed, config: self.fileSearchConfig)
+    let session = HotlineStateFileSearchSession(hotlineState: self, query: trimmed, config: self.fileSearchConfig, startPath: startPath)
     self.fileSearchSession = session
 
     Task { await session.start() }
@@ -2670,6 +2670,7 @@ final class HotlineStateFileSearchSession {
   private weak var hotlineState: HotlineState?
   private let queryTokens: [String]
   private let config: FileSearchConfig
+  private let startPath: [String]
 
   private var queue: [FolderTask] = []
   private var visited: Set<String> = []
@@ -2679,10 +2680,11 @@ final class HotlineStateFileSearchSession {
   private var currentDelay: TimeInterval
   private var isCancelled = false
 
-  init(hotlineState: HotlineState, query: String, config: FileSearchConfig) {
+  init(hotlineState: HotlineState, query: String, config: FileSearchConfig, startPath: [String] = []) {
     self.hotlineState = hotlineState
     self.queryTokens = query.lowercased().split(separator: " ").map(String.init)
     self.config = config
+    self.startPath = startPath
     self.currentDelay = config.initialDelay
   }
 
@@ -2693,7 +2695,12 @@ final class HotlineStateFileSearchSession {
 
     await Task.yield()
 
-    if !hotlineState.filesLoaded {
+    if !self.startPath.isEmpty {
+      hotlineState.searchSession(self, didFocusOn: self.startPath)
+      let startFiles = try? await hotlineState.getFileList(path: self.startPath, suppressErrors: true, preferCache: true)
+      self.processedCount = max(self.processedCount, 1)
+      self.processListing(startFiles ?? [], depth: 0, parentPath: self.startPath, parentIsHot: false)
+    } else if !hotlineState.filesLoaded {
       hotlineState.searchSession(self, didFocusOn: [])
       let rootFiles = try? await hotlineState.getFileList(path: [], suppressErrors: true, preferCache: true)
       self.processedCount = max(self.processedCount, 1)
