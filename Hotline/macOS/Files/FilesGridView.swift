@@ -8,6 +8,7 @@ private let gridColumnMax: CGFloat = 120
 struct FileGridItemView: View {
   let file: FileInfo
   let isSelected: Bool
+  let isDragTarget: Bool
 
   var body: some View {
     VStack(spacing: 2) {
@@ -19,17 +20,17 @@ struct FileGridItemView: View {
         }
         else if self.file.isFolder {
           if self.file.isAdminDropboxFolder {
-            Image("Admin Drop Box")
+            Image("Admin Drop Box Large")
               .resizable()
               .scaledToFit()
           }
           else if self.file.isDropboxFolder {
-            Image("Drop Box")
+            Image("Drop Box Large")
               .resizable()
               .scaledToFit()
           }
           else {
-            Image("Folder")
+            Image("Folder Large")
               .resizable()
               .scaledToFit()
           }
@@ -43,6 +44,16 @@ struct FileGridItemView: View {
       .background(
         RoundedRectangle(cornerRadius: 6)
           .fill(self.isSelected ? Color(nsColor: .tertiaryLabelColor).opacity(0.3) : Color.clear)
+      )
+      .overlay(
+        RoundedRectangle(cornerRadius: 6)
+          .fill(Color.accentColor.opacity(0.15))
+          .opacity(self.isDragTarget ? 1 : 0)
+      )
+      .overlay(
+        RoundedRectangle(cornerRadius: 6)
+          .strokeBorder(Color.accentColor, lineWidth: 2)
+          .opacity(self.isDragTarget ? 1 : 0)
       )
 
       Text(self.file.name)
@@ -83,6 +94,8 @@ struct FilesGridView: View {
   @State private var dragOver: Bool = false
   @State private var gridWidth: CGFloat = 0
   @State private var didSelectItem: Bool = false
+  @State private var dropTargetFileID: FileInfo.ID? = nil
+  @State private var springLoadTask: Task<Void, Never>? = nil
 
   private var columnsPerRow: Int {
     let available = self.gridWidth - (gridPadding * 2)
@@ -255,7 +268,7 @@ struct FilesGridView: View {
 
   @ViewBuilder
   private func gridItemView(for file: FileInfo) -> some View {
-    FileGridItemView(file: file, isSelected: self.selection == file)
+    let view = FileGridItemView(file: file, isSelected: self.selection == file, isDragTarget: self.dropTargetFileID == file.id)
       .padding(6)
       .simultaneousGesture(
         DragGesture(minimumDistance: 0)
@@ -278,6 +291,36 @@ struct FilesGridView: View {
       .contextMenu {
         self.itemContextMenu(for: file)
       }
+
+    if file.isFolder {
+      view
+        .onDrop(of: [.fileURL], isTargeted: self.dropTargetBinding(for: file)) { items in
+          guard self.model.access?.contains(.canUploadFiles) == true,
+                let item = items.first,
+                let identifier = item.registeredTypeIdentifiers.first else {
+            return false
+          }
+
+          item.loadItem(forTypeIdentifier: identifier, options: nil) { (urlData, error) in
+            DispatchQueue.main.async {
+              if let urlData = urlData as? Data,
+                 let fileURL = URL(dataRepresentation: urlData, relativeTo: nil, isAbsolute: true) {
+                let didStartAccessing = fileURL.startAccessingSecurityScopedResource()
+                defer {
+                  if didStartAccessing {
+                    fileURL.stopAccessingSecurityScopedResource()
+                  }
+                }
+                self.actions.upload(file: fileURL, to: file.path)
+              }
+            }
+          }
+          return true
+        }
+    }
+    else {
+      view
+    }
   }
 
   @ViewBuilder
@@ -346,6 +389,28 @@ struct FilesGridView: View {
       Label(file?.isFolder == true ? "Delete Folder..." : "Delete File...", systemImage: "trash")
     }
     .disabled(file == nil || (self.model.access?.contains(.canDeleteFiles) != true && self.model.access?.contains(.canDeleteFolders) != true))
+  }
+
+  private func dropTargetBinding(for file: FileInfo) -> Binding<Bool> {
+    Binding(
+      get: { self.dropTargetFileID == file.id },
+      set: { newValue in
+        let newID = newValue ? file.id : nil
+        if self.dropTargetFileID != newID {
+          self.dropTargetFileID = newID
+          self.springLoadTask?.cancel()
+          self.springLoadTask = nil
+
+          if newValue {
+            self.springLoadTask = Task {
+              try? await Task.sleep(for: .seconds(0.8))
+              guard !Task.isCancelled else { return }
+              self.gridPath = file.path
+            }
+          }
+        }
+      }
+    )
   }
 
   private func moveSelectionHorizontally(by offset: Int) -> KeyPress.Result {
