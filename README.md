@@ -1,13 +1,13 @@
 <img width="836" height="188" alt="GitHub Banner" src="https://github.com/user-attachments/assets/73873a25-e18f-4dfd-9454-4c71ce271054" />
 
 # Hotline
-A modern remake of Hotline for macOS.
+A modern remake of Hotline for macOS
 
 [Download the Latest](https://github.com/mierau/hotline/releases/latest)
 
-![macOS](https://img.shields.io/badge/macOS-15+-blue)
-![Swift](https://img.shields.io/badge/Swift-5.0-orange)
-![license](https://img.shields.io/badge/license-MIT-green?style=flat)
+<img width="303" height="300" alt="Reading the Message Board on MacDomain" src="https://github.com/user-attachments/assets/30534bb1-4274-45c6-86cd-ed2bb1dd1d98" />
+<img width="366" height="300" alt="Browsing Files on The Mobius Strip" src="https://github.com/user-attachments/assets/3d305f81-6b91-4e37-a026-2501e930864a" />
+<img width="308" height="300" alt="Browsing News on RetroMac" src="https://github.com/user-attachments/assets/f1c9ec16-3526-4266-81a3-ab26a3d86e84" />
 
 # Requirements
 
@@ -16,6 +16,12 @@ A modern remake of Hotline for macOS.
 | Sequoia 15.7 or greater    | Not yet available     | Not yet available | Not yet available |
 
 To keep this software fresh and running on Apple's latest platforms, the intention is to support the last two major OS releases from Apple. This gives people time to move to the latest major OS release while also allowing this project to make use of the latest APIs.
+
+![macOS](https://img.shields.io/badge/macOS-15+-blue)
+![Swift](https://img.shields.io/badge/Swift-5.0-orange)
+![license](https://img.shields.io/badge/license-MIT-green?style=flat)
+
+-----
 
 # What is Hotline?
 
@@ -41,9 +47,6 @@ And this project is an attempt to create a modern open source version of Hotline
 
 # Run Your Own Hotline Server
 This project (so far) does not include server software. This is a client for connecting to and participating on Hotline servers. If you would like to host your own Hotline server (and you should—it's free!), please checkout the very capable Mobius project: https://github.com/jhalter/mobius
-
-# Screenshots
-![CleanShot 2024-05-14 at 13 45 55@2x](https://github.com/mierau/hotline/assets/55453/44e02def-d457-4f29-ac5e-30438a7794c3)
 
 # Status
 
