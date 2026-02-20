@@ -1,17 +1,19 @@
 <img width="836" height="188" alt="GitHub Banner" src="https://github.com/user-attachments/assets/73873a25-e18f-4dfd-9454-4c71ce271054" />
 
 # Hotline
-An attempt to resurrect Hotline for Apple's latest operating systems (iOS, macOS, etc) by completely recreating it in Swift and SwiftUI.
+A modern remake of Hotline for macOS.
 
 [Download the Latest](https://github.com/mierau/hotline/releases/latest)
 
-**Note:** This project (so far) does not include server software. This is a client for connecting to and participating on Hotline servers. If you would like to host your own Hotline server (and you should!), please checkout the very capable Mobius project: https://github.com/jhalter/mobius
+![macOS](https://img.shields.io/badge/macOS-15+-blue)
+![Swift](https://img.shields.io/badge/Swift-5.0-orange)
+![license](https://img.shields.io/badge/license-MIT-green?style=flat)
 
 # Requirements
 
 | macOS                      | iOS                   | iPadOS            | visionOS          |
 |----------------------------|-----------------------|-------------------|-------------------|
-| Sequoia 15.7 or greater    | iOS 18.7 or greater   | Not yet available | Not yet available |
+| Sequoia 15.7 or greater    | Not yet available     | Not yet available | Not yet available |
 
 To keep this software fresh and running on Apple's latest platforms, the intention is to support the last two major OS releases from Apple. This gives people time to move to the latest major OS release while also allowing this project to make use of the latest APIs.
 
@@ -37,7 +39,10 @@ And this project is an attempt to create a modern open source version of Hotline
 - Document the Hotline protocol.
 - Have fun. :)
 
-# macOS Screenshots
+# Run Your Own Hotline Server
+This project (so far) does not include server software. This is a client for connecting to and participating on Hotline servers. If you would like to host your own Hotline server (and you should—it's free!), please checkout the very capable Mobius project: https://github.com/jhalter/mobius
+
+# Screenshots
 ![CleanShot 2024-05-14 at 13 45 55@2x](https://github.com/mierau/hotline/assets/55453/44e02def-d457-4f29-ac5e-30438a7794c3)
 
 # Status
