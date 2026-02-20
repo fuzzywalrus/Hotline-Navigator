@@ -80,7 +80,7 @@ struct FilesGridView: View {
   @Environment(HotlineState.self) private var model: HotlineState
 
   @Binding var selection: FileInfo?
-  @Binding var gridPath: [String]
+  @Binding var folderPath: [String]
   @Binding var fileDetails: FileDetails?
   @Binding var confirmDeleteShown: Bool
   @Binding var uploadFileSelectorDisplayed: Bool
@@ -170,17 +170,17 @@ struct FilesGridView: View {
                 fileURL.stopAccessingSecurityScopedResource()
               }
             }
-            self.actions.upload(file: fileURL, to: self.gridPath)
+            self.actions.upload(file: fileURL, to: self.folderPath)
           }
         }
       }
       return true
     }
-    .task(id: self.gridPath) {
-      if !self.gridPath.isEmpty {
+    .task(id: self.folderPath) {
+      if !self.folderPath.isEmpty {
         self.loading = true
         self.showSpinner = false
-        let _ = try? await self.model.getFileList(path: self.gridPath)
+        let _ = try? await self.model.getFileList(path: self.folderPath)
         self.loading = false
         withAnimation(.easeOut(duration: 0.2)) {
           self.showSpinner = false
@@ -198,7 +198,7 @@ struct FilesGridView: View {
       }
     }
     .overlay {
-      if self.showSpinner || (!self.model.filesLoaded && self.gridPath.isEmpty) {
+      if self.showSpinner || (!self.model.filesLoaded && self.folderPath.isEmpty) {
         VStack {
           ProgressView()
             .controlSize(.large)
@@ -207,17 +207,10 @@ struct FilesGridView: View {
         .transition(.opacity)
       }
     }
-    .onKeyPress(.escape) {
-      if !self.gridPath.isEmpty && !self.isShowingSearchResults {
-        self.gridPath.removeLast()
-        return .handled
-      }
-      return .ignored
-    }
     .onKeyPress(.return) {
       if let s = self.selection {
         if s.isFolder {
-          self.gridPath = s.path
+          self.folderPath = s.path
         }
         else {
           self.actions.downloadFile(s)
@@ -233,17 +226,17 @@ struct FilesGridView: View {
       }
       return .ignored
     }
-    .onKeyPress(.rightArrow) {
+    .onKeyPress(.rightArrow, phases: [.down, .repeat]) { _ in
       self.moveSelectionHorizontally(by: 1)
     }
-    .onKeyPress(.leftArrow) {
+    .onKeyPress(.leftArrow, phases: [.down, .repeat]) { _ in
       self.moveSelectionHorizontally(by: -1)
     }
-    .onKeyPress(keys: [.downArrow]) { press in
+    .onKeyPress(keys: [.downArrow], phases: [.down, .repeat]) { press in
       if press.modifiers.contains(.command) {
         if let s = self.selection {
           if s.isFolder {
-            self.gridPath = s.path
+            self.folderPath = s.path
           }
           else {
             self.actions.downloadFile(s)
@@ -254,10 +247,10 @@ struct FilesGridView: View {
       }
       return self.moveSelectionVertically(by: 1)
     }
-    .onKeyPress(keys: [.upArrow]) { press in
+    .onKeyPress(keys: [.upArrow], phases: [.down, .repeat]) { press in
       if press.modifiers.contains(.command) {
-        if !self.gridPath.isEmpty && !self.isShowingSearchResults {
-          self.gridPath.removeLast()
+        if !self.folderPath.isEmpty && !self.isShowingSearchResults {
+          self.folderPath.removeLast()
           return .handled
         }
         return .ignored
@@ -281,7 +274,7 @@ struct FilesGridView: View {
         TapGesture(count: 2)
           .onEnded {
             if file.isFolder {
-              self.gridPath = file.path
+              self.folderPath = file.path
             }
             else {
               self.actions.downloadFile(file)
@@ -405,7 +398,7 @@ struct FilesGridView: View {
             self.springLoadTask = Task {
               try? await Task.sleep(for: .seconds(0.8))
               guard !Task.isCancelled else { return }
-              self.gridPath = file.path
+              self.folderPath = file.path
             }
           }
         }
@@ -473,11 +466,11 @@ struct FilesGridView: View {
       return self.model.fileSearchResults
     }
 
-    if self.gridPath.isEmpty {
+    if self.folderPath.isEmpty {
       return self.model.files
     }
 
-    return self.findFolder(in: self.model.files, at: self.gridPath)?.children ?? []
+    return self.findFolder(in: self.model.files, at: self.folderPath)?.children ?? []
   }
 
   private func findFolder(in files: [FileInfo], at path: [String]) -> FileInfo? {

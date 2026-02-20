@@ -15,7 +15,7 @@ struct FilesView: View {
   @State private var confirmDeleteShown: Bool = false
   @State private var newFolderShown: Bool = false
   @State private var viewMode: String = Prefs.shared.filesViewMode
-  @State private var gridPath: [String] = []
+  @State private var folderPath: [String] = []
 
   private var actions: FileActions {
     FileActions(model: model, openWindow: openWindow)
@@ -27,7 +27,7 @@ struct FilesView: View {
         if viewMode == "grid" {
           FilesGridView(
             selection: $selection,
-            gridPath: $gridPath,
+            folderPath: $folderPath,
             fileDetails: $fileDetails,
             confirmDeleteShown: $confirmDeleteShown,
             uploadFileSelectorDisplayed: $uploadFileSelectorDisplayed,
@@ -47,12 +47,12 @@ struct FilesView: View {
       }
       .searchable(text: $searchText, isPresented: $isSearching, placement: .automatic, prompt: "Search")
       .background(Button("", action: { isSearching = true }).keyboardShortcut("f").hidden())
-      .navigationSubtitle(viewMode == "grid" && !gridPath.isEmpty ? gridPath.last ?? "" : "")
+      .navigationSubtitle(!folderPath.isEmpty ? folderPath.last ?? "" : "")
       .toolbar {
-        if viewMode == "grid" && !gridPath.isEmpty && !isShowingSearchResults {
+        if !folderPath.isEmpty && !isShowingSearchResults {
           ToolbarItem {
             Button {
-              self.gridPath.removeLast()
+              self.folderPath.removeLast()
             } label: {
               Label("Back", systemImage: "chevron.left")
             }
@@ -185,36 +185,30 @@ struct FilesView: View {
     .sheet(item: self.$fileDetails) { item in
       FileDetailsSheet(details: item)
     }
-    .fileImporter(isPresented: $uploadFileSelectorDisplayed, allowedContentTypes: [.data, .folder], allowsMultipleSelection: false, onCompletion: { results in
+    .fileImporter(isPresented: self.$uploadFileSelectorDisplayed, allowedContentTypes: [.data, .folder], allowsMultipleSelection: false, onCompletion: { results in
       switch results {
       case .success(let fileURLS):
-        guard fileURLS.count > 0,
-              let fileURL = fileURLS.first
-        else {
+        guard let fileURL = fileURLS.first else {
           return
         }
 
         var uploadPath: [String] = []
 
-        if viewMode == "grid" && !gridPath.isEmpty {
-          uploadPath = gridPath
+        if let selection = self.selection, selection.isFolder {
+          uploadPath = selection.path
         }
-        else if let selection = selection {
-          if selection.isFolder {
-            uploadPath = selection.path
-          }
-          else {
-            uploadPath = Array<String>(selection.path)
-            uploadPath.removeLast()
-          }
+        else if !self.folderPath.isEmpty {
+          uploadPath = self.folderPath
         }
 
-        actions.upload(file: fileURL, to: uploadPath)
+        self.actions.upload(file: fileURL, to: uploadPath)
 
       case .failure(let error):
         print(error)
       }
     })
+    .fileDialogConfirmationLabel("Upload")
+    .fileDialogMessage(Text(self.uploadDestinationName.map { "Select a file or folder to upload to \"\($0)\"" } ?? "Select a file or folder to upload"))
     .onSubmit(of: .search) {
       #if os(macOS)
       let shiftPressed = NSApp.currentEvent?.modifierFlags.contains(.shift) ?? false
@@ -318,6 +312,73 @@ struct FilesView: View {
   // MARK: - List View
 
   private var listView: some View {
+    self.listContent
+      .onKeyPress(.rightArrow) {
+        if let s = self.selection, s.isFolder {
+          s.expanded = true
+          return .handled
+        }
+        return .ignored
+      }
+      .onKeyPress(.leftArrow) {
+        if let s = self.selection, s.isFolder {
+          s.expanded = false
+          return .handled
+        }
+        return .ignored
+      }
+      .onKeyPress(.space) {
+        if let s = self.selection, s.isPreviewable {
+          self.actions.previewFile(s)
+          return .handled
+        }
+        return .ignored
+      }
+      .onKeyPress(.downArrow, phases: .down) { press in
+        guard press.modifiers.contains(.command) else { return .ignored }
+        if let s = self.selection, s.isFolder {
+          self.folderPath = s.path
+          return .handled
+        }
+        return .ignored
+      }
+      .onKeyPress(.upArrow, phases: .down) { press in
+        guard press.modifiers.contains(.command) else { return .ignored }
+        if !self.folderPath.isEmpty {
+          self.folderPath.removeLast()
+          return .handled
+        }
+        return .ignored
+      }
+      .onKeyPress(.return) {
+        if let s = self.selection {
+          if s.isFolder {
+            self.folderPath = s.path
+          }
+          else {
+            self.actions.downloadFile(s)
+          }
+          return .handled
+        }
+        return .ignored
+      }
+      .task(id: self.folderPath) {
+        if !self.folderPath.isEmpty {
+          let _ = try? await self.model.getFileList(path: self.folderPath)
+        }
+      }
+      .overlay {
+        if !model.filesLoaded {
+          VStack {
+            ProgressView()
+              .controlSize(.large)
+          }
+          .frame(maxWidth: .infinity)
+        }
+      }
+  }
+
+  private var listContent: some View {
     List(self.displayedFiles, id: \.self, selection: self.$selection) { file in
       if file.isFolder {
         FolderItemView(file: file, depth: 0).tag(file.id)
@@ -346,7 +407,7 @@ struct FilesView: View {
                 fileURL.stopAccessingSecurityScopedResource()
               }
             }
-            actions.upload(file: fileURL, to: [])
+            actions.upload(file: fileURL, to: self.folderPath)
           }
         }
       }
@@ -354,23 +415,31 @@ struct FilesView: View {
       return true
     }
     .contextMenu(forSelectionType: FileInfo.self) { items in
-      let selectedFile = items.first
+      let file = items.first
 
       Button {
-        if let s = selectedFile {
-          actions.downloadFile(s)
+        if let file = file {
+          self.actions.downloadFile(file)
         }
       } label: {
         Label("Download", systemImage: "arrow.down")
       }
-      .disabled(selectedFile == nil)
+      .disabled(file == nil || self.model.access?.contains(.canDownloadFiles) != true)
+
+      Button {
+        self.selection = file
+        self.uploadFileSelectorDisplayed = true
+      } label: {
+        Label("Upload...", systemImage: "arrow.up")
+      }
+      .disabled(file != nil && !file!.isFolder || self.model.access?.contains(.canUploadFiles) != true)
 
       Divider()
 
       Button {
-        if let s = selectedFile {
+        if let file = file {
           Task {
-            if let details = await actions.getFileInfo(s) {
+            if let details = await self.actions.getFileInfo(file) {
               self.fileDetails = details
             }
           }
@@ -378,27 +447,35 @@ struct FilesView: View {
       } label: {
         Label("Get Info", systemImage: "info.circle")
       }
-      .disabled(selectedFile == nil)
+      .disabled(file == nil)
 
       Button {
-        if let s = selectedFile {
-          actions.previewFile(s)
+        if let file = file {
+          self.actions.previewFile(file)
         }
       } label: {
         Label("Quick Look", systemImage: "eye")
       }
-      .disabled(selectedFile == nil || (selectedFile != nil && !selectedFile!.isPreviewable))
+      .disabled(file == nil || file?.isPreviewable != true)
 
-      if model.access?.contains(.canDeleteFiles) == true {
-        Divider()
-
-        Button {
-          self.confirmDeleteShown = true
-        } label: {
-          Label("Delete...", systemImage: "trash")
-        }
-        .disabled(selectedFile == nil)
+      Button {
+        self.newFolderShown = true
+      } label: {
+        Label("New Folder", systemImage: "folder.badge.plus")
       }
+      .disabled((file != nil && !file!.isFolder) || self.model.access?.contains(.canCreateFolders) != true)
+
+      Divider()
+
+      Button {
+        if let file = file {
+          self.selection = file
+          self.confirmDeleteShown = true
+        }
+      } label: {
+        Label(file?.isFolder == true ? "Delete Folder..." : "Delete File...", systemImage: "trash")
+      }
+      .disabled(file == nil || (self.model.access?.contains(.canDeleteFiles) != true && self.model.access?.contains(.canDeleteFolders) != true))
     } primaryAction: { items in
       guard let clickedFile = items.first else {
         return
@@ -406,45 +483,25 @@ struct FilesView: View {
 
       self.selection = clickedFile
       if clickedFile.isFolder {
-        clickedFile.expanded.toggle()
+        self.folderPath = clickedFile.path
       }
       else {
         actions.downloadFile(clickedFile)
       }
     }
-    .onKeyPress(.rightArrow) {
-      if let s = selection, s.isFolder {
-        s.expanded = true
-        return .handled
-      }
-      return .ignored
-    }
-    .onKeyPress(.leftArrow) {
-      if let s = selection, s.isFolder {
-        s.expanded = false
-        return .handled
-      }
-      return .ignored
-    }
-    .onKeyPress(.space) {
-      if let s = selection, s.isPreviewable {
-        actions.previewFile(s)
-        return .handled
-      }
-      return .ignored
-    }
-    .overlay {
-      if !model.filesLoaded {
-        VStack {
-          ProgressView()
-            .controlSize(.large)
-        }
-        .frame(maxWidth: .infinity)
-      }
-    }
   }
 
   // MARK: - Computed Properties
+
+  private var uploadDestinationName: String? {
+    if let selection = self.selection, selection.isFolder {
+      return selection.name
+    }
+    if !self.folderPath.isEmpty {
+      return self.folderPath.last
+    }
+    return nil
+  }
 
   private var isShowingSearchResults: Bool {
     switch model.fileSearchStatus {
@@ -458,7 +515,30 @@ struct FilesView: View {
   }
 
   private var displayedFiles: [FileInfo] {
-    isShowingSearchResults ? model.fileSearchResults : model.files
+    if self.isShowingSearchResults {
+      return self.model.fileSearchResults
+    }
+    if !self.folderPath.isEmpty {
+      return self.findFolder(in: self.model.files, at: self.folderPath)?.children ?? []
+    }
+    return self.model.files
+  }
+
+  private func findFolder(in files: [FileInfo], at path: [String]) -> FileInfo? {
+    guard !path.isEmpty, !files.isEmpty else { return nil }
+
+    let currentName = path[0]
+    for file in files {
+      if file.name == currentName {
+        if path.count == 1 {
+          return file
+        }
+        else if let children = file.children {
+          return self.findFolder(in: children, at: Array(path[1...]))
+        }
+      }
+    }
+    return nil
   }
 
   private var searchStatusMessage: String? {
