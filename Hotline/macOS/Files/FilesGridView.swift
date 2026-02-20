@@ -1,7 +1,7 @@
 import SwiftUI
 
 private let gridColumnSpacing: CGFloat = 12
-private let gridPadding: CGFloat = 12
+private let gridPadding: CGFloat = 24
 private let gridColumnMin: CGFloat = 100
 private let gridColumnMax: CGFloat = 120
 
