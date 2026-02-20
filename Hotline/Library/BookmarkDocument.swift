@@ -6,7 +6,7 @@ struct BookmarkDocument: FileDocument {
   static var readableContentTypes: [UTType] { [.data, UTType(filenameExtension: "hlbm")!] }
   static var writableContentTypes: [UTType] { [.data, UTType(filenameExtension: "hlbm")!] }
 
-  var bookmark: Bookmark
+  nonisolated(unsafe) var bookmark: Bookmark
   
   init(bookmark: Bookmark) {
     self.bookmark = bookmark

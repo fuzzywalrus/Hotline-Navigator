@@ -125,7 +125,7 @@ struct MessageBoardView: View {
           .background(self.colorScheme == .light ? AnyShapeStyle(Color.clear) : AnyShapeStyle(.thickMaterial))
           .background(self.colorScheme == .light ? Color(nsColor: .controlBackgroundColor) : Color.clear)
           .clipShape(.rect(cornerRadius: 12))
-          .shadow(color: .black.opacity(0.1), radius: 3, x: 0, y: 1)
+          .shadow(color: .black.opacity(0.08), radius: 2, x: 0, y: 1)
           .padding(.horizontal, 24)
           
 //          Divider()
