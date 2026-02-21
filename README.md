@@ -15,9 +15,9 @@ To keep this software fresh and running on Apple's latest platforms, the intenti
 
 ---
 
-<img width="303" height="300" alt="Reading the Message Board on MacDomain" src="https://github.com/user-attachments/assets/30534bb1-4274-45c6-86cd-ed2bb1dd1d98" />
-<img width="366" height="300" alt="Browsing Files on The Mobius Strip" src="https://github.com/user-attachments/assets/3d305f81-6b91-4e37-a026-2501e930864a" />
-<img width="308" height="300" alt="Browsing News on RetroMac" src="https://github.com/user-attachments/assets/f1c9ec16-3526-4266-81a3-ab26a3d86e84" />
+<img width="205" height="200" alt="Reading the Message Board on MacDomain" src="https://github.com/user-attachments/assets/30534bb1-4274-45c6-86cd-ed2bb1dd1d98" />
+<img width="202" height="200" alt="Browsing News on RetroMac" src="https://github.com/user-attachments/assets/f1c9ec16-3526-4266-81a3-ab26a3d86e84" />
+<img width="244" height="200" alt="Browsing Files on The Mobius Strip" src="https://github.com/user-attachments/assets/3d305f81-6b91-4e37-a026-2501e930864a" />
 
 ---
 
