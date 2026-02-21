@@ -28,7 +28,17 @@ struct BookmarkServer: Hashable, Identifiable {
 }
 
 @Model
-final class Bookmark {
+final class Bookmark: Hashable {
+  // Provide explicit Hashable using stable object identity.
+  // SwiftData's synthesized Hashable can be inconsistent for
+  // newly inserted objects, causing SwiftUI ForEach crashes.
+  static func == (lhs: Bookmark, rhs: Bookmark) -> Bool {
+    lhs === rhs
+  }
+
+  nonisolated func hash(into hasher: inout Hasher) {
+    hasher.combine(ObjectIdentifier(self))
+  }
   var type: BookmarkType = BookmarkType.server
   var order: Int = 0
   

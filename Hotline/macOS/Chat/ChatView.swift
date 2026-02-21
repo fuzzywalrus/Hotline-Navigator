@@ -122,7 +122,15 @@ struct ChatView: View {
       self.stableBannerFileURL = newValue
       self.stableBannerIsAnimated = self.model.bannerImageFormat == .gif
     }
-    .background(.windowBackground)
+    .background {
+      if #available(macOS 26.0, *) {
+        Color(.windowBackgroundColor)
+          .ignoresSafeArea()
+      } else {
+        Color(nsColor: .textBackgroundColor)
+          .ignoresSafeArea()
+      }
+    }
   }
   
   private var inputBar: some View {

@@ -1025,12 +1025,16 @@ extension Data {
     }
 
     // Try Shift-JIS (Japanese Hotline clients). Only accept the result
-    // if it actually contains CJK characters (hiragana, katakana, kanji)
-    // to avoid false positives from the half-width katakana byte range
-    // (0xA1-0xDF) which overlaps with Mac OS Roman characters like ™ and ƒ.
-    if let str = String(data: subdata, encoding: .shiftJIS),
-       str.unicodeScalars.contains(where: { $0.value >= 0x3000 && $0.value <= 0x9FFF }) {
-      return str
+    // if a significant portion of characters are CJK (hiragana, katakana,
+    // kanji) to avoid false positives from Mac OS Roman accented characters
+    // (0x80-0x9F) which overlap with Shift-JIS lead bytes and can form
+    // accidental CJK characters when paired with the following byte.
+    if let str = String(data: subdata, encoding: .shiftJIS) {
+      let cjkCount = str.unicodeScalars.count(where: { $0.value >= 0x3000 && $0.value <= 0x9FFF })
+      let totalCount = str.unicodeScalars.count
+      if cjkCount > 0, totalCount > 0, Double(cjkCount) / Double(totalCount) >= 0.25 {
+        return str
+      }
     }
 
     // Mac OS Roman fallback (classic Mac Hotline clients).

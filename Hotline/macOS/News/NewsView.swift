@@ -396,7 +396,15 @@ struct NewsView: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .transition(.move(edge: .bottom))
-    .background(.windowBackground)
+    .background {
+      if #available(macOS 26.0, *) {
+        Color(.windowBackgroundColor)
+          .ignoresSafeArea()
+      } else {
+        Color(nsColor: .textBackgroundColor)
+          .ignoresSafeArea()
+      }
+    }
   }
 
   // MARK: - Helpers

@@ -23,25 +23,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     AppLaunchState.shared.launchState = .launched
     
-    CKContainer.default().accountStatus { status, error in
-      switch status {
-      case .noAccount:
-        print("iCloud Unavailable")
-        
-        // We mark CloudKit has available now since we're not waiting on
-        // a server sync or anything.
-        AppState.shared.cloudKitReady = true
-      default:
-        print("iCloud Available")
-        
-        self.cloudKitObserverToken = NotificationCenter.default.addObserver(forName: NSPersistentCloudKitContainer.eventChangedNotification, object: nil, queue: OperationQueue.main) { [weak self] note in
-          print("iCloud Changed!")
+    if FileManager.default.ubiquityIdentityToken != nil {
+      CKContainer.default().accountStatus { status, error in
+        if let error = error {
+          print("iCloud account status error: \(error.localizedDescription)")
           AppState.shared.cloudKitReady = true
-            
-          guard let token = self?.cloudKitObserverToken else { return }
-          NotificationCenter.default.removeObserver(token)
+          return
+        }
+
+        switch status {
+        case .noAccount:
+          print("iCloud Unavailable")
+          AppState.shared.cloudKitReady = true
+        default:
+          print("iCloud Available")
+
+          self.cloudKitObserverToken = NotificationCenter.default.addObserver(forName: NSPersistentCloudKitContainer.eventChangedNotification, object: nil, queue: OperationQueue.main) { [weak self] note in
+            print("iCloud Changed!")
+            AppState.shared.cloudKitReady = true
+
+            guard let token = self?.cloudKitObserverToken else { return }
+            NotificationCenter.default.removeObserver(token)
+          }
         }
       }
+    } else {
+      print("iCloud not signed in, skipping CloudKit")
+      AppState.shared.cloudKitReady = true
     }
 
     Task {
@@ -72,28 +80,26 @@ struct Application: App {
   private var modelContainer: ModelContainer = {
     let schema = Schema([
       Bookmark.self,
-      // ChatMessage.self
     ])
-    
-    // For records we want shared across devices.
-    let cloudKitConfiguration = ModelConfiguration(
-      schema: Schema([Bookmark.self]),
-      isStoredInMemoryOnly: false,
-      cloudKitDatabase: .private("iCloud.co.goodmake.hotline")
+
+    let hasICloud = FileManager.default.ubiquityIdentityToken != nil
+
+    if hasICloud {
+      print("iCloud signed in, using CloudKit-backed storage")
+      let cloudKitConfiguration = ModelConfiguration(
+        schema: schema,
+        isStoredInMemoryOnly: false,
+        cloudKitDatabase: .private("iCloud.co.goodmake.hotline")
+      )
+      return try! ModelContainer(for: schema, configurations: [cloudKitConfiguration])
+    }
+
+    print("iCloud unavailable, using local-only storage")
+    let localConfiguration = ModelConfiguration(
+      schema: schema,
+      isStoredInMemoryOnly: false
     )
-    
-    // For records we only need stored locally.
-//    let localConfiguration = ModelConfiguration(
-//      schema: Schema([ChatMessage.self]),
-//      isStoredInMemoryOnly: false
-//    )
-    
-    let modelContainer = try! ModelContainer(for: schema, configurations: [cloudKitConfiguration])
-    
-    // Print local SwiftData sqlite file.
-//    print(modelContainer.configurations.first?.url.path(percentEncoded: false))
-    
-    return modelContainer
+    return try! ModelContainer(for: schema, configurations: [localConfiguration])
   }()
     
   var body: some Scene {

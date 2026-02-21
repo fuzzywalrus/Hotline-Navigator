@@ -181,16 +181,28 @@ struct RegularExpressions {
     }
   }.ignoresCase()
 
-  // URL with explicit scheme: accepts any TLD
+  // IPv4 address: four dot-separated octets (e.g. 73.132.202.107)
+  private static let ipv4Address = Regex {
+    Repeat(1...3) { .digit }
+    "."
+    Repeat(1...3) { .digit }
+    "."
+    Repeat(1...3) { .digit }
+    "."
+    Repeat(1...3) { .digit }
+  }
+
+  // URL with explicit scheme: accepts any TLD or IP address
   private static let schemeLink = Regex {
     ChoiceOf {
       "hotline://"
       "http://"
       "https://"
     }
-    domainName
-    "."
-    anyTLD
+    ChoiceOf {
+      Regex { domainName; "."; anyTLD }
+      ipv4Address
+    }
     portNumber
     ZeroOrMore { pathSegment }
   }.ignoresCase()

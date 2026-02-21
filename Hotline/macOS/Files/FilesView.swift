@@ -306,7 +306,15 @@ struct FilesView: View {
         .padding(.top, 8)
       }
     }
-    .background(.windowBackground)
+    .background {
+      if #available(macOS 26.0, *) {
+        Color(.windowBackgroundColor)
+          .ignoresSafeArea()
+      } else {
+        Color(nsColor: .textBackgroundColor)
+          .ignoresSafeArea()
+      }
+    }
   }
 
   // MARK: - List View
