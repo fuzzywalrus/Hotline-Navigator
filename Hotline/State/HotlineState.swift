@@ -439,6 +439,9 @@ class HotlineState: Equatable {
   var errorDisplayed: Bool = false
   var errorMessage: String? = nil
 
+  // Disconnect Message (server-initiated)
+  var disconnectMessage: String? = nil
+
   // MARK: - Private State
 
   @ObservationIgnored private var client: HotlineClient?
@@ -908,6 +911,10 @@ class HotlineState: Equatable {
       self.access = options
       print("HotlineState: Got access options")
       HotlineUserAccessOptions.printAccessOptions(options)
+
+    case .disconnectMessage(let message):
+      print("HotlineState: Server sent disconnect message: \(message)")
+      self.disconnectMessage = message
     }
   }
 

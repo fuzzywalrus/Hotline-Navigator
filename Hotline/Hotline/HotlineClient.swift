@@ -24,6 +24,8 @@ public enum HotlineEvent: Sendable {
   case showAgreement(String?)
   /// Server sent user access permissions
   case userAccess(HotlineUserAccessOptions)
+  /// Server sent a disconnect message (client should disconnect after receiving)
+  case disconnectMessage(String)
 }
 
 // MARK: - Errors
@@ -431,6 +433,8 @@ public actor HotlineClient {
       }
 
     case .disconnectMessage:
+      let message = transaction.getField(type: .data)?.getString() ?? "You have been disconnected."
+      eventContinuation.yield(.disconnectMessage(message))
       Task {
         await self.disconnect()
       }

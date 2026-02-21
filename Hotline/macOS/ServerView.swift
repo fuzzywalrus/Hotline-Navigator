@@ -236,6 +236,18 @@ struct ServerView: View {
         Text(message)
       }
     }
+    .alert("Disconnected", isPresented: Binding(
+      get: { self.model.disconnectMessage != nil },
+      set: { if !$0 { self.model.disconnectMessage = nil } }
+    )) {
+      Button("OK") {
+        self.model.disconnectMessage = nil
+      }
+    } message: {
+      if let message = self.model.disconnectMessage {
+        Text(message)
+      }
+    }
     .focusedSceneValue(\.activeHotlineModel, model)
     .focusedSceneValue(\.activeServerState, state)
   }
