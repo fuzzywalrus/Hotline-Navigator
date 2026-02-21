@@ -945,16 +945,28 @@ public actor HotlineClient {
 
     // Split raw bytes on line endings (\r, \r\n)
     let lines = Self.splitRawLines(data)
-
     var posts: [String] = []
     var currentPostBytes = Data()
 
-    for line in lines {
+    for (i, line) in lines.enumerated() {
       if Self.isDividerLine(line) {
-        if let post = Self.decodePostBytes(currentPostBytes) {
-          posts.append(post)
+        // Only treat as a real post separator when the next non-empty
+        // line looks like a "From <name> (<date>)" header.  This
+        // prevents ASCII art or decorative separators inside a post
+        // from splitting it, and avoids false matches on body text
+        // that happens to start with "From ".
+        if Self.nextNonEmptyLineIsHeader(in: lines, after: i) {
+          if let post = Self.decodePostBytes(currentPostBytes) {
+            posts.append(post)
+          }
+          currentPostBytes = Data()
+        } else {
+          // False divider — keep as post content
+          if !currentPostBytes.isEmpty {
+            currentPostBytes.append(0x0A)
+          }
+          currentPostBytes.append(contentsOf: line)
         }
-        currentPostBytes = Data()
       } else {
         // Join lines with \n (0x0A) within a post
         if !currentPostBytes.isEmpty {
@@ -982,13 +994,20 @@ public actor HotlineClient {
     var posts: [String] = []
     var currentLines: [Substring] = []
 
-    for line in lines {
+    for (i, line) in lines.enumerated() {
       if line.wholeMatch(of: dividerRegex) != nil {
-        let postText = currentLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        if !postText.isEmpty {
-          posts.append(postText)
+        // Only split when the next non-empty line starts with "From "
+        // to avoid splitting on decorative separators inside post content.
+        if Self.nextNonEmptyLineIsHeader(in: lines, after: i) {
+          let postText = currentLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+          if !postText.isEmpty {
+            posts.append(postText)
+          }
+          currentLines = []
+        } else {
+          // False divider — keep as post content
+          currentLines.append(line)
         }
-        currentLines = []
       } else {
         currentLines.append(line)
       }
@@ -1073,6 +1092,45 @@ public actor HotlineClient {
     }
     let trimmed = str.trimmingCharacters(in: .whitespacesAndNewlines)
     return trimmed.isEmpty ? nil : trimmed
+  }
+
+  /// Pattern matching a "From" header line: `From <name> (<date>)`
+  /// Used to validate divider lines — only split when followed by a real
+  /// header, not body text that happens to start with "From ".
+  private static let fromHeaderPattern = /^From\s+\S.*\([^)]+\)/
+
+  /// Check whether the next non-empty line after `index` looks like a
+  /// "From" header, or there is no more content after the line.
+  /// Used to validate that a divider line is a real post separator rather
+  /// than ASCII art or decorative content.
+  private static func nextNonEmptyLineIsHeader(in lines: [Data], after index: Int) -> Bool {
+    for j in (index + 1)..<lines.count {
+      let line = lines[j]
+      if line.isEmpty || line.allSatisfy({ $0 == 0x20 || $0 == 0x09 }) {
+        continue
+      }
+      // Decode as UTF-8/ASCII — From headers are always ASCII-compatible.
+      guard let str = String(data: line, encoding: .utf8)
+              ?? String(data: line, encoding: .ascii) else {
+        return false
+      }
+      return str.firstMatch(of: fromHeaderPattern) != nil
+    }
+    // No more content after this divider — treat as a real trailing divider.
+    return true
+  }
+
+  /// String-based variant of the header check.
+  private static func nextNonEmptyLineIsHeader(in lines: [Substring], after index: Int) -> Bool {
+    for j in (index + 1)..<lines.count {
+      let line = lines[j]
+      if line.allSatisfy(\.isWhitespace) {
+        continue
+      }
+      return line.firstMatch(of: fromHeaderPattern) != nil
+    }
+    // No more content after this divider — treat as a real trailing divider.
+    return true
   }
 
   /// Post to the message board

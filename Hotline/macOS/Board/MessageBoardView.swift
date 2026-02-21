@@ -109,7 +109,7 @@ struct MessageBoardView: View {
             }
             
             HStack(spacing: 0) {
-              Text(LocalizedStringKey(post.body))
+              Text(LocalizedStringKey(post.body.convertingLinksToMarkdown()))
                 .tint(Color("Link Color"))
                 .lineLimit(100)
                 .lineSpacing(4)

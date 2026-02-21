@@ -65,12 +65,17 @@ struct MessageBoardPost: Identifiable, Hashable {
   /// True when the date had no explicit year and the year was inferred.
   let yearInferred: Bool
 
-  private static let headerRegex = /^From\s+(.+)\s*\(([^)]+)\)\s*:\s*$/
+  private static let headerRegex = /^From\s+(.+)\s*\(([^)]+)\)\s*:?\s*$/
 
   private static let dateFormats: [(format: String, needsYear: Bool)] = [
+    ("EEEE, MMMM d, yyyy, h:mm:ss a", false),
+    ("EEEE, MMMM d, yyyy, h:mm a", false),
     ("EEEE MMMM d, yyyy 'at' HH:mm zzz", false),
     ("EEEE MMMM d, yyyy 'at' HH:mm", false),
+    ("EEEE d/MMM/yyyy h:mm:ss a", false),
+    ("EEEE d/MMM/yyyy HH:mm:ss", false),
     ("EEE MMM d HH:mm:ss yyyy", false),
+    ("MMMM d, yyyy", false),
     ("MMM d, yyyy 'at' HH:mm zzz", false),
     ("MMM d, yyyy 'at' HH:mm", false),
     ("MMM d, yyyy HH:mm", false),
@@ -84,7 +89,7 @@ struct MessageBoardPost: Identifiable, Hashable {
 
     guard let firstLine = lines.first,
           let match = firstLine.wholeMatch(of: headerRegex) else {
-      return MessageBoardPost(username: nil, date: nil, rawDateString: nil, body: rawPost, yearInferred: false)
+      return MessageBoardPost(username: nil, date: nil, rawDateString: nil, body: rawPost.trimmingCharacters(in: .whitespacesAndNewlines), yearInferred: false)
     }
 
     let username = String(match.1).trimmingCharacters(in: .whitespaces)
@@ -143,6 +148,12 @@ struct MessageBoardPost: Identifiable, Hashable {
   private static func parseDate(_ raw: String) -> (Date?, Bool) {
     // Normalize: collapse multiple spaces
     var normalized = raw.replacingOccurrences(of: "  +", with: " ", options: .regularExpression)
+    // Strip ordinal suffixes: "16th" → "16", "1st" → "1", "2nd" → "2", "3rd" → "3"
+    normalized = normalized.replacingOccurrences(
+      of: "(\\d{1,2})(st|nd|rd|th)\\b",
+      with: "$1",
+      options: .regularExpression
+    )
     // Insert space in "MMMdd" patterns like "Dec23" → "Dec 23", "Nov04" → "Nov 04"
     normalized = normalized.replacingOccurrences(
       of: "([A-Za-z]{3})(\\d{1,2})",

@@ -369,7 +369,7 @@ struct NewsView: View {
             .padding(.top, 16)
           
           if let newsText = self.articleText {
-            Markdown(newsText)
+            Markdown(newsText.convertingLinksToMarkdown())
               .markdownTheme(.basic)
               .textSelection(.enabled)
               .lineSpacing(6)

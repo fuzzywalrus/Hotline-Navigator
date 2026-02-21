@@ -170,7 +170,7 @@ struct AboutView: View {
       .accessibilityAddTraits(.isLink)
       .pointerStyle(.link)
       
-      Text("Hotline is an open source project made possible by its contributors.")
+      Text("Hotline is an open source project made possible by its contributors and sponsors.")
         .font(.system(size: 11))
         .foregroundStyle(.black)
         .opacity(0.5)

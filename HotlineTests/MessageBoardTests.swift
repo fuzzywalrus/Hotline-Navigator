@@ -6,33 +6,50 @@ import Foundation
 
 struct MessageBoardTests {
 
-  // MARK: - Divider Parsing
+  // MARK: - Divider Splitting (String-Based)
 
-  @Test func simpleDividerSplitsPosts() {
-    let text = "Post one\r__________________\rPost two"
+  @Test func dividerBetweenHeaderedPosts() {
+    let text = "From Alice (Jan 1 12:00):\rPost one body\r_______________________________________________\rFrom Bob (Jan 2 12:00):\rPost two body"
     let posts = HotlineClient.parseMessageBoard(text)
     #expect(posts.count == 2)
-    #expect(posts[0] == "Post one")
-    #expect(posts[1] == "Post two")
+    #expect(posts[0].hasPrefix("From Alice"))
+    #expect(posts[1].hasPrefix("From Bob"))
   }
 
-  @Test func dividerWithEmbeddedTextSplitsPosts() {
-    let text = "Post one\r_______________ [ higher intellect ] ___________________\rPost two"
+  @Test func embeddedTextDividerSplitsPosts() {
+    let text = "From Alice (Jan 1 12:00):\rPost one\r_______________ [ higher intellect ] ___________________\rFrom Bob (Jan 2 12:00):\rPost two"
     let posts = HotlineClient.parseMessageBoard(text)
     #expect(posts.count == 2)
-    #expect(posts[0] == "Post one")
-    #expect(posts[1] == "Post two")
   }
 
-  @Test func dashDivider() {
-    let text = "Post one\r------------------\rPost two"
+  @Test func dashDividerSplitsPosts() {
+    let text = "From Alice (Jan 1 12:00):\rPost one\r-----------------------------------------------\rFrom Bob (Jan 2 12:00):\rPost two"
     let posts = HotlineClient.parseMessageBoard(text)
     #expect(posts.count == 2)
+  }
+
+  @Test func multipleDividersSplitMultiplePosts() {
+    let text = "From A (Jan 1 12:00):\rPost 1\r____________________\rFrom B (Jan 2 12:00):\rPost 2\r____________________\rFrom C (Jan 3 12:00):\rPost 3"
+    let posts = HotlineClient.parseMessageBoard(text)
+    #expect(posts.count == 3)
+  }
+
+  @Test func leadingDividerBeforeFirstPost() {
+    let text = "____________________\rFrom Alice (Jan 1 12:00):\rPost after divider"
+    let posts = HotlineClient.parseMessageBoard(text)
+    #expect(posts.count == 1)
+    #expect(posts[0].hasPrefix("From Alice"))
+  }
+
+  @Test func trailingDividerDiscarded() {
+    let text = "From Alice (Jan 1 12:00):\rPost body\r_______________________________________________"
+    let posts = HotlineClient.parseMessageBoard(text)
+    #expect(posts.count == 1)
+    #expect(!posts[0].contains("________"))
   }
 
   @Test func shortDividerNotSplit() {
-    // Fewer than 15 chars should NOT be treated as a divider
-    let text = "Post one\r_____\rStill post one"
+    let text = "From Alice (Jan 1 12:00):\rPost one\r_____\rStill post one"
     let posts = HotlineClient.parseMessageBoard(text)
     #expect(posts.count == 1)
   }
@@ -49,31 +66,66 @@ struct MessageBoardTests {
     #expect(posts.isEmpty)
   }
 
-  @Test func multipleDividersSplitMultiplePosts() {
-    let text = "Post 1\r____________________\rPost 2\r____________________\rPost 3"
+  // MARK: - ASCII Art / False Divider Protection
+
+  @Test func asciiArtUnderscoresDoNotSplitPost() {
+    let text = """
+    From Artist (Jan 1 12:00):\r\
+    Check out my art:\r\
+    _______________________________________________\r\
+    |                                             |\r\
+    |               HOTLINE ART                   |\r\
+    |_____________________________________________|\r\
+    _______________________________________________\r\
+    From Bob (Jan 2 12:00):\r\
+    Nice art!
+    """
     let posts = HotlineClient.parseMessageBoard(text)
-    #expect(posts.count == 3)
+    #expect(posts.count == 2)
+    // ASCII art underscores should stay in the first post
+    #expect(posts[0].contains("HOTLINE ART"))
+    #expect(posts[0].contains("_______________"))
   }
 
-  @Test func leadingDividerSkipped() {
-    let text = "____________________\rPost after divider"
+  @Test func dividerFollowedByNonHeaderKeptAsContent() {
+    let text = "From Alice (Jan 1 12:00):\rPart one\r_______________________________________________\rPart two still Alice's post"
     let posts = HotlineClient.parseMessageBoard(text)
     #expect(posts.count == 1)
-    #expect(posts[0] == "Post after divider")
+    #expect(posts[0].contains("Part one"))
+    #expect(posts[0].contains("Part two"))
+    #expect(posts[0].contains("_______________"))
+  }
+
+  @Test func fromInBodyTextDoesNotCauseSplit() {
+    let text = "From Alice (Jan 1 12:00):\rSome text\r_______________________________________________\rFrom my perspective, this is great.\r_______________________________________________\rFrom Bob (Jan 2 12:00):\rPost two"
+    let posts = HotlineClient.parseMessageBoard(text)
+    #expect(posts.count == 2)
+    // "From my perspective" should stay in Alice's post
+    #expect(posts[0].contains("From my perspective"))
+  }
+
+  @Test func headerlessPostMergedWithPrevious() {
+    // A post without a "From" header after a divider gets merged
+    // into the previous post since we can't confirm it's a real boundary.
+    let text = "From Alice (Jan 1 12:00):\rPost one\r_______________________________________________\rBookmark us: hotline.example.com\r_______________________________________________\rFrom Bob (Jan 2 12:00):\rPost two"
+    let posts = HotlineClient.parseMessageBoard(text)
+    #expect(posts.count == 2)
+    #expect(posts[0].contains("Bookmark us"))
+    #expect(posts[1].hasPrefix("From Bob"))
   }
 
   // MARK: - Byte-Level Divider Parsing (parseMessageBoardData)
 
   @Test func byteDataSplitsPosts() {
-    let raw = "Post one\r__________________\rPost two"
+    let raw = "From Alice (Jan 1 12:00):\rPost one\r_______________________________________________\rFrom Bob (Jan 2 12:00):\rPost two"
     let posts = HotlineClient.parseMessageBoardData(Data(raw.utf8))
     #expect(posts.count == 2)
-    #expect(posts[0] == "Post one")
-    #expect(posts[1] == "Post two")
+    #expect(posts[0].hasPrefix("From Alice"))
+    #expect(posts[1].hasPrefix("From Bob"))
   }
 
   @Test func byteDataEmbeddedTextDivider() {
-    let raw = "Post one\r_______________ [ higher intellect ] ___________________\rPost two"
+    let raw = "From Alice (Jan 1 12:00):\rPost one\r_______________ [ higher intellect ] ___________________\rFrom Bob (Jan 2 12:00):\rPost two"
     let posts = HotlineClient.parseMessageBoardData(Data(raw.utf8))
     #expect(posts.count == 2)
   }
@@ -84,34 +136,58 @@ struct MessageBoardTests {
   }
 
   @Test func byteDataMixedEncodingPerPostDecoding() {
-    // Post 1: UTF-8 "TheBrick™" (™ = E2 84 A2)
-    // Divider: 20 underscores
-    // Post 2: Mac OS Roman "Hi™" (™ = AA)
+    // Post 1: UTF-8 "From A (Jan 1 12:00):\nTheBrick™" (™ = E2 84 A2)
+    // Divider: 47 underscores
+    // Post 2: Mac OS Roman "From B (Jan 2 12:00):\nHi™" (™ = AA)
     var data = Data()
+    data.append(contentsOf: Array("From A (Jan 1 12:00):".utf8))
+    data.append(0x0D) // \r
     data.append(contentsOf: [0x54, 0x68, 0x65, 0x42, 0x72, 0x69, 0x63, 0x6B, 0xE2, 0x84, 0xA2]) // TheBrick™ (UTF-8)
     data.append(0x0D) // \r
-    data.append(contentsOf: Array(repeating: UInt8(0x5F), count: 20)) // ____________________
+    data.append(contentsOf: Array(repeating: UInt8(0x5F), count: 47)) // _______________________________________________
+    data.append(0x0D) // \r
+    data.append(contentsOf: Array("From B (Jan 2 12:00):".utf8))
     data.append(0x0D) // \r
     data.append(contentsOf: [0x48, 0x69, 0xAA]) // Hi™ (Mac OS Roman)
     let posts = HotlineClient.parseMessageBoardData(data)
     #expect(posts.count == 2)
-    #expect(posts[0] == "TheBrick™")
-    #expect(posts[1] == "Hi™")
+    #expect(posts[0].contains("TheBrick™"))
+    #expect(posts[1].contains("Hi™"))
   }
 
   @Test func byteDataCRLFLineEndings() {
-    let raw = "Post one\r\n__________________\r\nPost two"
+    let raw = "From Alice (Jan 1 12:00):\r\nPost one\r\n_______________________________________________\r\nFrom Bob (Jan 2 12:00):\r\nPost two"
     let posts = HotlineClient.parseMessageBoardData(Data(raw.utf8))
     #expect(posts.count == 2)
-    #expect(posts[0] == "Post one")
-    #expect(posts[1] == "Post two")
+  }
+
+  @Test func byteDataAsciiArtPreserved() {
+    let raw = "From Artist (Jan 1 12:00):\rMy art:\r_______________________________________________\rCool right?\r_______________________________________________\rFrom Bob (Jan 2 12:00):\rNice!"
+    let posts = HotlineClient.parseMessageBoardData(Data(raw.utf8))
+    #expect(posts.count == 2)
+    #expect(posts[0].contains("Cool right?"))
+    #expect(posts[0].contains("_______________"))
+  }
+
+  @Test func byteDataTrailingDividerDiscarded() {
+    let raw = "From Alice (Jan 1 12:00):\rPost body\r_______________________________________________"
+    let posts = HotlineClient.parseMessageBoardData(Data(raw.utf8))
+    #expect(posts.count == 1)
+    #expect(!posts[0].contains("________"))
   }
 
   // MARK: - Header Parsing (Username + Date)
 
-  @Test func standardHeader() {
+  @Test func standardHeaderWithColon() {
     let post = MessageBoardPost.parse("From eleisa (Thursday November 13, 2025 at 17:22 CET):\nSome message")
     #expect(post.username == "eleisa")
+    #expect(post.body == "Some message")
+    #expect(post.date != nil)
+  }
+
+  @Test func headerWithoutTrailingColon() {
+    let post = MessageBoardPost.parse("From Px (Friday November 20, 2015 at 07:24)\nSome message")
+    #expect(post.username == "Px")
     #expect(post.body == "Some message")
     #expect(post.date != nil)
   }
@@ -162,7 +238,17 @@ struct MessageBoardTests {
     #expect(post.body == "")
   }
 
-  // MARK: - Date Parsing Formats
+  @Test func bodyIsTrimmed() {
+    let post = MessageBoardPost.parse("From user (Feb 10 12:00):\n  \n  Hello world  \n  ")
+    #expect(post.body == "Hello world")
+  }
+
+  @Test func bodyWithoutHeaderIsTrimmed() {
+    let post = MessageBoardPost.parse("  \n  Just some text  \n  ")
+    #expect(post.body == "Just some text")
+  }
+
+  // MARK: - Date Format Variants
 
   @Test func fullDateWithTimezone() {
     let post = MessageBoardPost.parse("From user (Tuesday February 17, 2026 at 18:37 CET):\nBody")
@@ -188,6 +274,67 @@ struct MessageBoardTests {
     #expect(post.yearInferred == true)
   }
 
+  @Test func commaDelimitedDateWith12HourTime() {
+    // "Friday, August 28, 2015, 9:34:22 PM"
+    let post = MessageBoardPost.parse("From user (Friday, August 28, 2015, 9:34:22 PM)\nBody")
+    #expect(post.date != nil)
+    #expect(post.yearInferred == false)
+    let components = Calendar.current.dateComponents([.year, .month, .day], from: post.date!)
+    #expect(components.year == 2015)
+    #expect(components.month == 8)
+    #expect(components.day == 28)
+  }
+
+  @Test func commaDelimitedDateWithoutSeconds() {
+    let post = MessageBoardPost.parse("From user (Friday, August 28, 2015, 9:34 PM)\nBody")
+    #expect(post.date != nil)
+    #expect(post.yearInferred == false)
+  }
+
+  @Test func slashDateWith12HourTime() {
+    // "Sunday 27/Mar/2016 11:36:16 PM"
+    let post = MessageBoardPost.parse("From user (Sunday 27/Mar/2016 11:36:16 PM)\nBody")
+    #expect(post.date != nil)
+    #expect(post.yearInferred == false)
+    let components = Calendar.current.dateComponents([.year, .month, .day], from: post.date!)
+    #expect(components.year == 2016)
+    #expect(components.month == 3)
+    #expect(components.day == 27)
+  }
+
+  @Test func slashDateWith24HourTime() {
+    let post = MessageBoardPost.parse("From user (Sunday 27/Mar/2016 23:36:16)\nBody")
+    #expect(post.date != nil)
+    #expect(post.yearInferred == false)
+  }
+
+  @Test func dateOnlyFullMonth() {
+    // "July 16, 2015" (after ordinal stripping from "July 16th, 2015")
+    let post = MessageBoardPost.parse("From user (July 16, 2015)\nBody")
+    #expect(post.date != nil)
+    let components = Calendar.current.dateComponents([.year, .month, .day], from: post.date!)
+    #expect(components.year == 2015)
+    #expect(components.month == 7)
+    #expect(components.day == 16)
+  }
+
+  @Test func ordinalSuffixStripped() {
+    let post = MessageBoardPost.parse("From user (July 16th, 2015)\nBody")
+    #expect(post.date != nil)
+    let components = Calendar.current.dateComponents([.year, .month, .day], from: post.date!)
+    #expect(components.month == 7)
+    #expect(components.day == 16)
+  }
+
+  @Test func ordinalSuffixStNdRd() {
+    let post1 = MessageBoardPost.parse("From user (January 1st, 2020)\nBody")
+    #expect(post1.date != nil)
+    let post2 = MessageBoardPost.parse("From user (January 2nd, 2020)\nBody")
+    #expect(post2.date != nil)
+    let post3 = MessageBoardPost.parse("From user (January 3rd, 2020)\nBody")
+    #expect(post3.date != nil)
+  }
+
   @Test func unparsableDateStoresRawString() {
     let post = MessageBoardPost.parse("From user (some garbage date):\nBody")
     #expect(post.date == nil)
@@ -198,8 +345,6 @@ struct MessageBoardTests {
   // MARK: - Date Adjustment (Reverse Chronological Order)
 
   @Test func yearInferredDatesAdjustedToReverseOrder() {
-    // Simulate: Post 1 has explicit date Aug 2025, Post 2 has year-inferred
-    // date that naively lands in the future relative to Post 1.
     let post1 = MessageBoardPost(
       username: "A", date: makeDate(year: 2025, month: 8, day: 15),
       rawDateString: nil, body: "", yearInferred: false
@@ -222,7 +367,6 @@ struct MessageBoardTests {
       rawDateString: nil, body: "", yearInferred: false
     )
     let adjusted = MessageBoardPost.adjustDates([post1, post2])
-    // Should NOT be adjusted since yearInferred is false
     #expect(adjusted[1].date == post2.date)
   }
 
@@ -240,7 +384,6 @@ struct MessageBoardTests {
       rawDateString: nil, body: "", yearInferred: true
     )
     let adjusted = MessageBoardPost.adjustDates([post1, post2, post3])
-    // Post 3 should still be adjusted relative to Post 1 despite Post 2 having no date
     #expect(adjusted[2].date! < adjusted[0].date!)
   }
 
