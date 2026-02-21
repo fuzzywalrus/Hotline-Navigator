@@ -396,6 +396,7 @@ struct ServerView: View {
           FilesView()
         case .user(let userID):
           MessageView(userID: userID)
+            .id(userID)
         }
     }
     .navigationTitle(self.model.serverTitle)
