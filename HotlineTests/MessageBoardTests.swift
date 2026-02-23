@@ -10,7 +10,7 @@ struct MessageBoardTests {
 
   @Test func dividerBetweenHeaderedPosts() {
     let text = "From Alice (Jan 1 12:00):\rPost one body\r_______________________________________________\rFrom Bob (Jan 2 12:00):\rPost two body"
-    let posts = HotlineClient.parseMessageBoard(text)
+    let posts = HotlineClient.parseMessageBoard(text).posts
     #expect(posts.count == 2)
     #expect(posts[0].hasPrefix("From Alice"))
     #expect(posts[1].hasPrefix("From Bob"))
@@ -18,51 +18,51 @@ struct MessageBoardTests {
 
   @Test func embeddedTextDividerSplitsPosts() {
     let text = "From Alice (Jan 1 12:00):\rPost one\r_______________ [ higher intellect ] ___________________\rFrom Bob (Jan 2 12:00):\rPost two"
-    let posts = HotlineClient.parseMessageBoard(text)
+    let posts = HotlineClient.parseMessageBoard(text).posts
     #expect(posts.count == 2)
   }
 
   @Test func dashDividerSplitsPosts() {
     let text = "From Alice (Jan 1 12:00):\rPost one\r-----------------------------------------------\rFrom Bob (Jan 2 12:00):\rPost two"
-    let posts = HotlineClient.parseMessageBoard(text)
+    let posts = HotlineClient.parseMessageBoard(text).posts
     #expect(posts.count == 2)
   }
 
   @Test func multipleDividersSplitMultiplePosts() {
     let text = "From A (Jan 1 12:00):\rPost 1\r____________________\rFrom B (Jan 2 12:00):\rPost 2\r____________________\rFrom C (Jan 3 12:00):\rPost 3"
-    let posts = HotlineClient.parseMessageBoard(text)
+    let posts = HotlineClient.parseMessageBoard(text).posts
     #expect(posts.count == 3)
   }
 
   @Test func leadingDividerBeforeFirstPost() {
     let text = "____________________\rFrom Alice (Jan 1 12:00):\rPost after divider"
-    let posts = HotlineClient.parseMessageBoard(text)
+    let posts = HotlineClient.parseMessageBoard(text).posts
     #expect(posts.count == 1)
     #expect(posts[0].hasPrefix("From Alice"))
   }
 
   @Test func trailingDividerDiscarded() {
     let text = "From Alice (Jan 1 12:00):\rPost body\r_______________________________________________"
-    let posts = HotlineClient.parseMessageBoard(text)
+    let posts = HotlineClient.parseMessageBoard(text).posts
     #expect(posts.count == 1)
     #expect(!posts[0].contains("________"))
   }
 
   @Test func shortDividerNotSplit() {
     let text = "From Alice (Jan 1 12:00):\rPost one\r_____\rStill post one"
-    let posts = HotlineClient.parseMessageBoard(text)
+    let posts = HotlineClient.parseMessageBoard(text).posts
     #expect(posts.count == 1)
   }
 
   @Test func noDividerReturnsSinglePost() {
     let text = "Just a single post with no dividers"
-    let posts = HotlineClient.parseMessageBoard(text)
+    let posts = HotlineClient.parseMessageBoard(text).posts
     #expect(posts.count == 1)
     #expect(posts[0] == text)
   }
 
   @Test func emptyTextReturnsNoPosts() {
-    let posts = HotlineClient.parseMessageBoard("")
+    let posts = HotlineClient.parseMessageBoard("").posts
     #expect(posts.isEmpty)
   }
 
@@ -80,45 +80,97 @@ struct MessageBoardTests {
     From Bob (Jan 2 12:00):\r\
     Nice art!
     """
-    let posts = HotlineClient.parseMessageBoard(text)
-    #expect(posts.count == 2)
-    // ASCII art underscores should stay in the first post
-    #expect(posts[0].contains("HOTLINE ART"))
-    #expect(posts[0].contains("_______________"))
+    let posts = HotlineClient.parseMessageBoard(text).posts
+    // Pure dividers split even without a header, so the art box
+    // becomes its own post between the two headered posts.
+    #expect(posts.count == 3)
+    #expect(posts[0].hasPrefix("From Artist"))
+    #expect(posts[1].contains("HOTLINE ART"))
+    #expect(posts[2].hasPrefix("From Bob"))
   }
 
-  @Test func dividerFollowedByNonHeaderKeptAsContent() {
-    let text = "From Alice (Jan 1 12:00):\rPart one\r_______________________________________________\rPart two still Alice's post"
-    let posts = HotlineClient.parseMessageBoard(text)
-    #expect(posts.count == 1)
+  @Test func pureDividerSplitsWithoutHeader() {
+    // Pure dividers (only separator chars) always split when there's content.
+    let text = "From Alice (Jan 1 12:00):\rPart one\r_______________________________________________\rPart two is a separate post"
+    let posts = HotlineClient.parseMessageBoard(text).posts
+    #expect(posts.count == 2)
     #expect(posts[0].contains("Part one"))
-    #expect(posts[0].contains("Part two"))
-    #expect(posts[0].contains("_______________"))
+    #expect(posts[1].contains("Part two"))
   }
 
-  @Test func fromInBodyTextDoesNotCauseSplit() {
+  @Test func fromInBodyTextCausesSplitOnPureDivider() {
+    // Pure dividers split unconditionally, so "From my perspective"
+    // becomes its own post.
     let text = "From Alice (Jan 1 12:00):\rSome text\r_______________________________________________\rFrom my perspective, this is great.\r_______________________________________________\rFrom Bob (Jan 2 12:00):\rPost two"
-    let posts = HotlineClient.parseMessageBoard(text)
-    #expect(posts.count == 2)
-    // "From my perspective" should stay in Alice's post
-    #expect(posts[0].contains("From my perspective"))
+    let posts = HotlineClient.parseMessageBoard(text).posts
+    #expect(posts.count == 3)
+    #expect(posts[0].contains("Some text"))
+    #expect(posts[1].contains("From my perspective"))
+    #expect(posts[2].hasPrefix("From Bob"))
   }
 
-  @Test func headerlessPostMergedWithPrevious() {
-    // A post without a "From" header after a divider gets merged
-    // into the previous post since we can't confirm it's a real boundary.
+  @Test func headerlessPostsSplitOnPureDivider() {
+    // Pure dividers split headerless posts into separate entries.
     let text = "From Alice (Jan 1 12:00):\rPost one\r_______________________________________________\rBookmark us: hotline.example.com\r_______________________________________________\rFrom Bob (Jan 2 12:00):\rPost two"
-    let posts = HotlineClient.parseMessageBoard(text)
+    let posts = HotlineClient.parseMessageBoard(text).posts
+    #expect(posts.count == 3)
+    #expect(posts[0].hasPrefix("From Alice"))
+    #expect(posts[1].contains("Bookmark us"))
+    #expect(posts[2].hasPrefix("From Bob"))
+  }
+
+  @Test func decoratedDividerSplitsPosts() {
+    // Decorated dividers using the canonical separator char split posts.
+    let text = "From Alice (Jan 1 12:00):\rPost one\r_______________ [ server name ] ___________________\rStill Alice's post"
+    let posts = HotlineClient.parseMessageBoard(text).posts
     #expect(posts.count == 2)
-    #expect(posts[0].contains("Bookmark us"))
-    #expect(posts[1].hasPrefix("From Bob"))
+    #expect(posts[0].contains("Post one"))
+    #expect(posts[1] == "Still Alice's post")
+  }
+
+  @Test func nonCanonicalDividerKeptAsContent() {
+    // A divider using a different separator char than the canonical one
+    // is kept as post content.
+    let text = "From Alice (Jan 1 12:00):\rPost one\r_______________________________________________\rFrom Bob (Jan 2 12:00):\rSome text\r-----------------------------------------------\rStill Bob's post"
+    let posts = HotlineClient.parseMessageBoard(text).posts
+    #expect(posts.count == 2)
+    #expect(posts[0].hasPrefix("From Alice"))
+    // The dash divider doesn't match the canonical underscore, so Bob's post stays intact
+    #expect(posts[1].contains("-------"))
+    #expect(posts[1].contains("Still Bob's post"))
+  }
+
+  // MARK: - Divider Signature Extraction
+
+  @Test func dividerSignatureExtractedFromDecoratedDivider() {
+    let text = "From Alice (Jan 1 12:00):\rPost one\r_______________ [ higher intellect ] ___________________\rFrom Bob (Jan 2 12:00):\rPost two"
+    let result = HotlineClient.parseMessageBoard(text)
+    #expect(result.dividerSignature == "[ higher intellect ]")
+  }
+
+  @Test func dividerSignatureNilForPureDividers() {
+    let text = "From Alice (Jan 1 12:00):\rPost one\r_______________________________________________\rFrom Bob (Jan 2 12:00):\rPost two"
+    let result = HotlineClient.parseMessageBoard(text)
+    #expect(result.dividerSignature == nil)
+  }
+
+  @Test func dividerSignatureNilForNoDividers() {
+    let text = "Just a single post"
+    let result = HotlineClient.parseMessageBoard(text)
+    #expect(result.dividerSignature == nil)
+  }
+
+  @Test func byteDataDividerSignatureExtracted() {
+    let raw = "From Alice (Jan 1 12:00):\rPost one\r_______________ [ higher intellect ] ___________________\rFrom Bob (Jan 2 12:00):\rPost two"
+    let result = HotlineClient.parseMessageBoardData(Data(raw.utf8))
+    #expect(result.dividerSignature == "[ higher intellect ]")
   }
 
   // MARK: - Byte-Level Divider Parsing (parseMessageBoardData)
 
   @Test func byteDataSplitsPosts() {
     let raw = "From Alice (Jan 1 12:00):\rPost one\r_______________________________________________\rFrom Bob (Jan 2 12:00):\rPost two"
-    let posts = HotlineClient.parseMessageBoardData(Data(raw.utf8))
+    let posts = HotlineClient.parseMessageBoardData(Data(raw.utf8)).posts
     #expect(posts.count == 2)
     #expect(posts[0].hasPrefix("From Alice"))
     #expect(posts[1].hasPrefix("From Bob"))
@@ -126,12 +178,12 @@ struct MessageBoardTests {
 
   @Test func byteDataEmbeddedTextDivider() {
     let raw = "From Alice (Jan 1 12:00):\rPost one\r_______________ [ higher intellect ] ___________________\rFrom Bob (Jan 2 12:00):\rPost two"
-    let posts = HotlineClient.parseMessageBoardData(Data(raw.utf8))
+    let posts = HotlineClient.parseMessageBoardData(Data(raw.utf8)).posts
     #expect(posts.count == 2)
   }
 
   @Test func byteDataEmptyReturnsNoPosts() {
-    let posts = HotlineClient.parseMessageBoardData(Data())
+    let posts = HotlineClient.parseMessageBoardData(Data()).posts
     #expect(posts.isEmpty)
   }
 
@@ -149,7 +201,7 @@ struct MessageBoardTests {
     data.append(contentsOf: Array("From B (Jan 2 12:00):".utf8))
     data.append(0x0D) // \r
     data.append(contentsOf: [0x48, 0x69, 0xAA]) // Hi™ (Mac OS Roman)
-    let posts = HotlineClient.parseMessageBoardData(data)
+    let posts = HotlineClient.parseMessageBoardData(data).posts
     #expect(posts.count == 2)
     #expect(posts[0].contains("TheBrick™"))
     #expect(posts[1].contains("Hi™"))
@@ -157,21 +209,22 @@ struct MessageBoardTests {
 
   @Test func byteDataCRLFLineEndings() {
     let raw = "From Alice (Jan 1 12:00):\r\nPost one\r\n_______________________________________________\r\nFrom Bob (Jan 2 12:00):\r\nPost two"
-    let posts = HotlineClient.parseMessageBoardData(Data(raw.utf8))
+    let posts = HotlineClient.parseMessageBoardData(Data(raw.utf8)).posts
     #expect(posts.count == 2)
   }
 
-  @Test func byteDataAsciiArtPreserved() {
+  @Test func byteDataPureDividerSplitsWithoutHeader() {
     let raw = "From Artist (Jan 1 12:00):\rMy art:\r_______________________________________________\rCool right?\r_______________________________________________\rFrom Bob (Jan 2 12:00):\rNice!"
-    let posts = HotlineClient.parseMessageBoardData(Data(raw.utf8))
-    #expect(posts.count == 2)
-    #expect(posts[0].contains("Cool right?"))
-    #expect(posts[0].contains("_______________"))
+    let posts = HotlineClient.parseMessageBoardData(Data(raw.utf8)).posts
+    #expect(posts.count == 3)
+    #expect(posts[0].hasPrefix("From Artist"))
+    #expect(posts[1] == "Cool right?")
+    #expect(posts[2].hasPrefix("From Bob"))
   }
 
   @Test func byteDataTrailingDividerDiscarded() {
     let raw = "From Alice (Jan 1 12:00):\rPost body\r_______________________________________________"
-    let posts = HotlineClient.parseMessageBoardData(Data(raw.utf8))
+    let posts = HotlineClient.parseMessageBoardData(Data(raw.utf8)).posts
     #expect(posts.count == 1)
     #expect(!posts[0].contains("________"))
   }
@@ -191,7 +244,7 @@ struct MessageBoardTests {
     data.append(contentsOf: Array(" (Aug09 21:49):".utf8))
     data.append(0x0D)
     data.append(contentsOf: Array("Second post body".utf8))
-    let posts = HotlineClient.parseMessageBoardData(data)
+    let posts = HotlineClient.parseMessageBoardData(data).posts
     #expect(posts.count == 2)
     #expect(posts[0].contains("Hello from Sweden"))
     #expect(posts[1].contains("Second post body"))

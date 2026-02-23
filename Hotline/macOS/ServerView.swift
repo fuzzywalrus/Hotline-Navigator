@@ -59,8 +59,8 @@ struct ListItemView: View {
       if unread {
         Circle()
           .frame(width: 6, height: 6)
-          .padding(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 2))
-          .opacity(0.5)
+          .padding(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 6))
+          .opacity(0.75)
       }
     }
   }

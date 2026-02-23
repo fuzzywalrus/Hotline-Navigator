@@ -927,13 +927,13 @@ public actor HotlineClient {
 
   /// Get message board posts
   ///
-  /// - Returns: Array of message strings
-  public func getMessageBoard() async throws -> [String] {
+  /// - Returns: Tuple of message strings and optional divider signature label
+  public func getMessageBoard() async throws -> (posts: [String], dividerSignature: String?) {
     let transaction = HotlineTransaction(id: self.generateTransactionID(), type: .getMessageBoard)
     let reply = try await self.sendTransaction(transaction)
 
     guard let field = reply.getField(type: .data) else {
-      return []
+      return (posts: [], dividerSignature: nil)
     }
 
     // Split raw bytes on dividers BEFORE decoding, so each post gets
@@ -944,35 +944,30 @@ public actor HotlineClient {
 
   /// Split raw message board bytes into individual posts, decoding each
   /// post separately so mixed-encoding boards are handled correctly.
-  static func parseMessageBoardData(_ data: Data) -> [String] {
-    if data.isEmpty { return [] }
+  /// Returns the posts and the divider signature label (if any).
+  static func parseMessageBoardData(_ data: Data) -> (posts: [String], dividerSignature: String?) {
+    if data.isEmpty { return (posts: [], dividerSignature: nil) }
 
     // Split raw bytes on line endings (\r, \r\n)
     let lines = Self.splitRawLines(data)
+
+    // Find the canonical divider character and label for this board.
+    // All real dividers on a server use the same separator char.
+    let canonical = Self.findCanonicalDivider(in: lines)
+    let canonicalChar = canonical?.char
+
     var posts: [String] = []
     var currentPostBytes = Data()
 
-    for (i, line) in lines.enumerated() {
-      if Self.isDividerLine(line) {
-        // Only treat as a real post separator when the next non-empty
-        // line looks like a "From <name> (<date>)" header.  This
-        // prevents ASCII art or decorative separators inside a post
-        // from splitting it, and avoids false matches on body text
-        // that happens to start with "From ".
-        if Self.nextNonEmptyLineIsHeader(in: lines, after: i) {
+    for line in lines {
+      if let info = Self.classifyDividerLine(line), info.leadChar == canonicalChar {
+        if !currentPostBytes.isEmpty {
           if let post = Self.decodePostBytes(currentPostBytes) {
             posts.append(post)
           }
           currentPostBytes = Data()
-        } else {
-          // False divider — keep as post content
-          if !currentPostBytes.isEmpty {
-            currentPostBytes.append(0x0A)
-          }
-          currentPostBytes.append(contentsOf: line)
         }
       } else {
-        // Join lines with \n (0x0A) within a post
         if !currentPostBytes.isEmpty {
           currentPostBytes.append(0x0A)
         }
@@ -985,33 +980,34 @@ public actor HotlineClient {
       posts.append(post)
     }
 
-    return posts
+    return (posts: posts, dividerSignature: canonical?.label)
   }
 
   /// Split message board text (already decoded) into individual posts.
   /// Used by handleNewsPost which receives already-decoded strings.
-  static func parseMessageBoard(_ text: String) -> [String] {
+  private static let dividerRegex = /^[ \t]*([_\-=~*]{15,}|[_\-=~*]{5,}.+[_\-=~*]{5,})[ \t]*$/
+  private static let dividerLeadCharRegex = /^[ \t]*([_\-=~*])/
+
+  static func parseMessageBoard(_ text: String) -> (posts: [String], dividerSignature: String?) {
     let normalized = text.replacing(/\r\n?/, with: "\n")
     let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false)
-    let dividerRegex = /^[ \t]*([_\-=~*]{15,}|[_\-=~*]{5,}.+[_\-=~*]{5,})[ \t]*$/
+
+    // Find the canonical divider character and label for this board.
+    let canonical = Self.findCanonicalDivider(in: lines)
+    let canonicalChar = canonical?.char
 
     var posts: [String] = []
     var currentLines: [Substring] = []
 
-    for (i, line) in lines.enumerated() {
-      if line.wholeMatch(of: dividerRegex) != nil {
-        // Only split when the next non-empty line starts with "From "
-        // to avoid splitting on decorative separators inside post content.
-        if Self.nextNonEmptyLineIsHeader(in: lines, after: i) {
-          let postText = currentLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-          if !postText.isEmpty {
-            posts.append(postText)
-          }
-          currentLines = []
-        } else {
-          // False divider — keep as post content
-          currentLines.append(line)
+    for line in lines {
+      if line.wholeMatch(of: Self.dividerRegex) != nil,
+         let m = line.firstMatch(of: Self.dividerLeadCharRegex),
+         m.1.first == canonicalChar {
+        let postText = currentLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !postText.isEmpty {
+          posts.append(postText)
         }
+        currentLines = []
       } else {
         currentLines.append(line)
       }
@@ -1022,7 +1018,7 @@ public actor HotlineClient {
       posts.append(lastPost)
     }
 
-    return posts
+    return (posts: posts, dividerSignature: canonical?.label)
   }
 
   // MARK: - Message Board Byte Helpers
@@ -1057,9 +1053,19 @@ public actor HotlineClient {
     return lines
   }
 
-  /// Check if a line of raw bytes is a divider (underscores, dashes, etc.).
-  /// Dividers are pure ASCII so this works regardless of encoding.
-  private static func isDividerLine(_ line: Data) -> Bool {
+  /// A divider's signature: the leading separator character used,
+  /// plus any embedded label text (e.g. "higher intellect" from
+  /// `___ [ higher intellect ] ___`).
+  /// Servers use a consistent divider style, so we match against
+  /// whichever character appears most often across all divider lines.
+  struct DividerInfo {
+    let leadChar: UInt8
+    let label: String?
+  }
+
+  /// Check if a line of raw bytes is a divider. Returns the divider's
+  /// signature if it is, or nil if not.
+  private static func classifyDividerLine(_ line: Data) -> DividerInfo? {
     let separators: Set<UInt8> = [0x5F, 0x2D, 0x3D, 0x7E, 0x2A] // _ - = ~ *
     let whitespace: Set<UInt8> = [0x20, 0x09] // space, tab
 
@@ -1067,12 +1073,13 @@ public actor HotlineClient {
     let bytes = Array(line)
     let start = bytes.firstIndex(where: { !whitespace.contains($0) }) ?? bytes.count
     let end = (bytes.lastIndex(where: { !whitespace.contains($0) }) ?? -1) + 1
-    guard start < end else { return false }
+    guard start < end else { return nil }
     let trimmed = bytes[start..<end]
+    guard let leadChar = trimmed.first, separators.contains(leadChar) else { return nil }
 
-    // All separators, 15+ long
+    // All separators, 15+ long — pure divider, no label
     if trimmed.count >= 15 && trimmed.allSatisfy({ separators.contains($0) }) {
-      return true
+      return DividerInfo(leadChar: leadChar, label: nil)
     }
 
     // 5+ separators on each side with anything between
@@ -1084,7 +1091,80 @@ public actor HotlineClient {
     for byte in trimmed.reversed() {
       if separators.contains(byte) { trailCount += 1 } else { break }
     }
-    return leadCount >= 5 && trailCount >= 5
+    if leadCount >= 5 && trailCount >= 5 {
+      // Extract the label text between the separator runs
+      let labelBytes = trimmed.dropFirst(leadCount).dropLast(trailCount)
+      let labelData = Data(labelBytes)
+      let label = labelData.readString(at: 0, length: labelData.count)?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      return DividerInfo(leadChar: leadChar, label: label?.isEmpty == true ? nil : label)
+    }
+
+    return nil
+  }
+
+  /// Find the canonical divider character by picking the most common
+  /// leading separator character across all divider lines.
+  /// Also returns the first label found among matching dividers.
+  private static func findCanonicalDivider(in lines: [Data]) -> (char: UInt8, label: String?)? {
+    var counts: [UInt8: Int] = [:]
+    var order: [UInt8: Int] = [:]  // first-seen index for tiebreaking
+    var labels: [UInt8: String] = [:]
+    for line in lines {
+      if let info = classifyDividerLine(line) {
+        if order[info.leadChar] == nil {
+          order[info.leadChar] = order.count
+        }
+        counts[info.leadChar, default: 0] += 1
+        if let label = info.label, labels[info.leadChar] == nil {
+          labels[info.leadChar] = label
+        }
+      }
+    }
+    // Pick the most common separator char; break ties by first occurrence.
+    guard let best = counts.max(by: {
+      $0.value != $1.value ? $0.value < $1.value : (order[$0.key] ?? 0) > (order[$1.key] ?? 0)
+    }) else { return nil }
+    return (char: best.key, label: labels[best.key])
+  }
+
+  /// String-based variant: find canonical divider character and label.
+  private static func findCanonicalDivider(in lines: [Substring]) -> (char: Character, label: String?)? {
+    let separators: Set<Character> = ["_", "-", "=", "~", "*"]
+    var counts: [Character: Int] = [:]
+    var order: [Character: Int] = [:]  // first-seen index for tiebreaking
+    var labels: [Character: String] = [:]
+
+    let pureDivider = /^[ \t]*([_\-=~*]{15,})[ \t]*$/
+    let decoratedDivider = /^[ \t]*([_\-=~*]{5,})(.+?)[_\-=~*]{5,}[ \t]*$/
+
+    for line in lines {
+      let leadChar: Character?
+      var lineLabel: String? = nil
+      if let m = line.wholeMatch(of: pureDivider) {
+        leadChar = m.1.first
+      } else if let m = line.wholeMatch(of: decoratedDivider) {
+        leadChar = m.1.first
+        lineLabel = String(m.2).trimmingCharacters(in: .whitespacesAndNewlines)
+        if lineLabel?.isEmpty == true { lineLabel = nil }
+      } else {
+        leadChar = nil
+      }
+      if let c = leadChar, separators.contains(c) {
+        if order[c] == nil {
+          order[c] = order.count
+        }
+        counts[c, default: 0] += 1
+        if let label = lineLabel, labels[c] == nil {
+          labels[c] = label
+        }
+      }
+    }
+    // Pick the most common separator char; break ties by first occurrence.
+    guard let best = counts.max(by: {
+      $0.value != $1.value ? $0.value < $1.value : (order[$0.key] ?? 0) > (order[$1.key] ?? 0)
+    }) else { return nil }
+    return (char: best.key, label: labels[best.key])
   }
 
   /// Decode a post's raw bytes into a string, trimming whitespace.

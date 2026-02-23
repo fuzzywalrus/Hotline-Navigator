@@ -42,6 +42,7 @@ actor ChatStore {
     var iconID: UInt?
     var receiverName: String?
     var receiverIconID: UInt?
+    var senderIsAdmin: Bool?
 
     struct ImageMetadata: Codable {
       let url: String

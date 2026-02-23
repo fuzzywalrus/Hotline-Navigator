@@ -65,6 +65,58 @@ struct MessageBoardPost: Identifiable, Hashable {
   /// True when the date had no explicit year and the year was inferred.
   let yearInferred: Bool
 
+  private static let drawingCharacters = CharacterSet(charactersIn: #"|/\_-=+*#@[]()<>{}^~`"#)
+
+  /// Heuristic: true when the post body contains ASCII art.
+  /// Looks for a contiguous run of 3+ lines where each line has a high
+  /// ratio of drawing characters, so mixed posts (art banner + normal
+  /// text) are still detected.
+  var looksLikeASCIIArt: Bool {
+    let lines = self.body.split(separator: "\n", omittingEmptySubsequences: false)
+    guard lines.count >= 3 else { return false }
+
+    var consecutiveArtLines = 0
+
+    for line in lines {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+      // Blank lines inside art are common — keep the run going.
+      if trimmed.isEmpty {
+        if consecutiveArtLines > 0 {
+          continue
+        } else {
+          consecutiveArtLines = 0
+          continue
+        }
+      }
+
+      var drawingCount = 0
+      var totalCount = 0
+
+      for scalar in trimmed.unicodeScalars {
+        guard scalar.isASCII, scalar != " " else { continue }
+        totalCount += 1
+        if Self.drawingCharacters.contains(scalar) {
+          drawingCount += 1
+        }
+      }
+
+      let ratio = totalCount > 0 ? Double(drawingCount) / Double(totalCount) : 0
+      let hasInternalSpacing = trimmed.range(of: #"\S {3,}\S"#, options: .regularExpression) != nil
+
+      if ratio > 0.30 || (ratio > 0.15 && hasInternalSpacing) {
+        consecutiveArtLines += 1
+        if consecutiveArtLines >= 3 {
+          return true
+        }
+      } else {
+        consecutiveArtLines = 0
+      }
+    }
+
+    return false
+  }
+
   private static let headerRegex = /^From\s+(.+)\s*\(([^)]+)\)\s*:?\s*$/
 
   private static let dateFormats: [(format: String, needsYear: Bool)] = [
@@ -384,6 +436,7 @@ class HotlineState: Equatable {
   // Message Board
   var messageBoard: [MessageBoardPost] = []
   var messageBoardLoaded: Bool = false
+  var messageBoardSignature: String?
 
   // News
   var news: [NewsInfo] = []
@@ -947,6 +1000,7 @@ class HotlineState: Equatable {
     }
 
     let user = self.users.first(where: { $0.id == userID })
+    let selfUser = self.users.first(where: { $0.name == self.username })
 
     let message = InstantMessage(
       direction: .outgoing,
@@ -957,7 +1011,8 @@ class HotlineState: Equatable {
       text: text,
       type: .message,
       date: Date(),
-      isRead: false
+      isRead: false,
+      senderIsAdmin: selfUser?.isAdmin ?? false
     )
 
     if self.privateMessages[userID] == nil {
@@ -1143,7 +1198,8 @@ class HotlineState: Equatable {
             text: entry.body,
             type: .message,
             date: entry.date,
-            isRead: entry.isRead
+            isRead: entry.isRead,
+            senderIsAdmin: entry.metadata?.senderIsAdmin ?? false
           )
         }
 
@@ -1979,8 +2035,9 @@ class HotlineState: Equatable {
       throw HotlineClientError.notConnected
     }
 
-    let rawPosts = try await client.getMessageBoard()
-    self.messageBoard = MessageBoardPost.adjustDates(rawPosts.map { MessageBoardPost.parse($0) })
+    let result = try await client.getMessageBoard()
+    self.messageBoard = MessageBoardPost.adjustDates(result.posts.map { MessageBoardPost.parse($0) })
+    self.messageBoardSignature = result.dividerSignature
     self.messageBoardLoaded = true
     return self.messageBoard
   }
@@ -2300,7 +2357,14 @@ class HotlineState: Equatable {
       SoundEffects.play(.chatMessage)
     }
 
-    let chatMessage = ChatMessage(text: text, type: .message, date: Date())
+    var chatMessage = ChatMessage(text: text, type: .message, date: Date())
+
+    if let username = chatMessage.username,
+       let user = self.users.first(where: { $0.name == username }) {
+      chatMessage.iconID = user.iconID
+      chatMessage.isAdmin = user.isAdmin
+    }
+
     self.recordChatMessage(chatMessage)
     self.unreadPublicChat = true
   }
@@ -2356,7 +2420,8 @@ class HotlineState: Equatable {
         text: message,
         type: .message,
         date: Date(),
-        isRead: false
+        isRead: false,
+        senderIsAdmin: user.isAdmin
       )
 
       if self.privateMessages[userID] == nil {
@@ -2441,12 +2506,22 @@ class HotlineState: Equatable {
     self.lastPersistedMessageType = message.type
     self.lastPersistedMessageDate = message.date
 
+    var entryMetadata: ChatStore.EntryMetadata? = message.metadata
+    if message.iconID != nil || message.isAdmin {
+      if entryMetadata == nil {
+        entryMetadata = ChatStore.EntryMetadata()
+      }
+      entryMetadata?.iconID = message.iconID
+      entryMetadata?.senderIsAdmin = message.isAdmin ? true : nil
+    }
+
     let entry = ChatStore.Entry(
       id: message.id,
       body: message.text,
       username: message.username,
       type: message.type.storageKey,
-      date: message.date
+      date: message.date,
+      metadata: entryMetadata
     )
     let serverName = self.serverName ?? self.server?.name
 
@@ -2465,7 +2540,7 @@ class HotlineState: Equatable {
       username: message.senderName,
       type: entryType,
       date: message.date,
-      metadata: ChatStore.EntryMetadata(iconID: message.senderIconID, receiverName: message.receiverName, receiverIconID: message.receiverIconID),
+      metadata: ChatStore.EntryMetadata(iconID: message.senderIconID, receiverName: message.receiverName, receiverIconID: message.receiverIconID, senderIsAdmin: message.senderIsAdmin ? true : nil),
       isRead: message.isRead
     )
     let serverName = self.serverName ?? self.server?.name
@@ -2500,6 +2575,8 @@ class HotlineState: Equatable {
 
           var message = ChatMessage(text: renderedText, type: chatType, date: entry.date)
           message.metadata = entry.metadata
+          message.iconID = entry.metadata?.iconID
+          message.isAdmin = entry.metadata?.senderIsAdmin ?? false
           return message
         }
 

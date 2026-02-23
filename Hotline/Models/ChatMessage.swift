@@ -55,6 +55,8 @@ struct ChatMessage: Identifiable {
   let date: Date
   let username: String?
   let isEmote: Bool
+  var iconID: UInt?
+  var isAdmin: Bool
   var metadata: ChatStore.EntryMetadata?
 
   static let parser = /^\s*([^\:]+):\s*([\s\S]+)$/
@@ -64,6 +66,8 @@ struct ChatMessage: Identifiable {
     self.id = UUID()
     self.type = type
     self.date = date
+    self.iconID = nil
+    self.isAdmin = false
     self.metadata = nil
 
     if

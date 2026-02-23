@@ -375,11 +375,14 @@ struct ChatTextView: NSViewRepresentable {
       let bodyText = msg.text.replacingOccurrences(of: "\n", with: "\u{2028}")
       
       if let username = msg.username {
+        let usernameColor: NSColor = msg.isAdmin
+          ? (NSColor(named: "Hotline Red") ?? .systemRed)
+          : .textColor
         let usernameAttr = NSAttributedString(
           string: "\(username): ",
           attributes: [
             .font: self.semiboldFont,
-            .foregroundColor: NSColor.textColor,
+            .foregroundColor: usernameColor,
             .paragraphStyle: paraStyle,
           ]
         )

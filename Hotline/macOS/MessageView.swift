@@ -59,12 +59,6 @@ struct MessageView: View {
   var body: some View {
     NavigationStack {
       self.messageList
-//      if self.messages.isEmpty {
-//        self.emptyState
-//      }
-//      else {
-//        
-//      }
     }
     .overlay {
       if self.messages.isEmpty {
@@ -114,7 +108,7 @@ struct MessageView: View {
       }
     }
     .toolbar {
-      
+
       ToolbarItemGroup {
           Button {
             if let id = self.focusedMessageID,
@@ -146,7 +140,7 @@ struct MessageView: View {
             .disabled(self.messages.isEmpty)
 
             Divider()
-            
+
             Button {
               self.getUserInfo()
             } label: {
@@ -302,7 +296,6 @@ struct MessageView: View {
   }
 
   private var messageList: some View {
-//    ScrollViewReader { proxy in
     ScrollView(.vertical) {
       HStack {
         Spacer(minLength: 0)
@@ -322,14 +315,6 @@ struct MessageView: View {
     }
     .defaultScrollAnchor(.top)
     .modifier(SoftScrollEdgeEffect())
-//      .onChange(of: self.focusedMessageID) {
-//        if let id = self.focusedMessageID {
-//          withAnimation {
-//            proxy.scrollTo(id, anchor: nil)
-//          }
-//        }
-//      }
-//    }
   }
 
   // MARK: - Message Card
@@ -348,7 +333,8 @@ struct MessageView: View {
         }
 
         Text(msg.senderName)
-          .fontWeight(.semibold)
+          .fontWeight(msg.isRead ? .regular : .semibold)
+          .foregroundStyle(msg.senderIsAdmin ? Color.hotlineRed : .primary)
           .lineLimit(1)
           .truncationMode(.tail)
           .textSelection(.disabled)

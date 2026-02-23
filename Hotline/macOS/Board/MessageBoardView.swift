@@ -12,7 +12,7 @@ struct MessageBoardView: View {
       self.messageBoardView
     }
     .overlay {
-      if self.model.access?.contains(.canReadMessageBoard) != true {
+      if self.model.messageBoard.isEmpty && (self.model.access?.contains(.canReadMessageBoard) != true) {
         self.disabledBoardView
       }
       else if self.model.messageBoardLoaded && self.model.messageBoard.isEmpty {
@@ -75,6 +75,21 @@ struct MessageBoardView: View {
         ForEach(self.model.messageBoard) { post in
           
           VStack(alignment: .leading, spacing: 0) {
+            if let signature = self.model.messageBoardSignature {
+              HStack {
+                Spacer()
+                Text(signature)
+                  .font(.system(.caption, design: .monospaced))
+                  .lineLimit(1)
+                  .truncationMode(.middle)
+                  .foregroundStyle(.tertiary)
+                  .padding(.top, 8)
+                  .padding(.bottom, 8)
+                Spacer()
+              }
+              .background(.quinary.opacity(0.3))
+            }
+            
             if post.username != nil || post.date != nil || post.rawDateString != nil {
               HStack(spacing: 8) {
                 Text(post.username ?? "Unknown")
@@ -109,17 +124,26 @@ struct MessageBoardView: View {
             }
             
             HStack(spacing: 0) {
-              Text(LocalizedStringKey(post.body.convertingLinksToMarkdown()))
-                .tint(Color("Link Color"))
-                .lineLimit(100)
-                .lineSpacing(4)
-                .textSelection(.enabled)
-                .padding(.horizontal, 16)
-              
+              if post.looksLikeASCIIArt {
+                Text(post.body.attributedStringHighlightingLinks())
+                  .tint(Color("Link Color"))
+                  .font(.system(.body, design: .monospaced))
+                  .lineLimit(100)
+                  .lineSpacing(4)
+                  .textSelection(.enabled)
+                  .padding(.horizontal, 16)
+              } else {
+                Text(LocalizedStringKey(post.body.convertingLinksToMarkdown()))
+                  .tint(Color("Link Color"))
+                  .lineLimit(100)
+                  .lineSpacing(4)
+                  .textSelection(.enabled)
+                  .padding(.horizontal, 16)
+              }
+
               Spacer(minLength: 0)
             }
             .padding(.vertical, 16)
-            
           }
 //          .padding(.bottom, 16)
           .background(self.colorScheme == .light ? AnyShapeStyle(Color.clear) : AnyShapeStyle(.thickMaterial))

@@ -20,8 +20,9 @@ struct InstantMessage: Identifiable {
   let type: InstantMessageType
   let date: Date
   var isRead: Bool
+  let senderIsAdmin: Bool
 
-  init(id: UUID = UUID(), direction: InstantMessageDirection, senderName: String, senderIconID: UInt = 0, receiverName: String = "", receiverIconID: UInt = 0, text: String, type: InstantMessageType, date: Date, isRead: Bool = true) {
+  init(id: UUID = UUID(), direction: InstantMessageDirection, senderName: String, senderIconID: UInt = 0, receiverName: String = "", receiverIconID: UInt = 0, text: String, type: InstantMessageType, date: Date, isRead: Bool = true, senderIsAdmin: Bool = false) {
     self.id = id
     self.direction = direction
     self.senderName = senderName
@@ -32,5 +33,6 @@ struct InstantMessage: Identifiable {
     self.type = type
     self.date = date
     self.isRead = isRead
+    self.senderIsAdmin = senderIsAdmin
   }
 }

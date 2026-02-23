@@ -252,6 +252,50 @@ extension String {
     }
   }
   
+  /// Returns an `AttributedString` with detected URLs/emails as clickable
+  /// links, but no Markdown interpretation.  Useful for ASCII art or other
+  /// content where `_` and `*` should be rendered literally.
+  func attributedStringHighlightingLinks() -> AttributedString {
+    let emailRanges = self.ranges(of: RegularExpressions.emailAddress)
+    let urlRanges = self.ranges(of: RegularExpressions.relaxedLink)
+
+    struct LinkMatch {
+      let range: Range<String.Index>
+      let isEmail: Bool
+    }
+
+    var matches: [LinkMatch] = emailRanges.map { LinkMatch(range: $0, isEmail: true) }
+    for urlRange in urlRanges {
+      let overlapsEmail = emailRanges.contains { $0.overlaps(urlRange) }
+      if !overlapsEmail {
+        matches.append(LinkMatch(range: urlRange, isEmail: false))
+      }
+    }
+
+    matches.sort { $0.range.lowerBound < $1.range.lowerBound }
+
+    var result = AttributedString(self)
+
+    for match in matches.reversed() {
+      let text = String(self[match.range])
+      guard let attrRange = Range(match.range, in: result) else { continue }
+
+      if match.isEmail {
+        if let url = URL(string: "mailto:\(text)") {
+          result[attrRange].link = url
+        }
+      } else {
+        let hasScheme = (try? RegularExpressions.supportedLinkScheme.prefixMatch(in: text)) != nil
+        let urlString = hasScheme ? text : "https://\(text)"
+        if let url = URL(string: urlString) {
+          result[attrRange].link = url
+        }
+      }
+    }
+
+    return result
+  }
+
   func convertingLinksToMarkdown() -> String {
     // Collect email and URL ranges from the original string
     let emailRanges = self.ranges(of: RegularExpressions.emailAddress)
