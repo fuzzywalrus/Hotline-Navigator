@@ -10,9 +10,27 @@ enum InstantMessageDirection {
 }
 
 struct InstantMessage: Identifiable {
-  let id = UUID()
+  let id: UUID
   let direction: InstantMessageDirection
+  let senderName: String
+  let senderIconID: UInt
+  let receiverName: String
+  let receiverIconID: UInt
   let text: String
   let type: InstantMessageType
   let date: Date
+  var isRead: Bool
+
+  init(id: UUID = UUID(), direction: InstantMessageDirection, senderName: String, senderIconID: UInt = 0, receiverName: String = "", receiverIconID: UInt = 0, text: String, type: InstantMessageType, date: Date, isRead: Bool = true) {
+    self.id = id
+    self.direction = direction
+    self.senderName = senderName
+    self.senderIconID = senderIconID
+    self.receiverName = receiverName
+    self.receiverIconID = receiverIconID
+    self.text = text
+    self.type = type
+    self.date = date
+    self.isRead = isRead
+  }
 }

@@ -544,6 +544,14 @@ public struct HotlineUser: Identifiable, Hashable, Sendable {
     return ((self.status & 0x0001) != 0)
   }
 
+  public var refusesPrivateMessages: Bool {
+    return ((self.status & 0x0004) != 0)
+  }
+
+  public var refusesPrivateChat: Bool {
+    return ((self.status & 0x0008) != 0)
+  }
+
   public static func == (lhs: HotlineUser, rhs: HotlineUser) -> Bool {
     return lhs.id == rhs.id
   }

@@ -377,9 +377,9 @@ class HotlineState: Equatable {
   var chatRenderedCount: Int = 0
   var unreadPublicChat: Bool = false
 
-  // Instant Messages
-  var instantMessages: [UInt16:[InstantMessage]] = [:]
-  var unreadInstantMessages: [UInt16:UInt16] = [:]
+  // Private Messages
+  var privateMessages: [UInt16:[InstantMessage]] = [:]
+  var unreadPrivateMessages: [UInt16:UInt16] = [:]
 
   // Message Board
   var messageBoard: [MessageBoardPost] = []
@@ -452,6 +452,7 @@ class HotlineState: Equatable {
   @ObservationIgnored private var serverHistoryObserver: NSObjectProtocol?
   @ObservationIgnored private var lastPersistedMessageType: ChatMessageType?
   @ObservationIgnored private var lastPersistedMessageDate: Date?
+  @ObservationIgnored private var restoredPrivatePeers: Set<String> = []
 
   // MARK: - Initialization
 
@@ -730,8 +731,9 @@ class HotlineState: Equatable {
     self.chat = []
     self.chatRenderedText = nil
     self.chatRenderedCount = 0
-    self.instantMessages = [:]
-    self.unreadInstantMessages = [:]
+    self.privateMessages = [:]
+    self.unreadPrivateMessages = [:]
+    self.restoredPrivatePeers = []
     self.unreadPublicChat = false
     self.messageBoard = []
     self.messageBoardLoaded = false
@@ -944,24 +946,33 @@ class HotlineState: Equatable {
       throw HotlineClientError.notConnected
     }
 
+    let user = self.users.first(where: { $0.id == userID })
+
     let message = InstantMessage(
       direction: .outgoing,
-      text: text.convertingLinksToMarkdown(),
+      senderName: self.username,
+      senderIconID: UInt(self.iconID),
+      receiverName: user?.name ?? "",
+      receiverIconID: user?.iconID ?? 0,
+      text: text,
       type: .message,
-      date: Date()
+      date: Date(),
+      isRead: false
     )
 
-    if self.instantMessages[userID] == nil {
-      self.instantMessages[userID] = [message]
+    if self.privateMessages[userID] == nil {
+      self.privateMessages[userID] = [message]
     } else {
-      self.instantMessages[userID]!.append(message)
+      self.privateMessages[userID]!.append(message)
     }
+
+    self.recordPrivateMessage(message, userID: userID, peerName: user?.name)
 
     try await client.sendInstantMessage(text, to: userID)
 
-    if Prefs.shared.playPrivateMessageSound {
-      SoundEffects.play(.chatMessage)
-    }
+//    if Prefs.shared.playPrivateMessageSound {
+//      SoundEffects.play(.chatMessage)
+//    }
   }
 
   @MainActor
@@ -1059,12 +1070,91 @@ class HotlineState: Equatable {
     self.unreadPublicChat = false
   }
 
-  func hasUnreadInstantMessages(userID: UInt16) -> Bool {
-    return self.unreadInstantMessages[userID] != nil
+  func hasUnreadPrivateMessages(userID: UInt16) -> Bool {
+    return self.unreadPrivateMessages[userID] != nil
   }
 
-  func markInstantMessagesAsRead(userID: UInt16) {
-    self.unreadInstantMessages.removeValue(forKey: userID)
+  func markPrivateMessagesAsRead(userID: UInt16) {
+    self.unreadPrivateMessages.removeValue(forKey: userID)
+  }
+
+  func setPrivateMessagesRead(userID: UInt16) {
+    guard var messages = self.privateMessages[userID] else { return }
+    var changed = false
+    for i in messages.indices where !messages[i].isRead {
+      messages[i].isRead = true
+      changed = true
+    }
+    guard changed else { return }
+    self.privateMessages[userID] = messages
+
+    guard let user = self.users.first(where: { $0.id == userID }),
+          let key = self.chatSessionKey else { return }
+    let peerName = user.name
+
+    Task {
+      await ChatStore.shared.markPrivateEntriesAsRead(for: key, peerName: peerName)
+    }
+  }
+
+  func deletePrivateMessage(id: UUID, userID: UInt16) {
+    self.privateMessages[userID]?.removeAll(where: { $0.id == id })
+
+    Task {
+      await ChatStore.shared.deleteEntry(id: id)
+    }
+  }
+
+  func deleteAllPrivateMessages(userID: UInt16) {
+    self.privateMessages[userID] = nil
+
+    guard let user = self.users.first(where: { $0.id == userID }),
+          let key = self.chatSessionKey else { return }
+    let peerName = user.name
+
+    Task {
+      await ChatStore.shared.deletePrivateEntries(for: key, peerName: peerName)
+    }
+  }
+
+  func restorePrivateHistory(userID: UInt16) {
+    guard let user = self.users.first(where: { $0.id == userID }) else { return }
+    let peerName = user.name
+    guard !self.restoredPrivatePeers.contains(peerName) else { return }
+    guard let key = self.chatSessionKey else { return }
+
+    self.restoredPrivatePeers.insert(peerName)
+
+    Task { [weak self] in
+      guard let self else { return }
+      let result = await ChatStore.shared.loadHistory(for: key, peerName: peerName)
+
+      await MainActor.run {
+        // Result is in DESC order (newest first), reverse to get chronological for storage
+        let historyMessages: [InstantMessage] = result.entries.reversed().compactMap { entry in
+          let direction: InstantMessageDirection = entry.type == "privateOut" ? .outgoing : .incoming
+          return InstantMessage(
+            id: entry.id,
+            direction: direction,
+            senderName: entry.username ?? peerName,
+            senderIconID: entry.metadata?.iconID ?? 0,
+            receiverName: entry.metadata?.receiverName ?? "",
+            receiverIconID: entry.metadata?.receiverIconID ?? 0,
+            text: entry.body,
+            type: .message,
+            date: entry.date,
+            isRead: entry.isRead
+          )
+        }
+
+        guard !historyMessages.isEmpty else { return }
+
+        let currentMessages = self.privateMessages[userID] ?? []
+        let currentIDs = Set(currentMessages.map { $0.id })
+        let newHistory = historyMessages.filter { !currentIDs.contains($0.id) }
+        self.privateMessages[userID] = newHistory + currentMessages
+      }
+    }
   }
 
   @MainActor
@@ -2250,7 +2340,7 @@ class HotlineState: Equatable {
       print("HotlineState: received private message from \(user.name): \(message)")
 
       if Prefs.shared.playPrivateMessageSound {
-        if self.unreadInstantMessages[userID] == nil {
+        if self.unreadPrivateMessages[userID] == nil {
           SoundEffects.play(.serverMessage)
         } else {
           SoundEffects.play(.chatMessage)
@@ -2259,18 +2349,24 @@ class HotlineState: Equatable {
 
       let instantMessage = InstantMessage(
         direction: .incoming,
-        text: message.convertingLinksToMarkdown(),
+        senderName: user.name,
+        senderIconID: user.iconID,
+        receiverName: self.username,
+        receiverIconID: UInt(self.iconID),
+        text: message,
         type: .message,
-        date: Date()
+        date: Date(),
+        isRead: false
       )
 
-      if self.instantMessages[userID] == nil {
-        self.instantMessages[userID] = [instantMessage]
+      if self.privateMessages[userID] == nil {
+        self.privateMessages[userID] = [instantMessage]
       } else {
-        self.instantMessages[userID]!.append(instantMessage)
+        self.privateMessages[userID]!.append(instantMessage)
       }
 
-      self.unreadInstantMessages[userID] = userID
+      self.recordPrivateMessage(instantMessage, userID: userID, peerName: user.name)
+      self.unreadPrivateMessages[userID] = userID
     }
   }
 
@@ -2356,6 +2452,26 @@ class HotlineState: Equatable {
 
     Task {
       await ChatStore.shared.append(entry: entry, for: key, serverName: serverName)
+    }
+  }
+
+  private func recordPrivateMessage(_ message: InstantMessage, userID: UInt16, peerName: String?) {
+    guard let key = self.chatSessionKey, let peerName else { return }
+
+    let entryType = message.direction == .outgoing ? "privateOut" : "privateIn"
+    let entry = ChatStore.Entry(
+      id: message.id,
+      body: message.text,
+      username: message.senderName,
+      type: entryType,
+      date: message.date,
+      metadata: ChatStore.EntryMetadata(iconID: message.senderIconID, receiverName: message.receiverName, receiverIconID: message.receiverIconID),
+      isRead: message.isRead
+    )
+    let serverName = self.serverName ?? self.server?.name
+
+    Task {
+      await ChatStore.shared.append(entry: entry, for: key, serverName: serverName, peerName: peerName)
     }
   }
 

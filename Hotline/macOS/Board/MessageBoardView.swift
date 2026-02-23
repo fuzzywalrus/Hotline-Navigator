@@ -9,14 +9,14 @@ struct MessageBoardView: View {
   
   var body: some View {
     NavigationStack {
+      self.messageBoardView
+    }
+    .overlay {
       if self.model.access?.contains(.canReadMessageBoard) != true {
         self.disabledBoardView
       }
       else if self.model.messageBoardLoaded && self.model.messageBoard.isEmpty {
         self.emptyBoardView
-      }
-      else {
-        self.messageBoardView
       }
     }
     .background(self.colorScheme == .light ? Color(nsColor: .tertiarySystemFill).ignoresSafeArea() : nil)
@@ -70,7 +70,7 @@ struct MessageBoardView: View {
   }()
 
   private var messageBoardView: some View {
-    ScrollView {
+    ScrollView(.vertical) {
       LazyVStack(alignment: .leading, spacing: 16) {
         ForEach(self.model.messageBoard) { post in
           
@@ -124,7 +124,7 @@ struct MessageBoardView: View {
 //          .padding(.bottom, 16)
           .background(self.colorScheme == .light ? AnyShapeStyle(Color.clear) : AnyShapeStyle(.thickMaterial))
           .background(self.colorScheme == .light ? Color(nsColor: .controlBackgroundColor) : Color.clear)
-          .clipShape(.rect(cornerRadius: 12))
+          .clipShape(.rect(cornerRadius: 16))
           .shadow(color: .black.opacity(0.08), radius: 2, x: 0, y: 1)
           .padding(.horizontal, 24)
           

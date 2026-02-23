@@ -1113,9 +1113,10 @@ public actor HotlineClient {
       if line.isEmpty || line.allSatisfy({ $0 == 0x20 || $0 == 0x09 }) {
         continue
       }
-      // Decode as UTF-8/ASCII — From headers are always ASCII-compatible.
+      // Decode as UTF-8, then Mac OS Roman for classic clients with
+      // non-ASCII usernames.
       guard let str = String(data: line, encoding: .utf8)
-              ?? String(data: line, encoding: .ascii) else {
+              ?? String(data: line, encoding: .macOSRoman) else {
         return false
       }
       return str.firstMatch(of: fromHeaderPattern) != nil

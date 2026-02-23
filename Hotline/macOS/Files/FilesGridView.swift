@@ -319,6 +319,14 @@ struct FilesGridView: View {
   @ViewBuilder
   private func itemContextMenu(for file: FileInfo?) -> some View {
     Button {
+      self.selection = file
+      self.uploadFileSelectorDisplayed = true
+    } label: {
+      Label("Upload...", systemImage: "arrow.up")
+    }
+    .disabled(file != nil && !file!.isFolder || self.model.access?.contains(.canUploadFiles) != true)
+    
+    Button {
       if let file = file {
         self.actions.downloadFile(file)
       }
@@ -331,14 +339,6 @@ struct FilesGridView: View {
       }
     }
     .disabled(file == nil || self.model.access?.contains(.canDownloadFiles) != true)
-
-    Button {
-      self.selection = file
-      self.uploadFileSelectorDisplayed = true
-    } label: {
-      Label("Upload...", systemImage: "arrow.up")
-    }
-    .disabled(file != nil && !file!.isFolder || self.model.access?.contains(.canUploadFiles) != true)
 
     Divider()
 

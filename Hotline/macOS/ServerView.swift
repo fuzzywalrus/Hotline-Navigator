@@ -86,6 +86,9 @@ struct ServerView: View {
   @State private var connectLogin: String = ""
   @State private var connectPassword: String = ""
   @State private var connectionDisplayed: Bool = false
+  @State private var composeMessageUser: User? = nil
+  @State private var contextMenuUserInfo: HotlineUserClientInfo? = nil
+  @State private var disconnectUserTarget: User? = nil
 //  @State private var accountsShown: Bool = false
   
   static var menuItems: [ServerMenuItem] = [
@@ -319,7 +322,7 @@ struct ServerView: View {
       case .chat:
         model.markPublicChatAsRead()
       case .user(let userID):
-        model.markInstantMessagesAsRead(userID: userID)
+        model.markPrivateMessagesAsRead(userID: userID)
       default:
         break
       }
@@ -353,7 +356,7 @@ struct ServerView: View {
         
         Spacer()
         
-        if model.hasUnreadInstantMessages(userID: user.id) {
+        if model.hasUnreadPrivateMessages(userID: user.id) {
           Circle()
             .frame(width: 6, height: 6)
             .foregroundStyle(user.isAdmin ? Color.hotlineRed : .primary.opacity(0.5))
@@ -363,6 +366,30 @@ struct ServerView: View {
       .opacity(user.isIdle ? 0.5 : 1.0)
       .opacity(controlActiveState == .inactive ? 0.5 : 1.0)
       .tag(ServerNavigationType.user(userID: user.id))
+      .contextMenu {
+        if self.model.access?.contains(.canGetClientInfo) == true {
+          Button("Get Info", systemImage: "info.circle") {
+            Task {
+              if let info = try await self.model.getClientInfoText(id: user.id) {
+                self.contextMenuUserInfo = info
+              }
+            }
+          }
+        }
+
+        Button("Send Message...", systemImage: "square.and.pencil") {
+          self.composeMessageUser = user
+        }
+        .disabled(self.model.access?.contains(.canSendMessages) != true || user.refusesPrivateMessages)
+
+        if self.model.access?.contains(.canDisconnectUsers) == true {
+          Divider()
+
+          Button("Disconnect User", systemImage: "nosign", role: .destructive) {
+            self.disconnectUserTarget = user
+          }
+        }
+      }
     }
   }
   
@@ -400,10 +427,34 @@ struct ServerView: View {
         }
     }
     .navigationTitle(self.model.serverTitle)
+    .sheet(item: self.$composeMessageUser) { user in
+      ComposeMessageView(userID: user.id, username: user.name)
+        .environment(self.model)
+    }
+    .sheet(item: self.$contextMenuUserInfo) { info in
+      UserClientInfoSheet(info: info)
+    }
+    .alert(
+      "Are you sure you want to disconnect \(self.disconnectUserTarget?.name ?? "this user")?",
+      isPresented: Binding(
+        get: { self.disconnectUserTarget != nil },
+        set: { if !$0 { self.disconnectUserTarget = nil } }
+      )
+    ) {
+      Button("Disconnect", role: .destructive) {
+        if let user = self.disconnectUserTarget {
+          Task {
+            try await self.model.disconnectUser(id: user.id, options: nil)
+          }
+        }
+      }
+    } message: {
+      Text("They will be disconnected from the server, but may reconnect.")
+    }
   }
-  
+
   // MARK: -
-  
+
   private func syncFieldsFromServer() {
     self.connectAddress = self.server.displayAddress
     self.connectLogin = self.server.login

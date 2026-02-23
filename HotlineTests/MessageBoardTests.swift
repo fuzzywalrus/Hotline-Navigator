@@ -176,6 +176,27 @@ struct MessageBoardTests {
     #expect(!posts[0].contains("________"))
   }
 
+  @Test func byteDataMacRomanUsernameInHeader() {
+    // "Hålø" in Mac OS Roman: H=48, å=8C, l=6C, ø=9D
+    var data = Data()
+    data.append(contentsOf: Array("From Alice (Jan 1 12:00):".utf8))
+    data.append(0x0D)
+    data.append(contentsOf: Array("Hello from Sweden".utf8))
+    data.append(0x0D)
+    data.append(contentsOf: Array(repeating: UInt8(0x5F), count: 58))
+    data.append(0x0D)
+    // "From Hålø 8 (Aug09 21:49):" in Mac OS Roman
+    data.append(contentsOf: [0x46, 0x72, 0x6F, 0x6D, 0x20]) // "From "
+    data.append(contentsOf: [0x48, 0x8C, 0x6C, 0x9D, 0x20, 0x38]) // "Hålø 8"
+    data.append(contentsOf: Array(" (Aug09 21:49):".utf8))
+    data.append(0x0D)
+    data.append(contentsOf: Array("Second post body".utf8))
+    let posts = HotlineClient.parseMessageBoardData(data)
+    #expect(posts.count == 2)
+    #expect(posts[0].contains("Hello from Sweden"))
+    #expect(posts[1].contains("Second post body"))
+  }
+
   // MARK: - Header Parsing (Username + Date)
 
   @Test func standardHeaderWithColon() {

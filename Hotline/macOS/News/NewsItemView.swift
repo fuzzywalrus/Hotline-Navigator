@@ -80,7 +80,7 @@ struct NewsItemView: View {
       Spacer()
       
       if news.type == .category && news.count > 0 {
-        Text("^[\(news.count) Post](inflect: true)")
+        Text("^[\(news.count) Article](inflect: true)")
           .lineLimit(1)
           .foregroundStyle(.secondary)
           .padding(.trailing, 8)
@@ -98,7 +98,7 @@ struct NewsItemView: View {
 //          .padding(.trailing, 8)
         
 //        ZStack {
-//          Text("^[\(news.count) \(news.type == .bundle ? "Category" : "Post")](inflect: true)")
+//          Text("^[\(news.count) \(news.type == .bundle ? "Category" : "Article")](inflect: true)")
 //          Text("\(news.count)")
 //            .foregroundStyle(.clear)
 ////            .font(.caption)

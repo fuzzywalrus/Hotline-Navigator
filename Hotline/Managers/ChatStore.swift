@@ -39,6 +39,9 @@ actor ChatStore {
 
   struct EntryMetadata: Codable {
     var images: [ImageMetadata]?
+    var iconID: UInt?
+    var receiverName: String?
+    var receiverIconID: UInt?
 
     struct ImageMetadata: Codable {
       let url: String
@@ -54,6 +57,7 @@ actor ChatStore {
     let type: String
     let date: Date
     var metadata: EntryMetadata?
+    var isRead: Bool = true
   }
 
   struct LoadResult {
@@ -72,8 +76,12 @@ actor ChatStore {
   private var stmtCountEntries: OpaquePointer?
   private var stmtTrimEntries: OpaquePointer?
   private var stmtUpdateMetadata: OpaquePointer?
+  private var stmtLoadPrivateEntries: OpaquePointer?
+  private var stmtCountPrivateEntries: OpaquePointer?
+  private var stmtTrimPrivateEntries: OpaquePointer?
+  private var stmtMarkPrivateRead: OpaquePointer?
 
-  func append(entry: Entry, for key: SessionKey, serverName: String?) async {
+  func append(entry: Entry, for key: SessionKey, serverName: String?, peerName: String? = nil) async {
     do {
       try openIfNeeded()
 
@@ -105,12 +113,22 @@ actor ChatStore {
       } else {
         sqlite3_bind_null(stmt, 7)
       }
+      if let peerName {
+        sqlite3_bind_text(stmt, 8, peerName, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+      } else {
+        sqlite3_bind_null(stmt, 8)
+      }
+      sqlite3_bind_int(stmt, 9, entry.isRead ? 1 : 0)
 
       if sqlite3_step(stmt) != SQLITE_DONE {
         print("ChatStore: failed to insert entry —", errorMessage())
       }
 
-      trimEntries(serverID: serverID)
+      if peerName != nil {
+        trimPrivateEntries(serverID: serverID, peerName: peerName!)
+      } else {
+        trimEntries(serverID: serverID)
+      }
     }
     catch {
       print("ChatStore: failed to append entry —", error)
@@ -138,7 +156,76 @@ actor ChatStore {
     }
   }
 
-  func loadHistory(for key: SessionKey, limit: Int? = nil) async -> LoadResult {
+  func deleteEntry(id: UUID) async {
+    do {
+      try openIfNeeded()
+
+      var stmt: OpaquePointer?
+      let sql = "DELETE FROM entries WHERE id = ?1"
+      guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+        print("ChatStore: failed to prepare deleteEntry —", errorMessage())
+        return
+      }
+      defer { sqlite3_finalize(stmt) }
+
+      sqlite3_bind_text(stmt, 1, id.uuidString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+
+      if sqlite3_step(stmt) != SQLITE_DONE {
+        print("ChatStore: failed to delete entry —", errorMessage())
+      }
+    }
+    catch {
+      print("ChatStore: failed to delete entry —", error)
+    }
+  }
+
+  func markPrivateEntriesAsRead(for key: SessionKey, peerName: String) async {
+    do {
+      try openIfNeeded()
+
+      guard let serverID = findServerID(key: key) else { return }
+      guard let stmt = stmtMarkPrivateRead else { return }
+
+      sqlite3_reset(stmt)
+      sqlite3_bind_int64(stmt, 1, Int64(serverID))
+      sqlite3_bind_text(stmt, 2, peerName, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+
+      if sqlite3_step(stmt) != SQLITE_DONE {
+        print("ChatStore: failed to mark private entries as read —", errorMessage())
+      }
+    }
+    catch {
+      print("ChatStore: failed to mark private entries as read —", error)
+    }
+  }
+
+  func deletePrivateEntries(for key: SessionKey, peerName: String) async {
+    do {
+      try openIfNeeded()
+
+      guard let serverID = findServerID(key: key) else { return }
+
+      var stmt: OpaquePointer?
+      let sql = "DELETE FROM entries WHERE serverId = ?1 AND peerName = ?2"
+      guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+        print("ChatStore: failed to prepare deletePrivateEntries —", errorMessage())
+        return
+      }
+      defer { sqlite3_finalize(stmt) }
+
+      sqlite3_bind_int64(stmt, 1, Int64(serverID))
+      sqlite3_bind_text(stmt, 2, peerName, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+
+      if sqlite3_step(stmt) != SQLITE_DONE {
+        print("ChatStore: failed to delete private entries —", errorMessage())
+      }
+    }
+    catch {
+      print("ChatStore: failed to delete private entries —", error)
+    }
+  }
+
+  func loadHistory(for key: SessionKey, peerName: String? = nil, limit: Int? = nil) async -> LoadResult {
     do {
       try openIfNeeded()
 
@@ -147,7 +234,12 @@ actor ChatStore {
       }
 
       let metadata = loadServerMetadata(serverID: serverID)
-      let entries = loadEntries(serverID: serverID, limit: limit)
+      let entries: [Entry]
+      if let peerName {
+        entries = loadPrivateEntries(serverID: serverID, peerName: peerName, limit: limit)
+      } else {
+        entries = loadEntries(serverID: serverID, limit: limit)
+      }
 
       return LoadResult(entries: entries, metadata: metadata)
     }
@@ -190,7 +282,7 @@ actor ChatStore {
     let sql = """
       SELECT s.address, s.port, s.serverName, s.createdAt, s.updatedAt, COUNT(e.id)
       FROM servers s
-      LEFT JOIN entries e ON e.serverId = s.id
+      LEFT JOIN entries e ON e.serverId = s.id AND e.peerName IS NULL
       GROUP BY s.id
       ORDER BY s.updatedAt DESC
       """
@@ -317,8 +409,35 @@ actor ChatStore {
 
     try execute("CREATE INDEX IF NOT EXISTS idx_entries_server_date ON entries(serverId, date)")
 
+    // Schema migration: add peerName column if missing
+    try migrateAddPeerName()
+
+    // Schema migration: add isRead column if missing
+    try migrateAddIsRead()
+
     try prepareStatements()
     cleanupLegacyDirectory()
+  }
+
+  private func migrateAddPeerName() throws {
+    var checkStmt: OpaquePointer?
+    let rc = sqlite3_prepare_v2(db, "SELECT peerName FROM entries LIMIT 1", -1, &checkStmt, nil)
+    sqlite3_finalize(checkStmt)
+
+    if rc != SQLITE_OK {
+      try execute("ALTER TABLE entries ADD COLUMN peerName TEXT")
+      try execute("CREATE INDEX IF NOT EXISTS idx_entries_peer ON entries(serverId, peerName, date)")
+    }
+  }
+
+  private func migrateAddIsRead() throws {
+    var checkStmt: OpaquePointer?
+    let rc = sqlite3_prepare_v2(db, "SELECT isRead FROM entries LIMIT 1", -1, &checkStmt, nil)
+    sqlite3_finalize(checkStmt)
+
+    if rc != SQLITE_OK {
+      try execute("ALTER TABLE entries ADD COLUMN isRead INTEGER DEFAULT 1")
+    }
   }
 
   private func prepareStatements() throws {
@@ -335,13 +454,13 @@ actor ChatStore {
     )
 
     stmtInsertEntry = try prepare("""
-      INSERT OR REPLACE INTO entries (id, serverId, body, username, type, date, metadata)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+      INSERT OR REPLACE INTO entries (id, serverId, body, username, type, date, metadata, peerName, isRead)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
       """)
 
     stmtLoadEntries = try prepare("""
       SELECT id, body, username, type, date, metadata
-      FROM entries WHERE serverId = ?1 ORDER BY date ASC
+      FROM entries WHERE serverId = ?1 AND peerName IS NULL ORDER BY date ASC
       """)
 
     stmtLoadMetadata = try prepare(
@@ -349,17 +468,36 @@ actor ChatStore {
     )
 
     stmtCountEntries = try prepare(
-      "SELECT COUNT(*) FROM entries WHERE serverId = ?1"
+      "SELECT COUNT(*) FROM entries WHERE serverId = ?1 AND peerName IS NULL"
     )
 
     stmtTrimEntries = try prepare("""
       DELETE FROM entries WHERE id IN (
-        SELECT id FROM entries WHERE serverId = ?1 ORDER BY date ASC LIMIT ?2
+        SELECT id FROM entries WHERE serverId = ?1 AND peerName IS NULL ORDER BY date ASC LIMIT ?2
       )
       """)
 
     stmtUpdateMetadata = try prepare(
       "UPDATE entries SET metadata = ?1 WHERE id = ?2"
+    )
+
+    stmtLoadPrivateEntries = try prepare("""
+      SELECT id, body, username, type, date, metadata, isRead
+      FROM entries WHERE serverId = ?1 AND peerName = ?2 ORDER BY date DESC
+      """)
+
+    stmtCountPrivateEntries = try prepare(
+      "SELECT COUNT(*) FROM entries WHERE serverId = ?1 AND peerName = ?2"
+    )
+
+    stmtTrimPrivateEntries = try prepare("""
+      DELETE FROM entries WHERE id IN (
+        SELECT id FROM entries WHERE serverId = ?1 AND peerName = ?2 ORDER BY date ASC LIMIT ?3
+      )
+      """)
+
+    stmtMarkPrivateRead = try prepare(
+      "UPDATE entries SET isRead = 1 WHERE serverId = ?1 AND peerName = ?2 AND isRead = 0"
     )
   }
 
@@ -385,7 +523,9 @@ actor ChatStore {
     let stmts: [OpaquePointer?] = [
       stmtUpsertServer, stmtGetServerID, stmtInsertEntry,
       stmtLoadEntries, stmtLoadMetadata, stmtCountEntries,
-      stmtTrimEntries, stmtUpdateMetadata
+      stmtTrimEntries, stmtUpdateMetadata,
+      stmtLoadPrivateEntries, stmtCountPrivateEntries, stmtTrimPrivateEntries,
+      stmtMarkPrivateRead
     ]
     for stmt in stmts {
       sqlite3_finalize(stmt)
@@ -398,6 +538,10 @@ actor ChatStore {
     stmtCountEntries = nil
     stmtTrimEntries = nil
     stmtUpdateMetadata = nil
+    stmtLoadPrivateEntries = nil
+    stmtCountPrivateEntries = nil
+    stmtTrimPrivateEntries = nil
+    stmtMarkPrivateRead = nil
 
     if let db {
       sqlite3_close(db)
@@ -463,6 +607,26 @@ actor ChatStore {
     sqlite3_step(trimStmt)
   }
 
+  private func trimPrivateEntries(serverID: Int32, peerName: String) {
+    guard let countStmt = stmtCountPrivateEntries else { return }
+    sqlite3_reset(countStmt)
+    sqlite3_bind_int(countStmt, 1, serverID)
+    sqlite3_bind_text(countStmt, 2, peerName, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+
+    guard sqlite3_step(countStmt) == SQLITE_ROW else { return }
+    let count = Int(sqlite3_column_int(countStmt, 0))
+
+    guard count > maxEntries else { return }
+    let excess = count - maxEntries
+
+    guard let trimStmt = stmtTrimPrivateEntries else { return }
+    sqlite3_reset(trimStmt)
+    sqlite3_bind_int(trimStmt, 1, serverID)
+    sqlite3_bind_text(trimStmt, 2, peerName, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+    sqlite3_bind_int(trimStmt, 3, Int32(excess))
+    sqlite3_step(trimStmt)
+  }
+
   private func loadEntries(serverID: Int32, limit: Int?) -> [Entry] {
     guard let stmt = stmtLoadEntries else { return [] }
     sqlite3_reset(stmt)
@@ -500,6 +664,51 @@ actor ChatStore {
 
     if let limit, limit < entries.count {
       return Array(entries.suffix(limit))
+    }
+    return entries
+  }
+
+  private func loadPrivateEntries(serverID: Int32, peerName: String, limit: Int?) -> [Entry] {
+    guard let stmt = stmtLoadPrivateEntries else { return [] }
+    sqlite3_reset(stmt)
+    sqlite3_bind_int(stmt, 1, serverID)
+    sqlite3_bind_text(stmt, 2, peerName, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+
+    let decoder = JSONDecoder()
+    var entries: [Entry] = []
+
+    while sqlite3_step(stmt) == SQLITE_ROW {
+      guard let idStr = columnText(stmt, 0),
+            let uuid = UUID(uuidString: idStr),
+            let body = columnText(stmt, 1),
+            let type = columnText(stmt, 3) else {
+        continue
+      }
+
+      let username = columnText(stmt, 2)
+      let date = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 4))
+
+      var entryMetadata: EntryMetadata?
+      if let metaStr = columnText(stmt, 5),
+         let metaData = metaStr.data(using: .utf8) {
+        entryMetadata = try? decoder.decode(EntryMetadata.self, from: metaData)
+      }
+
+      let isRead = sqlite3_column_int(stmt, 6) != 0
+
+      entries.append(Entry(
+        id: uuid,
+        body: body,
+        username: username,
+        type: type,
+        date: date,
+        metadata: entryMetadata,
+        isRead: isRead
+      ))
+    }
+
+    if let limit, limit < entries.count {
+      return Array(entries.prefix(limit))
     }
     return entries
   }

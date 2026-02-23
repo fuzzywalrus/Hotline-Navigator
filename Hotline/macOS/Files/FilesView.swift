@@ -424,6 +424,14 @@ struct FilesView: View {
     }
     .contextMenu(forSelectionType: FileInfo.self) { items in
       let file = items.first
+      
+      Button {
+        self.selection = file
+        self.uploadFileSelectorDisplayed = true
+      } label: {
+        Label("Upload...", systemImage: "arrow.up")
+      }
+      .disabled(file != nil && !file!.isFolder || self.model.access?.contains(.canUploadFiles) != true)
 
       Button {
         if let file = file {
@@ -433,14 +441,6 @@ struct FilesView: View {
         Label("Download", systemImage: "arrow.down")
       }
       .disabled(file == nil || self.model.access?.contains(.canDownloadFiles) != true)
-
-      Button {
-        self.selection = file
-        self.uploadFileSelectorDisplayed = true
-      } label: {
-        Label("Upload...", systemImage: "arrow.up")
-      }
-      .disabled(file != nil && !file!.isFolder || self.model.access?.contains(.canUploadFiles) != true)
 
       Divider()
 
