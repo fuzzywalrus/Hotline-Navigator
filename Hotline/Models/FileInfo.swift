@@ -100,11 +100,24 @@ import UniformTypeIdentifiers
     self.fileSize = UInt(hotlineFile.fileSize)
     self.isFolder = hotlineFile.isFolder
     self.isUnavailable = (!self.isFolder && (self.fileSize == 0))
-    
+
     print(self.name, self.type, self.creator, self.isUnavailable)
     if self.isFolder {
       self.children = []
     }
+  }
+
+  /// Creates a placeholder folder node for building intermediate tree paths.
+  init(folderName: String, path: [String]) {
+    self.id = UUID()
+    self.path = path
+    self.name = folderName
+    self.type = ""
+    self.creator = ""
+    self.fileSize = 0
+    self.isFolder = true
+    self.isUnavailable = false
+    self.children = []
   }
   
   static func == (lhs: FileInfo, rhs: FileInfo) -> Bool {

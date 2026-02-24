@@ -66,7 +66,7 @@ struct MessageView: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(self.colorScheme == .light ? Color(nsColor: .tertiarySystemFill).ignoresSafeArea() : nil)
+    .background(Color(nsColor: .underPageBackgroundColor).opacity(self.colorScheme == .light ? 0.25 : 1.0).ignoresSafeArea())
     .onKeyPress(.downArrow, phases: [.down, .repeat]) { _ in
       self.moveFocus(direction: 1)
       return .handled

@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import CloudKit
 import UniformTypeIdentifiers
+import UserNotifications
 import Darwin
 
 @Observable
@@ -17,11 +18,19 @@ final class AppLaunchState {
   var launchState = LaunchState.loading
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
   private var cloudKitObserverToken: Any? = nil
-  
+
   func applicationDidFinishLaunching(_ notification: Notification) {
     AppLaunchState.shared.launchState = .launched
+
+    let center = UNUserNotificationCenter.current()
+    center.delegate = self
+    center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+      if let error = error {
+        print("Notification authorization error: \(error.localizedDescription)")
+      }
+    }
     
     if FileManager.default.ubiquityIdentityToken != nil {
       CKContainer.default().accountStatus { status, error in
@@ -59,6 +68,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   
   func applicationWillTerminate(_ notification: Notification) {
     AppLaunchState.shared.launchState = .terminated
+  }
+
+  // MARK: - UNUserNotificationCenterDelegate
+
+  func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+    let userInfo = response.notification.request.content.userInfo
+
+    if let type = userInfo["type"] as? String, type == "watchWord" || type == "mention" {
+      Task { @MainActor in
+        AppState.shared.activeServerState?.selection = .chat
+        NSApplication.shared.activate()
+      }
+    } else if let userID = userInfo["userID"] as? UInt16 {
+      Task { @MainActor in
+        AppState.shared.activeServerState?.selection = .user(userID: userID)
+        NSApplication.shared.activate()
+      }
+    }
+    completionHandler()
+  }
+
+  func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+    completionHandler([])
   }
 }
 

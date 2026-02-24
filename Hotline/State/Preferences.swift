@@ -1,4 +1,46 @@
 import SwiftUI
+import AppKit
+
+struct HighlightWord: Codable, Hashable {
+  var word: String
+  var color: String  // "primary", "red", "orange", "yellow", "green", "blue", "purple", "pink"
+
+  static let allColors: [String] = ["primary", "red", "orange", "yellow", "green", "blue", "purple", "pink"]
+
+  var nsBackgroundColor: NSColor {
+    switch self.color {
+    case "red":    return .systemRed
+    case "orange": return .systemOrange
+    case "yellow": return .systemYellow
+    case "green":  return .systemGreen
+    case "blue":   return .systemBlue
+    case "purple": return .systemPurple
+    case "pink":   return NSColor(srgbRed: 1.0, green: 0.34, blue: 0.67, alpha: 1.0)
+    default:       return .textColor
+    }
+  }
+
+  var nsForegroundColor: NSColor {
+    switch self.color {
+    case "yellow": return .black
+    case "primary": return .textBackgroundColor
+    default:       return .white
+    }
+  }
+
+  var swiftUIColor: Color {
+    switch self.color {
+    case "red":    return .red
+    case "orange": return .orange
+    case "yellow": return .yellow
+    case "green":  return .green
+    case "blue":   return .blue
+    case "purple": return .purple
+    case "pink":   return Color(red: 1.0, green: 0.34, blue: 0.67)
+    default:       return Color(white: 0.5)
+    }
+  }
+}
 
 extension EnvironmentValues {
   @Entry var preferences: Prefs = Prefs.shared
@@ -20,10 +62,14 @@ enum PrefsKeys: String {
   case playLoggedInSound = "play logged in sound"
   case playErrorSound = "play error sound"
   case playChatInvitationSound = "play chat invitation sound"
+  case showPrivateMessageNotifications = "show private message notifications"
+  case showWatchWordNotifications = "show watch word notifications"
+  case showMentionNotifications = "show mention notifications"
   case showBannerToolbar = "show banner toolbar"
   case showJoinLeaveMessages = "show join leave messages"
   case downloadFolderBookmark = "download folder bookmark"
   case filesViewMode = "files view mode"
+  case watchWords = "watch words"
 }
 
 @Observable
@@ -47,6 +93,9 @@ class Prefs {
       PrefsKeys.playLoggedInSound.rawValue: true,
       PrefsKeys.playErrorSound.rawValue: true,
       PrefsKeys.playChatInvitationSound.rawValue: true,
+      PrefsKeys.showPrivateMessageNotifications.rawValue: true,
+      PrefsKeys.showWatchWordNotifications.rawValue: true,
+      PrefsKeys.showMentionNotifications.rawValue: true,
       PrefsKeys.showBannerToolbar.rawValue: true,
       PrefsKeys.showJoinLeaveMessages.rawValue: true,
       PrefsKeys.filesViewMode.rawValue: "grid",
@@ -67,10 +116,25 @@ class Prefs {
     self.playLoggedInSound = UserDefaults.standard.bool(forKey: PrefsKeys.playLoggedInSound.rawValue)
     self.playErrorSound = UserDefaults.standard.bool(forKey: PrefsKeys.playErrorSound.rawValue)
     self.playChatInvitationSound = UserDefaults.standard.bool(forKey: PrefsKeys.playChatInvitationSound.rawValue)
+    self.showPrivateMessageNotifications = UserDefaults.standard.bool(forKey: PrefsKeys.showPrivateMessageNotifications.rawValue)
+    self.showWatchWordNotifications = UserDefaults.standard.bool(forKey: PrefsKeys.showWatchWordNotifications.rawValue)
+    self.showMentionNotifications = UserDefaults.standard.bool(forKey: PrefsKeys.showMentionNotifications.rawValue)
     self.showBannerToolbar = UserDefaults.standard.bool(forKey: PrefsKeys.showBannerToolbar.rawValue)
     self.showJoinLeaveMessages = UserDefaults.standard.bool(forKey: PrefsKeys.showJoinLeaveMessages.rawValue)
     self.downloadFolderBookmark = UserDefaults.standard.data(forKey: PrefsKeys.downloadFolderBookmark.rawValue)
     self.filesViewMode = UserDefaults.standard.string(forKey: PrefsKeys.filesViewMode.rawValue)!
+
+    if let watchWordsData = UserDefaults.standard.data(forKey: PrefsKeys.watchWords.rawValue) {
+      if let decoded = try? JSONDecoder().decode([HighlightWord].self, from: watchWordsData) {
+        self.watchWords = decoded
+      } else if let legacy = try? JSONDecoder().decode([String].self, from: watchWordsData) {
+        self.watchWords = legacy.map { HighlightWord(word: $0, color: "primary") }
+      } else {
+        self.watchWords = []
+      }
+    } else {
+      self.watchWords = []
+    }
   }
 
   var username: String {
@@ -133,6 +197,18 @@ class Prefs {
     didSet { UserDefaults.standard.set(self.automaticMessage, forKey: PrefsKeys.automaticMessage.rawValue) }
   }
   
+  var showPrivateMessageNotifications: Bool {
+    didSet { UserDefaults.standard.set(self.showPrivateMessageNotifications, forKey: PrefsKeys.showPrivateMessageNotifications.rawValue) }
+  }
+
+  var showWatchWordNotifications: Bool {
+    didSet { UserDefaults.standard.set(self.showWatchWordNotifications, forKey: PrefsKeys.showWatchWordNotifications.rawValue) }
+  }
+
+  var showMentionNotifications: Bool {
+    didSet { UserDefaults.standard.set(self.showMentionNotifications, forKey: PrefsKeys.showMentionNotifications.rawValue) }
+  }
+
   var showBannerToolbar: Bool {
     didSet { UserDefaults.standard.set(self.showBannerToolbar, forKey: PrefsKeys.showBannerToolbar.rawValue) }
   }
@@ -143,6 +219,14 @@ class Prefs {
 
   var filesViewMode: String {
     didSet { UserDefaults.standard.set(self.filesViewMode, forKey: PrefsKeys.filesViewMode.rawValue) }
+  }
+
+  var watchWords: [HighlightWord] {
+    didSet {
+      if let encoded = try? JSONEncoder().encode(self.watchWords) {
+        UserDefaults.standard.set(encoded, forKey: PrefsKeys.watchWords.rawValue)
+      }
+    }
   }
 
   var downloadFolderBookmark: Data? {

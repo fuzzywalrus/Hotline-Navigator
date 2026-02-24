@@ -19,9 +19,9 @@ struct MessageBoardView: View {
         self.emptyBoardView
       }
     }
-    .background(self.colorScheme == .light ? Color(nsColor: .tertiarySystemFill).ignoresSafeArea() : nil)
+//    .background(self.colorScheme == .light ? Color(nsColor: .tertiarySystemFill).ignoresSafeArea() : Color(nsColor: .controlBackgroundColor).ignoresSafeArea())
 //    .containerBackground(.hotlineRed, for: .window)
-//    .background(Color(nsColor: .underPageBackgroundColor))
+    .background(Color(nsColor: .underPageBackgroundColor).opacity(self.colorScheme == .light ? 0.25 : 1.0).ignoresSafeArea())
     .sheet(isPresented: $composerDisplayed) {
       MessageBoardEditorView()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -87,7 +87,9 @@ struct MessageBoardView: View {
                   .padding(.bottom, 8)
                 Spacer()
               }
-              .background(.quinary.opacity(0.3))
+              .background(.quinary.opacity(self.colorScheme == .light ? 0.7 : 0.3))
+              
+              Divider().opacity(self.colorScheme == .light ? 0.7 : 0.3)
             }
             
             if post.username != nil || post.date != nil || post.rawDateString != nil {
@@ -113,13 +115,9 @@ struct MessageBoardView: View {
                 }
               }
               .textSelection(.enabled)
-              .padding(.top, 16)
-              .padding(.horizontal, 16)
-              .background(
-                self.colorScheme == .light
-                ? LinearGradient(colors: [.white.opacity(0.2), .white.opacity(0.0)], startPoint: .top, endPoint: .bottom).blendMode(.softLight)
-                : LinearGradient(colors: [.white.opacity(0.1), .white.opacity(0.0)], startPoint: .top, endPoint: .bottom).blendMode(.softLight)
-              )
+              .padding(.vertical, 16)
+              .padding(.horizontal, 24)
+              .background(.quinary.opacity(self.colorScheme == .light ? 0.7 : 0.3))
 //              Divider()
             }
             
@@ -131,23 +129,25 @@ struct MessageBoardView: View {
                   .lineLimit(100)
                   .lineSpacing(4)
                   .textSelection(.enabled)
-                  .padding(.horizontal, 16)
+                  .padding(.horizontal, 24)
               } else {
                 Text(LocalizedStringKey(post.body.convertingLinksToMarkdown()))
                   .tint(Color("Link Color"))
                   .lineLimit(100)
                   .lineSpacing(4)
                   .textSelection(.enabled)
-                  .padding(.horizontal, 16)
+                  .padding(.horizontal, 24)
               }
 
               Spacer(minLength: 0)
             }
-            .padding(.vertical, 16)
+            .padding(.vertical, 24)
           }
 //          .padding(.bottom, 16)
-          .background(self.colorScheme == .light ? AnyShapeStyle(Color.clear) : AnyShapeStyle(.thickMaterial))
-          .background(self.colorScheme == .light ? Color(nsColor: .controlBackgroundColor) : Color.clear)
+          .background(Color(nsColor: .textBackgroundColor))
+          
+//          .background(self.colorScheme == .light ? AnyShapeStyle(Color.clear) : AnyShapeStyle(.thickMaterial))
+//          .background(self.colorScheme == .light ? Color(nsColor: .controlBackgroundColor) : Color.clear)
           .clipShape(.rect(cornerRadius: 16))
           .shadow(color: .black.opacity(0.08), radius: 2, x: 0, y: 1)
           .padding(.horizontal, 24)

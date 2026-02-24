@@ -7,6 +7,8 @@ class ServerState: Equatable {
   var serverName: String? = nil
   var accountsShown: Bool = false
   var broadcastShown: Bool = false
+  var fileNavigationPath: [String]? = nil
+  var fileFolderPath: [String] = []
 //  var serverBanner: NSImage? = nil
 //  var bannerBackgroundColor: Color? = nil
 

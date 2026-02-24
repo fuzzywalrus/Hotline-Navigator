@@ -42,7 +42,6 @@
 		DA501BF02EBED848001714F8 /* BonjourState.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA501BEF2EBED848001714F8 /* BonjourState.swift */; };
 		DA501BF22EBEF415001714F8 /* BonjourServerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA501BF12EBEF415001714F8 /* BonjourServerRow.swift */; };
 		DA52689C2EB0738B00DCB941 /* GeneralSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA52689B2EB0738B00DCB941 /* GeneralSettingsView.swift */; platformFilters = (macos, ); };
-		DA52689E2EB073A400DCB941 /* IconSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA52689D2EB073A400DCB941 /* IconSettingsView.swift */; platformFilters = (macos, ); };
 		DA5268A02EB073BC00DCB941 /* SoundSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA52689F2EB073BC00DCB941 /* SoundSettingsView.swift */; platformFilters = (macos, ); };
 		DA5268A32EB0741B00DCB941 /* FolderItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA5268A22EB0741B00DCB941 /* FolderItemView.swift */; platformFilters = (macos, ); };
 		DA5268A52EB0743000DCB941 /* FileItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA5268A42EB0743000DCB941 /* FileItemView.swift */; platformFilters = (macos, ); };
@@ -85,6 +84,9 @@
 		DA9CAFCB2B126E3300CDA197 /* HotlineTrackerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA9CAFCA2B126E3300CDA197 /* HotlineTrackerClient.swift */; };
 		DAA98C3F2F479C20002C6334 /* FilesGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA98C3E2F479C20002C6334 /* FilesGridView.swift */; };
 		DAA98C412F479C32002C6334 /* FileActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA98C402F479C32002C6334 /* FileActions.swift */; };
+		DAA98C772F4CFEEE002C6334 /* IdentitySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA98C762F4CFEEE002C6334 /* IdentitySettingsView.swift */; };
+		DAA98C792F4CFEF5002C6334 /* NotificationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA98C782F4CFEF5002C6334 /* NotificationSettingsView.swift */; };
+		DAA98C7B2F4CFF0B002C6334 /* ChatSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA98C7A2F4CFF0B002C6334 /* ChatSettingsView.swift */; };
 		DAAEE66B2B3FBC2100A5BA07 /* TransferInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAAEE66A2B3FBC2100A5BA07 /* TransferInfo.swift */; };
 		DAAEE66D2B475F1400A5BA07 /* PreviewFileInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAAEE66C2B475F1400A5BA07 /* PreviewFileInfo.swift */; };
 		DAAEE66F2B47625600A5BA07 /* FilePreviewImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAAEE66E2B47625600A5BA07 /* FilePreviewImageView.swift */; platformFilters = (macos, ); };
@@ -173,7 +175,6 @@
 		DA501BEF2EBED848001714F8 /* BonjourState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BonjourState.swift; sourceTree = "<group>"; };
 		DA501BF12EBEF415001714F8 /* BonjourServerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BonjourServerRow.swift; sourceTree = "<group>"; };
 		DA52689B2EB0738B00DCB941 /* GeneralSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsView.swift; sourceTree = "<group>"; };
-		DA52689D2EB073A400DCB941 /* IconSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconSettingsView.swift; sourceTree = "<group>"; };
 		DA52689F2EB073BC00DCB941 /* SoundSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundSettingsView.swift; sourceTree = "<group>"; };
 		DA5268A22EB0741B00DCB941 /* FolderItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderItemView.swift; sourceTree = "<group>"; };
 		DA5268A42EB0743000DCB941 /* FileItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileItemView.swift; sourceTree = "<group>"; };
@@ -217,6 +218,9 @@
 		DA9CAFCA2B126E3300CDA197 /* HotlineTrackerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotlineTrackerClient.swift; sourceTree = "<group>"; };
 		DAA98C3E2F479C20002C6334 /* FilesGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesGridView.swift; sourceTree = "<group>"; };
 		DAA98C402F479C32002C6334 /* FileActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileActions.swift; sourceTree = "<group>"; };
+		DAA98C762F4CFEEE002C6334 /* IdentitySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentitySettingsView.swift; sourceTree = "<group>"; };
+		DAA98C782F4CFEF5002C6334 /* NotificationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSettingsView.swift; sourceTree = "<group>"; };
+		DAA98C7A2F4CFF0B002C6334 /* ChatSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatSettingsView.swift; sourceTree = "<group>"; };
 		DAAEE66A2B3FBC2100A5BA07 /* TransferInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferInfo.swift; sourceTree = "<group>"; };
 		DAAEE66C2B475F1400A5BA07 /* PreviewFileInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewFileInfo.swift; sourceTree = "<group>"; };
 		DAAEE66E2B47625600A5BA07 /* FilePreviewImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePreviewImageView.swift; sourceTree = "<group>"; };
@@ -366,7 +370,9 @@
 			children = (
 				DA2863D72B37AD1C00A7D050 /* SettingsView.swift */,
 				DA52689B2EB0738B00DCB941 /* GeneralSettingsView.swift */,
-				DA52689D2EB073A400DCB941 /* IconSettingsView.swift */,
+				DAA98C782F4CFEF5002C6334 /* NotificationSettingsView.swift */,
+				DAA98C7A2F4CFF0B002C6334 /* ChatSettingsView.swift */,
+				DAA98C762F4CFEEE002C6334 /* IdentitySettingsView.swift */,
 				DA52689F2EB073BC00DCB941 /* SoundSettingsView.swift */,
 			);
 			path = Settings;
@@ -727,7 +733,6 @@
 				DA3429B92EBAB2130010784E /* FilePreviewQuickLookView.swift in Sources */,
 				DA43205E2B1D615600FC8843 /* ServerView.swift in Sources */,
 				DA0D69912B1E894800C71DF5 /* FilesView.swift in Sources */,
-				DA52689E2EB073A400DCB941 /* IconSettingsView.swift in Sources */,
 				DAC3D9832BC33FD000A727C9 /* AppState.swift in Sources */,
 				DA65499C2BEC3FBD00EDB697 /* ServerAgreementView.swift in Sources */,
 				DABAFBEA2EC58C170015E889 /* AccountDetailsView.swift in Sources */,
@@ -799,6 +804,8 @@
 				DA65499A2BEC280E00EDB697 /* ServerMessageView.swift in Sources */,
 				DA501BF02EBED848001714F8 /* BonjourState.swift in Sources */,
 				DAAEE66F2B47625600A5BA07 /* FilePreviewImageView.swift in Sources */,
+				DAA98C792F4CFEF5002C6334 /* NotificationSettingsView.swift in Sources */,
+				DAA98C7B2F4CFF0B002C6334 /* ChatSettingsView.swift in Sources */,
 				DA872B152BDDEE1A008B1012 /* VisualEffectView.swift in Sources */,
 				DA3429AE2EB9C0280010784E /* HotlineFileUploadClient.swift in Sources */,
 				DAAEE66D2B475F1400A5BA07 /* PreviewFileInfo.swift in Sources */,
@@ -814,6 +821,7 @@
 				DAE734FD2B2E65E9000C56F6 /* MessageBoardView.swift in Sources */,
 				DA6980832BFFD06C003E434B /* BookmarkDocument.swift in Sources */,
 				DA501BF22EBEF415001714F8 /* BonjourServerRow.swift in Sources */,
+				DAA98C772F4CFEEE002C6334 /* IdentitySettingsView.swift in Sources */,
 				DA501BE72EBE9542001714F8 /* TrackerBookmarkSheet.swift in Sources */,
 				DAB4D87E2B4C8BCA0048A05C /* FilePreviewTextView.swift in Sources */,
 				DA5A6F122F454D4600060F18 /* ChatTextView.swift in Sources */,

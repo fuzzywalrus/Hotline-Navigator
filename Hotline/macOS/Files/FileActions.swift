@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 @MainActor
 struct FileActions {
@@ -82,6 +83,22 @@ struct FileActions {
         try await model.getFileList(path: path)
       }
     }
+  }
+
+  func copyFileLink(_ file: FileInfo) {
+    guard let server = self.model.server else { return }
+
+    var components = URLComponents()
+    components.scheme = "hotline"
+    components.host = server.address
+    components.port = server.port == HotlinePorts.DefaultServerPort ? nil : server.port
+    components.path = "/files/" + file.path.map {
+      $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? $0
+    }.joined(separator: "/")
+
+    guard let urlString = components.string else { return }
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(urlString, forType: .string)
   }
 
   private func openPreviewWindow(_ previewInfo: PreviewFileInfo) {

@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 // MARK: - Connection Status
 
@@ -665,7 +666,7 @@ class HotlineState: Equatable {
       self.recordChatMessage(divider)
 
       let username = Prefs.shared.username
-      let joinedMessage = ChatMessage(text: "\(username) joined", type: .joined, date: Date())
+      let joinedMessage = ChatMessage(text: "\(username) connected", type: .joined, date: Date())
       self.recordChatMessage(joinedMessage)
     }
 
@@ -743,7 +744,7 @@ class HotlineState: Equatable {
     if self.status == .loggedIn {
       // Record a "left" message for yourself.
       let username = Prefs.shared.username
-      let leftMessage = ChatMessage(text: "\(username) left", type: .left, date: Date())
+      let leftMessage = ChatMessage(text: "\(username) disconnected", type: .left, date: Date())
       self.recordChatMessage(leftMessage, persist: true, display: false)
     }
 
@@ -1345,6 +1346,9 @@ class HotlineState: Equatable {
       self.filesLoaded = true
       self.files = newFiles
     } else {
+      // Ensure intermediate folder nodes exist so we can attach children
+      self.ensureIntermediateFolders(for: path)
+
       // Update parent's children
       let parentFile = self.findFile(in: self.files, at: path)
       parentFile?.children = newFiles
@@ -2367,6 +2371,51 @@ class HotlineState: Equatable {
 
     self.recordChatMessage(chatMessage)
     self.unreadPublicChat = true
+
+    #if os(macOS)
+    let senderName = chatMessage.username
+    let ownUsername = Prefs.shared.username
+    let isOwnMessage = senderName?.lowercased() == ownUsername.lowercased()
+
+    if !isOwnMessage && !NSApplication.shared.isActive {
+      let lowercasedText = text.lowercased()
+      var didNotify = false
+
+      // Check for mention of our username
+      if Prefs.shared.showMentionNotifications
+          && !ownUsername.isEmpty
+          && lowercasedText.contains(ownUsername.lowercased()) {
+        let content = UNMutableNotificationContent()
+        content.title = senderName.map { "\($0) mentioned you" } ?? "You were mentioned"
+        content.body = String(chatMessage.text.prefix(200))
+        content.sound = .default
+        content.userInfo = ["type": "mention"]
+
+        let request = UNNotificationRequest(identifier: "mention-\(chatMessage.id)", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
+        didNotify = true
+      }
+
+      // Check for watch words (skip if we already notified for a mention)
+      let watchWords = Prefs.shared.watchWords
+      if !didNotify && !watchWords.isEmpty && Prefs.shared.showWatchWordNotifications {
+        for highlightWord in watchWords {
+          if lowercasedText.contains(highlightWord.word.lowercased()) {
+            let content = UNMutableNotificationContent()
+            content.title = senderName ?? "Watch Word: \(highlightWord.word)"
+            content.body = String(chatMessage.text.prefix(200))
+            content.sound = .default
+            content.userInfo = ["type": "watchWord"]
+
+            let identifier = "watchword-\(highlightWord.word.hashValue)"
+            let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
+            UNUserNotificationCenter.current().add(request)
+            break
+          }
+        }
+      }
+    }
+    #endif
   }
 
   private func handleUserChanged(_ user: HotlineUser) {
@@ -2378,7 +2427,8 @@ class HotlineState: Equatable {
       let user = self.users.remove(at: existingUserIndex)
 
       if Prefs.shared.showJoinLeaveMessages {
-        let chatMessage = ChatMessage(text: "\(user.name) left", type: .left, date: Date())
+        var chatMessage = ChatMessage(text: "\(user.name) disconnected", type: .left, date: Date())
+        chatMessage.isAdmin = user.isAdmin
         self.recordChatMessage(chatMessage)
       }
 
@@ -2432,6 +2482,19 @@ class HotlineState: Equatable {
 
       self.recordPrivateMessage(instantMessage, userID: userID, peerName: user.name)
       self.unreadPrivateMessages[userID] = userID
+
+      #if os(macOS)
+      if Prefs.shared.showPrivateMessageNotifications && !NSApplication.shared.isActive {
+        let content = UNMutableNotificationContent()
+        content.title = user.name
+        content.body = String(message.prefix(200))
+        content.sound = .default
+        content.userInfo = ["userID": userID]
+
+        let request = UNNotificationRequest(identifier: "pm-\(userID)", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
+      }
+      #endif
     }
   }
 
@@ -2472,7 +2535,8 @@ class HotlineState: Equatable {
       self.users.append(User(hotlineUser: user))
 
       if Prefs.shared.showJoinLeaveMessages {
-        let chatMessage = ChatMessage(text: "\(user.name) joined", type: .joined, date: Date())
+        var chatMessage = ChatMessage(text: "\(user.name) connected", type: .joined, date: Date())
+        chatMessage.isAdmin = user.isAdmin
         self.recordChatMessage(chatMessage)
       }
     }
@@ -2648,6 +2712,45 @@ class HotlineState: Equatable {
     }
 
     return nil
+  }
+
+  /// Ensures that each folder in `path` exists in the file tree,
+  /// creating placeholder folder nodes where needed so that
+  /// `findFile(in:at:)` can reach the deepest level.
+  private func ensureIntermediateFolders(for path: [String]) {
+    var currentFiles = self.files
+    var currentList: (get: () -> [FileInfo], set: ([FileInfo]) -> Void) = (
+      get: { self.files },
+      set: { self.files = $0 }
+    )
+
+    for i in 0..<path.count {
+      let name = path[i]
+      if let existing = currentFiles.first(where: { $0.name == name && $0.isFolder }) {
+        if existing.children == nil {
+          existing.children = []
+        }
+        let parent = existing
+        currentList = (
+          get: { parent.children ?? [] },
+          set: { parent.children = $0 }
+        )
+        currentFiles = existing.children ?? []
+      } else {
+        // Create a placeholder folder
+        let folderPath = Array(path.prefix(i + 1))
+        let placeholder = FileInfo(folderName: name, path: folderPath)
+        var list = currentList.get()
+        list.append(placeholder)
+        currentList.set(list)
+        let parent = placeholder
+        currentList = (
+          get: { parent.children ?? [] },
+          set: { parent.children = $0 }
+        )
+        currentFiles = []
+      }
+    }
   }
 
   // File helpers

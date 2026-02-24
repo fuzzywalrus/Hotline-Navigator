@@ -6,10 +6,13 @@ import AppKit
 struct ChatTextView: NSViewRepresentable {
   let messages: [ChatMessage]
   var searchQuery: String = ""
+  var watchWords: [HighlightWord] = []
   var isFiltered: Bool = false
   var cachedText: NSAttributedString?
   var cachedCount: Int = 0
   var onCacheUpdate: ((NSAttributedString, Int) -> Void)?
+  var server: Server?
+  var onFileLinkClicked: (([String]) -> Void)?
   
   func makeCoordinator() -> Coordinator {
     Coordinator()
@@ -36,7 +39,11 @@ struct ChatTextView: NSViewRepresentable {
       .foregroundColor: NSColor(named: "Link Color") ?? .linkColor,
       .cursor: NSCursor.pointingHand,
     ]
-    
+
+    textView.delegate = textView
+    textView.currentServer = self.server
+    textView.onFileLinkClicked = self.onFileLinkClicked
+
     let scrollView = BottomPinningScrollView()
     scrollView.contentView = BottomClipView()
     scrollView.documentView = textView
@@ -56,6 +63,11 @@ struct ChatTextView: NSViewRepresentable {
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
     let coordinator = context.coordinator
     coordinator.onCacheUpdate = self.isFiltered ? nil : self.onCacheUpdate
+
+    if let textView = coordinator.textView {
+      textView.currentServer = self.server
+      textView.onFileLinkClicked = self.onFileLinkClicked
+    }
     
     if coordinator.needsFullRebuild(for: self.messages) {
       coordinator.rebuildAll(messages: self.messages, cachedText: self.isFiltered ? nil : self.cachedText, cachedCount: self.isFiltered ? 0 : self.cachedCount)
@@ -63,6 +75,10 @@ struct ChatTextView: NSViewRepresentable {
       coordinator.appendMessages(messages: self.messages)
     }
     
+    if coordinator.currentWatchWords != self.watchWords {
+      coordinator.applyWatchWordHighlights(words: self.watchWords)
+    }
+
     if coordinator.currentSearchQuery != self.searchQuery {
       coordinator.applySearchHighlights(query: self.searchQuery)
     }
@@ -78,6 +94,7 @@ struct ChatTextView: NSViewRepresentable {
     var onCacheUpdate: ((NSAttributedString, Int) -> Void)?
     var renderedCount = 0
     var currentSearchQuery = ""
+    var currentWatchWords: [HighlightWord] = []
     private var lastMessageIDs: [UUID] = []
     private var scrollObserver: NSObjectProtocol?
     private var highlightedCharRange: NSRange = NSRange(location: NSNotFound, length: 0)
@@ -97,7 +114,7 @@ struct ChatTextView: NSViewRepresentable {
     }
     
     private func scrollDidChange() {
-      guard !self.currentSearchQuery.isEmpty,
+      guard !self.currentSearchQuery.isEmpty || !self.currentWatchWords.isEmpty,
             let scrollView = self.scrollView else { return }
       let visibleY = scrollView.contentView.bounds.origin.y
       let viewportH = scrollView.contentView.bounds.height
@@ -158,13 +175,13 @@ struct ChatTextView: NSViewRepresentable {
       
       // Save to cache
       self.onCacheUpdate?(NSAttributedString(attributedString: storage), self.renderedCount)
-      
-      if !self.currentSearchQuery.isEmpty {
+
+      if !self.currentSearchQuery.isEmpty || !self.currentWatchWords.isEmpty {
         self.highlightedCharRange = NSRange(location: NSNotFound, length: 0)
         self.lastHighlightedVisibleOriginY = -.greatestFiniteMagnitude
         self.highlightVisibleRange()
       }
-      
+
       self.scrollToBottom()
     }
     
@@ -189,13 +206,13 @@ struct ChatTextView: NSViewRepresentable {
       
       // Update cache
       self.onCacheUpdate?(NSAttributedString(attributedString: storage), self.renderedCount)
-      
-      if !self.currentSearchQuery.isEmpty {
+
+      if !self.currentSearchQuery.isEmpty || !self.currentWatchWords.isEmpty {
         self.highlightedCharRange = NSRange(location: NSNotFound, length: 0)
         self.lastHighlightedVisibleOriginY = -.greatestFiniteMagnitude
         self.highlightVisibleRange()
       }
-      
+
       if wasAtBottom || startIndex == 0 {
         self.scrollToBottom()
       }
@@ -231,30 +248,49 @@ struct ChatTextView: NSViewRepresentable {
     func applySearchHighlights(query: String) {
       guard let layoutManager = self.textView?.layoutManager,
             let _ = self.textView?.textStorage else { return }
-      
+
       // Clear all previous highlights when query changes
       if self.highlightedCharRange.location != NSNotFound {
         layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: self.highlightedCharRange)
         layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: self.highlightedCharRange)
         self.highlightedCharRange = NSRange(location: NSNotFound, length: 0)
       }
-      
+
       self.currentSearchQuery = query
       self.lastHighlightedVisibleOriginY = -.greatestFiniteMagnitude
-      
-      if !query.isEmpty {
+
+      if !query.isEmpty || !self.currentWatchWords.isEmpty {
+        self.highlightVisibleRange()
+      }
+    }
+
+    func applyWatchWordHighlights(words: [HighlightWord]) {
+      guard let layoutManager = self.textView?.layoutManager,
+            let _ = self.textView?.textStorage else { return }
+
+      // Clear all previous highlights when watch words change
+      if self.highlightedCharRange.location != NSNotFound {
+        layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: self.highlightedCharRange)
+        layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: self.highlightedCharRange)
+        self.highlightedCharRange = NSRange(location: NSNotFound, length: 0)
+      }
+
+      self.currentWatchWords = words
+      self.lastHighlightedVisibleOriginY = -.greatestFiniteMagnitude
+
+      if !words.isEmpty || !self.currentSearchQuery.isEmpty {
         self.highlightVisibleRange()
       }
     }
     
     func highlightVisibleRange() {
-      guard !self.currentSearchQuery.isEmpty,
+      guard !self.currentSearchQuery.isEmpty || !self.currentWatchWords.isEmpty,
             let textView = self.textView,
             let layoutManager = textView.layoutManager,
             let textContainer = textView.textContainer,
             let storage = textView.textStorage,
             let scrollView = self.scrollView else { return }
-      
+
       // Compute a buffer zone: 2x the viewport height centered on the visible area
       let clipBounds = scrollView.contentView.bounds
       let viewportH = clipBounds.height
@@ -262,40 +298,66 @@ struct ChatTextView: NSViewRepresentable {
       let bufferMinY = max(0, clipBounds.origin.y - bufferH / 2)
       let bufferMaxY = clipBounds.origin.y + viewportH + bufferH / 2
       let bufferRect = NSRect(x: 0, y: bufferMinY, width: textView.bounds.width, height: bufferMaxY - bufferMinY)
-      
+
       // Convert the buffer rect to a character range via the layout manager
       let glyphRange = layoutManager.glyphRange(forBoundingRect: bufferRect, in: textContainer)
       let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
-      
+
       guard charRange.length > 0 else { return }
-      
+
       // Clear previous highlights
       if self.highlightedCharRange.location != NSNotFound {
         layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: self.highlightedCharRange)
         layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: self.highlightedCharRange)
       }
-      
-      // Apply highlights within the buffer zone
-      let highlightBg = NSColor.systemYellow.withAlphaComponent(0.5)
-      let highlightFg = NSColor.black
+
       let searchString = storage.string as NSString
-      var searchRange = charRange
-      
-      while searchRange.location < NSMaxRange(charRange) && searchRange.length > 0 {
-        let foundRange = searchString.range(
-          of: self.currentSearchQuery,
-          options: [.caseInsensitive, .literal],
-          range: searchRange
-        )
-        guard foundRange.location != NSNotFound, foundRange.location < NSMaxRange(charRange) else { break }
-        
-        layoutManager.addTemporaryAttribute(.backgroundColor, value: highlightBg, forCharacterRange: foundRange)
-        layoutManager.addTemporaryAttribute(.foregroundColor, value: highlightFg, forCharacterRange: foundRange)
-        
-        searchRange.location = NSMaxRange(foundRange)
-        searchRange.length = NSMaxRange(charRange) - searchRange.location
+
+      // Apply watch word highlights first — search highlights override on overlap
+      if !self.currentWatchWords.isEmpty {
+        for highlightWord in self.currentWatchWords {
+          let watchBg = highlightWord.nsBackgroundColor
+          let watchFg = highlightWord.nsForegroundColor
+          var searchRange = charRange
+          while searchRange.location < NSMaxRange(charRange) && searchRange.length > 0 {
+            let foundRange = searchString.range(
+              of: highlightWord.word,
+              options: [.caseInsensitive, .literal],
+              range: searchRange
+            )
+            guard foundRange.location != NSNotFound, foundRange.location < NSMaxRange(charRange) else { break }
+
+            layoutManager.addTemporaryAttribute(.backgroundColor, value: watchBg, forCharacterRange: foundRange)
+            layoutManager.addTemporaryAttribute(.foregroundColor, value: watchFg, forCharacterRange: foundRange)
+
+            searchRange.location = NSMaxRange(foundRange)
+            searchRange.length = NSMaxRange(charRange) - searchRange.location
+          }
+        }
       }
-      
+
+      // Apply search highlights on top (yellow) — overrides watch words where they overlap
+      if !self.currentSearchQuery.isEmpty {
+        let highlightBg = NSColor.systemYellow.withAlphaComponent(0.5)
+        let highlightFg = NSColor.black
+        var searchRange = charRange
+
+        while searchRange.location < NSMaxRange(charRange) && searchRange.length > 0 {
+          let foundRange = searchString.range(
+            of: self.currentSearchQuery,
+            options: [.caseInsensitive, .literal],
+            range: searchRange
+          )
+          guard foundRange.location != NSNotFound, foundRange.location < NSMaxRange(charRange) else { break }
+
+          layoutManager.addTemporaryAttribute(.backgroundColor, value: highlightBg, forCharacterRange: foundRange)
+          layoutManager.addTemporaryAttribute(.foregroundColor, value: highlightFg, forCharacterRange: foundRange)
+
+          searchRange.location = NSMaxRange(foundRange)
+          searchRange.length = NSMaxRange(charRange) - searchRange.location
+        }
+      }
+
       self.highlightedCharRange = charRange
       self.lastHighlightedVisibleOriginY = clipBounds.origin.y
     }
@@ -410,31 +472,39 @@ struct ChatTextView: NSViewRepresentable {
       let paraStyle = NSMutableParagraphStyle()
       paraStyle.lineSpacing = 2
       paraStyle.paragraphSpacing = 8
-      
+
+      let color: NSColor = msg.isAdmin
+        ? (NSColor(named: "Hotline Red") ?? .systemRed)
+        : .secondaryLabelColor
+
       let arrow = "\u{2192} " // right arrow
       let text = arrow + msg.text
       return NSAttributedString(
         string: text,
         attributes: [
           .font: self.baseFont,
-          .foregroundColor: NSColor.secondaryLabelColor,
+          .foregroundColor: color,
           .paragraphStyle: paraStyle,
         ]
       )
     }
-    
+
     private func renderLeftMessage(_ msg: ChatMessage) -> NSAttributedString {
       let paraStyle = NSMutableParagraphStyle()
       paraStyle.lineSpacing = 2
       paraStyle.paragraphSpacing = 8
-      
+
+      let color: NSColor = msg.isAdmin
+        ? (NSColor(named: "Hotline Red") ?? .systemRed)
+        : .secondaryLabelColor
+
       let arrow = "\u{2190} " // left arrow
       let text = arrow + msg.text
       return NSAttributedString(
         string: text,
         attributes: [
           .font: self.baseFont,
-          .foregroundColor: NSColor.secondaryLabelColor,
+          .foregroundColor: color,
           .paragraphStyle: paraStyle,
         ]
       )
@@ -442,9 +512,9 @@ struct ChatTextView: NSViewRepresentable {
     
     private func renderSignOutMessage(_ msg: ChatMessage) -> NSAttributedString {
       let paraStyle = NSMutableParagraphStyle()
-      paraStyle.paragraphSpacingBefore = 10 // + 8 from preceding message's paragraphSpacing = 18
+      paraStyle.paragraphSpacingBefore = 26 // + 8 from preceding message's paragraphSpacing = 34
       paraStyle.paragraphSpacing = 18
-      paraStyle.alignment = .center
+      paraStyle.alignment = .left
 
       let dateText = formatChatDividerDate(msg.date)
       let result = NSMutableAttributedString(
@@ -508,10 +578,13 @@ struct ChatTextView: NSViewRepresentable {
 // MARK: - BottomAnchoredTextView
 
 /// NSTextView subclass that pushes content to the bottom when content is shorter than the view.
-class BottomAnchoredTextView: NSTextView {
+class BottomAnchoredTextView: NSTextView, NSTextViewDelegate {
   static let serverMessageKey = NSAttributedString.Key("serverMessageBackground")
   static let chatDividerKey = NSAttributedString.Key("chatDividerLine")
   private var hoveredLinkRange: NSRange?
+
+  var currentServer: Server?
+  var onFileLinkClicked: (([String]) -> Void)?
 
   private static let bubblePaddingV: CGFloat = 10
   private static let bubbleCornerRadius: CGFloat = 10
@@ -563,8 +636,8 @@ class BottomAnchoredTextView: NSTextView {
   override func draw(_ dirtyRect: NSRect) {
     guard self.hasValidFrame, !self.pendingScrollToBottom else { return }
     self.drawServerMessageBackgrounds(in: dirtyRect)
+    self.drawChatDividerCapsules(in: dirtyRect)
     super.draw(dirtyRect)
-    self.drawChatDividerLines(in: dirtyRect)
     self.hasRenderedOnce = true
   }
 
@@ -675,16 +748,16 @@ class BottomAnchoredTextView: NSTextView {
     }
   }
 
-  /// Draws horizontal divider lines flanking the centered date text for sign-out messages.
-  /// Drawn after the text so lines don't obscure it.
-  private func drawChatDividerLines(in dirtyRect: NSRect) {
+  /// Draws backgrounds behind date divider text — flat left edge, rounded right edge.
+  private func drawChatDividerCapsules(in dirtyRect: NSRect) {
     guard let storage = self.textStorage,
           let layoutManager = self.layoutManager,
           let container = self.textContainer else { return }
 
     let origin = self.textContainerOrigin
     let fullRange = NSRange(location: 0, length: storage.length)
-    let gap: CGFloat = 8
+    let paddingH: CGFloat = 10
+    let paddingV: CGFloat = 3
 
     storage.enumerateAttribute(Self.chatDividerKey, in: fullRange, options: []) { value, range, _ in
       guard value != nil else { return }
@@ -692,39 +765,93 @@ class BottomAnchoredTextView: NSTextView {
       let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
       let textRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: container)
 
-      let lineY = textRect.midY + origin.y
-      let containerWidth = container.size.width
-      let textMinX = textRect.minX + origin.x
-      let textMaxX = textRect.maxX + origin.x
+      let rightX = textRect.maxX + origin.x + paddingH
+      let y = textRect.minY + origin.y - paddingV
+      let h = textRect.height + paddingV * 2
+      let r = h / 2
 
-      // Check if any part of the line area intersects the dirty rect
-      let lineArea = NSRect(x: origin.x, y: lineY - 1, width: containerWidth, height: 2)
-      guard lineArea.intersects(dirtyRect) else { return }
+      let shapeRect = NSRect(x: 0, y: y, width: rightX + r, height: h)
+      guard shapeRect.intersects(dirtyRect) else { return }
 
-      NSColor.secondaryLabelColor.withAlphaComponent(0.25).setStroke()
+      // Flat left edge, capsule-rounded right edge
       let path = NSBezierPath()
-      path.lineWidth = 0.5
+      path.move(to: NSPoint(x: 0, y: y + h))              // bottom-left
+      path.line(to: NSPoint(x: 0, y: y))                   // top-left
+      path.line(to: NSPoint(x: rightX, y: y))              // top-right before arc
+      path.appendArc(
+        withCenter: NSPoint(x: rightX, y: y + r),
+        radius: r,
+        startAngle: -90,
+        endAngle: 90,
+        clockwise: false
+      )
+      path.line(to: NSPoint(x: 0, y: y + h))              // back to bottom-left
+      path.close()
 
-      // Left line
-      let leftStart = origin.x
-      let leftEnd = textMinX - gap
-      if leftEnd > leftStart {
-        path.move(to: NSPoint(x: leftStart, y: lineY))
-        path.line(to: NSPoint(x: leftEnd, y: lineY))
-      }
-
-      // Right line
-      let rightStart = textMaxX + gap
-      let rightEnd = origin.x + containerWidth
-      if rightEnd > rightStart {
-        path.move(to: NSPoint(x: rightStart, y: lineY))
-        path.line(to: NSPoint(x: rightEnd, y: lineY))
-      }
-
-      path.stroke()
+      NSColor.tertiarySystemFill.setFill()
+      path.fill()
     }
   }
   
+  // MARK: - NSTextViewDelegate
+
+  func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+    let url: URL?
+    if let linkURL = link as? URL {
+      url = linkURL
+    } else if let linkString = link as? String {
+      url = URL(string: linkString)
+    } else {
+      url = nil
+    }
+
+    guard let url = url else { return false }
+
+    if url.scheme?.lowercased() == "hotline" {
+      // Check if this link points to the same server we're connected to
+      if let server = self.currentServer {
+        let linkHost = url.host?.lowercased() ?? ""
+        let linkPort = url.port ?? HotlinePorts.DefaultServerPort
+        let serverHost = server.address.lowercased()
+        let serverPort = server.port
+
+        print("[FileLink] URL: \(url)")
+        print("[FileLink] linkHost=\(linkHost) linkPort=\(linkPort) serverHost=\(serverHost) serverPort=\(serverPort)")
+        print("[FileLink] pathComponents: \(url.pathComponents)")
+        print("[FileLink] hasCallback: \(self.onFileLinkClicked != nil)")
+
+        if linkHost == serverHost && linkPort == serverPort {
+          let pathComponents = url.pathComponents.filter { $0 != "/" }
+            .map { $0.removingPercentEncoding ?? $0 }
+
+          // Route by first path component: /files/... navigates to Files tab
+          if pathComponents.first == "files" {
+            let filePath = Array(pathComponents.dropFirst())
+            print("[FileLink] Same server — navigating to file: \(filePath)")
+            self.onFileLinkClicked?(filePath)
+            return true
+          }
+
+          // Unknown route — open externally
+          NSWorkspace.shared.open(url)
+          return true
+        } else {
+          print("[FileLink] Different server, opening externally")
+        }
+      } else {
+        print("[FileLink] No current server set")
+      }
+
+      // Different server or no current server — open externally
+      NSWorkspace.shared.open(url)
+      return true
+    }
+
+    // Non-hotline link — open in default browser
+    NSWorkspace.shared.open(url)
+    return true
+  }
+
   override func updateTrackingAreas() {
     super.updateTrackingAreas()
     for area in self.trackingAreas where area.owner === self {

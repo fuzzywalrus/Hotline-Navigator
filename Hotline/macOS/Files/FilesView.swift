@@ -6,6 +6,8 @@ struct FilesView: View {
   @Environment(HotlineState.self) private var model: HotlineState
   @Environment(\.openWindow) private var openWindow
 
+  @Bindable var serverState: ServerState
+
   @State private var selection: FileInfo?
   @State private var fileDetails: FileDetails?
   @State private var uploadFileSelectorDisplayed: Bool = false
@@ -15,7 +17,13 @@ struct FilesView: View {
   @State private var confirmDeleteShown: Bool = false
   @State private var newFolderShown: Bool = false
   @State private var viewMode: String = Prefs.shared.filesViewMode
-  @State private var folderPath: [String] = []
+  @State private var pendingFileSelection: String? = nil
+  @State private var folderLoading: Bool = false
+
+  private var folderPath: [String] {
+    get { self.serverState.fileFolderPath }
+    nonmutating set { self.serverState.fileFolderPath = newValue }
+  }
 
   private var actions: FileActions {
     FileActions(model: model, openWindow: openWindow)
@@ -27,13 +35,14 @@ struct FilesView: View {
         if viewMode == "grid" {
           FilesGridView(
             selection: $selection,
-            folderPath: $folderPath,
+            folderPath: $serverState.fileFolderPath,
             fileDetails: $fileDetails,
             confirmDeleteShown: $confirmDeleteShown,
             uploadFileSelectorDisplayed: $uploadFileSelectorDisplayed,
             newFolderShown: $newFolderShown,
             actions: actions,
-            isShowingSearchResults: isShowingSearchResults
+            isShowingSearchResults: isShowingSearchResults,
+            folderLoading: $folderLoading
           )
         }
         else {
@@ -44,6 +53,42 @@ struct FilesView: View {
         if !self.model.filesLoaded {
           let _ = try? await self.model.getFileList()
         }
+      }
+      // MARK: Folder Loading
+      //
+      // Folder loading is owned by FilesView so it happens exactly once
+      // regardless of whether the list or grid child view is active.
+      // After loading, any pending file link selection is resolved.
+      .task(id: self.folderPath) {
+        if !self.folderPath.isEmpty {
+          self.folderLoading = true
+          let _ = try? await self.model.getFileList(path: self.folderPath)
+          self.folderLoading = false
+        }
+        self.resolvePendingFileSelection()
+      }
+      // MARK: File Link Navigation
+      //
+      // When a user clicks a hotline:// file link in chat, ChatView sets
+      // serverState.fileNavigationPath and switches to the Files tab.
+      //
+      // Flow:
+      //  1. consumeFileNavigationPath() reads the path, sets folderPath
+      //     to the parent folder, and stores the target filename in
+      //     pendingFileSelection.
+      //
+      //  2. The .task(id: folderPath) above loads the folder contents.
+      //     (ensureIntermediateFolders in getFileList creates placeholder
+      //     tree nodes so results can be attached even if parent folders
+      //     haven't been browsed yet.)
+      //
+      //  3. After loading, resolvePendingFileSelection() finds and
+      //     selects the target file.
+      .onAppear {
+        self.consumeFileNavigationPath()
+      }
+      .onChange(of: self.serverState.fileNavigationPath) { _, _ in
+        self.consumeFileNavigationPath()
       }
       .searchable(text: $searchText, isPresented: $isSearching, placement: .automatic, prompt: self.folderPath.last.map { "Search \($0)" } ?? "Search")
       .background(Button("", action: { isSearching = true }).keyboardShortcut("f").hidden())
@@ -370,11 +415,6 @@ struct FilesView: View {
         }
         return .ignored
       }
-      .task(id: self.folderPath) {
-        if !self.folderPath.isEmpty {
-          let _ = try? await self.model.getFileList(path: self.folderPath)
-        }
-      }
       .overlay {
         if !model.filesLoaded {
           VStack {
@@ -424,7 +464,7 @@ struct FilesView: View {
     }
     .contextMenu(forSelectionType: FileInfo.self) { items in
       let file = items.first
-      
+
       Button {
         self.selection = file
         self.uploadFileSelectorDisplayed = true
@@ -443,6 +483,15 @@ struct FilesView: View {
       .disabled(file == nil || self.model.access?.contains(.canDownloadFiles) != true)
 
       Divider()
+
+      Button {
+        if let file = file {
+          self.actions.copyFileLink(file)
+        }
+      } label: {
+        Label("Copy Link", systemImage: "link")
+      }
+      .disabled(file == nil)
 
       Button {
         if let file = file {
@@ -509,6 +558,28 @@ struct FilesView: View {
       return self.folderPath.last
     }
     return nil
+  }
+
+  private func resolvePendingFileSelection() {
+    guard let targetName = self.pendingFileSelection else { return }
+    if let match = self.displayedFiles.first(where: { $0.name == targetName }) {
+      print("[FileLink] Resolved pending selection: \(match.name)")
+      self.pendingFileSelection = nil
+      self.selection = match
+    }
+  }
+
+  private func consumeFileNavigationPath() {
+    guard let path = self.serverState.fileNavigationPath else { return }
+    self.serverState.fileNavigationPath = nil
+
+    if path.isEmpty {
+      return
+    }
+
+    let parentPath = path.count > 1 ? Array(path.dropLast()) : [String]()
+    self.folderPath = parentPath
+    self.pendingFileSelection = path.last
   }
 
   private var isShowingSearchResults: Bool {
@@ -585,6 +656,6 @@ struct FilesView: View {
 }
 
 #Preview {
-  FilesView()
+  FilesView(serverState: ServerState(selection: .files))
     .environment(HotlineState())
 }

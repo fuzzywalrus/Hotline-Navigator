@@ -2,27 +2,30 @@ import SwiftUI
 
 struct SettingsView: View {
   private enum Tabs: Hashable {
-    case general, icon
+    case identity, general, chat, sound, notifications
   }
-  
+
+  @State private var selectedTab: Tabs = .identity
+
   var body: some View {
-    TabView {
-      GeneralSettingsView()
-        .tabItem {
-          Label("General", systemImage: "person.text.rectangle")
-        }
-        .tag(Tabs.general)
-      IconSettingsView()
-        .tabItem {
-          Label("Icon", systemImage: "person")
-        }
-        .tag(Tabs.icon)
-      SoundSettingsView()
-        .tabItem {
-          Label("Sound", systemImage: "speaker.wave.3")
-        }
-        .tag(Tabs.icon)
+    TabView(selection: self.$selectedTab) {
+      Tab("Identity", systemImage: "person", value: .identity) {
+        IdentitySettingsView()
+      }
+      Tab("General", systemImage: "gearshape", value: .general) {
+        GeneralSettingsView()
+      }
+      Tab("Chat", systemImage: "bubble.left", value: .chat) {
+        ChatSettingsView()
+      }
+      Tab("Sounds", systemImage: "speaker.wave.3", value: .sound) {
+        SoundSettingsView()
+      }
+      Tab("Notifications", systemImage: "bell", value: .notifications) {
+        NotificationSettingsView()
+      }
     }
+    .tabViewStyle(.sidebarAdaptable)
   }
 }
 

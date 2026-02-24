@@ -88,8 +88,8 @@ struct FilesGridView: View {
 
   var actions: FileActions
   var isShowingSearchResults: Bool
+  @Binding var folderLoading: Bool
 
-  @State private var loading: Bool = false
   @State private var showSpinner: Bool = false
   @State private var dragOver: Bool = false
   @State private var gridWidth: CGFloat = 0
@@ -176,24 +176,18 @@ struct FilesGridView: View {
       }
       return true
     }
-    .task(id: self.folderPath) {
-      if !self.folderPath.isEmpty {
-        self.loading = true
+    .task(id: self.folderLoading) {
+      if self.folderLoading {
         self.showSpinner = false
-        let _ = try? await self.model.getFileList(path: self.folderPath)
-        self.loading = false
-        withAnimation(.easeOut(duration: 0.2)) {
-          self.showSpinner = false
-        }
-      }
-    }
-    .task(id: self.loading) {
-      if self.loading {
         try? await Task.sleep(for: .seconds(1))
-        if self.loading {
+        if self.folderLoading {
           withAnimation(.easeIn(duration: 0.2)) {
             self.showSpinner = true
           }
+        }
+      } else {
+        withAnimation(.easeOut(duration: 0.2)) {
+          self.showSpinner = false
         }
       }
     }
@@ -325,7 +319,7 @@ struct FilesGridView: View {
       Label("Upload...", systemImage: "arrow.up")
     }
     .disabled(file != nil && !file!.isFolder || self.model.access?.contains(.canUploadFiles) != true)
-    
+
     Button {
       if let file = file {
         self.actions.downloadFile(file)
@@ -341,6 +335,15 @@ struct FilesGridView: View {
     .disabled(file == nil || self.model.access?.contains(.canDownloadFiles) != true)
 
     Divider()
+
+    Button {
+      if let file = file {
+        self.actions.copyFileLink(file)
+      }
+    } label: {
+      Label("Copy Link", systemImage: "link")
+    }
+    .disabled(file == nil)
 
     Button {
       if let file = file {

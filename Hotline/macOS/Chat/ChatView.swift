@@ -23,7 +23,7 @@ struct ChatView: View {
   var displayedMessages: [ChatMessage] {
     self.debouncedQuery.isEmpty ? self.model.chat : self.searchResults
   }
-  
+
   private var bannerView: some View {
     ZStack {
       if self.stableBannerIsAnimated {
@@ -59,12 +59,20 @@ struct ChatView: View {
       ChatTextView(
         messages: self.displayedMessages,
         searchQuery: self.debouncedQuery,
+        watchWords: Prefs.shared.watchWords,
         isFiltered: !self.debouncedQuery.isEmpty,
         cachedText: self.model.chatRenderedText,
         cachedCount: self.model.chatRenderedCount,
         onCacheUpdate: { text, count in
           self.model.chatRenderedText = text
           self.model.chatRenderedCount = count
+        },
+        server: self.model.server,
+        onFileLinkClicked: { path in
+          print("[FileLink] ChatView handler called with path: \(path)")
+          self.serverState.fileNavigationPath = path
+          self.serverState.selection = .files
+          print("[FileLink] Set fileNavigationPath=\(path), selection=.files")
         }
       )
       .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -420,7 +420,7 @@ struct ServerView: View {
         case .board:
           MessageBoardView()
         case .files:
-          FilesView()
+          FilesView(serverState: self.state)
         case .user(let userID):
           MessageView(userID: userID)
             .id(userID)

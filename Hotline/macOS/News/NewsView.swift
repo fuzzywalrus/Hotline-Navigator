@@ -381,7 +381,7 @@ struct NewsView: View {
         }
         else {
           ContentUnavailableView {
-            Label("No Article", systemImage: "newspaper")
+            Label("No Article", systemImage: "richtext.page")
           } description: {
             Text("Select an article to read")
           }
