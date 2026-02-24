@@ -3,12 +3,22 @@ import SwiftUI
 struct Server: Codable {
   var name: String?
   var description: String?
-  var users: Int
-  
+  var users: Int = 0
+
   var address: String
   var port: Int
-  var login: String
-  var password: String
+  var login: String = ""
+  var password: String = ""
+
+  /// File path to navigate to after connecting (transient, not persisted).
+  var initialFilePath: [String]?
+
+  /// Controls what SwiftUI persists for window state restoration.
+  /// Must include credentials so restored windows reconnect properly.
+  /// Name is included so the window title displays during reconnection.
+  enum CodingKeys: String, CodingKey {
+    case name, description, address, port, login, password
+  }
   
   var displayAddress: String {
     if self.port == HotlinePorts.DefaultServerPort {
@@ -24,6 +34,16 @@ struct Server: Codable {
     }
   }
   
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.name = try container.decodeIfPresent(String.self, forKey: .name)
+    self.description = try container.decodeIfPresent(String.self, forKey: .description)
+    self.address = try container.decode(String.self, forKey: .address)
+    self.port = try container.decode(Int.self, forKey: .port)
+    self.login = try container.decodeIfPresent(String.self, forKey: .login) ?? ""
+    self.password = try container.decodeIfPresent(String.self, forKey: .password) ?? ""
+  }
+
   init(name: String?, description: String?, address: String, port: Int = HotlinePorts.DefaultServerPort, users: Int = 0, login: String? = nil, password: String? = nil) {
     self.name = name
     self.description = description
@@ -52,6 +72,14 @@ struct Server: Codable {
     
     self.login = url.user(percentEncoded: false) ?? ""
     self.password = url.password(percentEncoded: false) ?? ""
+
+    // Parse /files/... path for deep-linking to a file after connecting
+    let pathComponents = url.pathComponents.filter { $0 != "/" }
+      .map { $0.removingPercentEncoding ?? $0 }
+    if pathComponents.first == "files" {
+      let filePath = Array(pathComponents.dropFirst())
+      self.initialFilePath = filePath.isEmpty ? nil : filePath
+    }
   }
   
   static func parseServerAddressAndPort(_ address: String) -> (String, Int) {
@@ -106,8 +134,11 @@ extension Server: Identifiable {
 }
 
 extension Server: Equatable {
+  /// Matches on address:port only, consistent with Hashable/id.
+  /// This lets openWindow(id:value:) reuse an existing server window
+  /// regardless of whether the new value has different credentials.
   static func == (lhs: Server, rhs: Server) -> Bool {
-    return (lhs.address == rhs.address) && (lhs.port == rhs.port) && (lhs.login == rhs.login) && (lhs.password == rhs.password)
+    return lhs.address == rhs.address && lhs.port == rhs.port
   }
 }
 

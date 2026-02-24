@@ -47,6 +47,10 @@ import UniformTypeIdentifiers
   
   var expanded: Bool = false
   var children: [FileInfo]? = nil
+
+  /// Whether this folder's contents were fetched from the server
+  /// (as opposed to being a placeholder created by ensureIntermediateFolders).
+  var loaded: Bool = false
   
   var isPreviewable: Bool {
     var fileExtension = (self.name as NSString).pathExtension.lowercased()

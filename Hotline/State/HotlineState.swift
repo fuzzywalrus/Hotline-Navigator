@@ -447,6 +447,9 @@ class HotlineState: Equatable {
   // Files
   var files: [FileInfo] = []
   var filesLoaded: Bool = false
+  /// Set by post-login when a cross-server file link was used to connect.
+  /// The view layer observes this to switch to the Files tab and select the target.
+  var pendingFileNavigation: [String]? = nil
 
   // Accounts
   var accounts: [HotlineAccount] = []
@@ -700,6 +703,12 @@ class HotlineState: Equatable {
 
       print("HotlineState: Post-login: Preloading files, news, and message board...")
       let _ = try? await self.getFileList()
+      // If we connected via a file link (hotline://host/files/path/...),
+      // signal the view layer to navigate. FilesView handles folder loading.
+      if let filePath = self.server?.initialFilePath, !filePath.isEmpty {
+        self.server?.initialFilePath = nil
+        self.pendingFileNavigation = filePath
+      }
       try? await self.getNewsList()
       let _ = try? await self.getMessageBoard()
     }
@@ -796,6 +805,7 @@ class HotlineState: Equatable {
     self.newsLookup = [:]
     self.files = []
     self.filesLoaded = false
+    self.pendingFileNavigation = nil
     self.accounts = []
     self.accountsLoaded = false
     self.bannerImage = nil
@@ -1344,6 +1354,21 @@ class HotlineState: Equatable {
     // Update UI state
     if path.isEmpty {
       self.filesLoaded = true
+      // Preserve children of existing folder nodes so that deep-linked
+      // folders loaded via ensureIntermediateFolders aren't destroyed
+      // when the root listing is (re-)fetched.
+      let existingByName = Dictionary(
+        self.files.compactMap { $0.isFolder ? ($0.name, $0) : nil },
+        uniquingKeysWith: { first, _ in first }
+      )
+      for newFile in newFiles {
+        if newFile.isFolder,
+           let existing = existingByName[newFile.name],
+           let existingChildren = existing.children, !existingChildren.isEmpty {
+          newFile.children = existingChildren
+          newFile.loaded = existing.loaded
+        }
+      }
       self.files = newFiles
     } else {
       // Ensure intermediate folder nodes exist so we can attach children
@@ -1352,6 +1377,7 @@ class HotlineState: Equatable {
       // Update parent's children
       let parentFile = self.findFile(in: self.files, at: path)
       parentFile?.children = newFiles
+      parentFile?.loaded = true
     }
 
     // Cache the result

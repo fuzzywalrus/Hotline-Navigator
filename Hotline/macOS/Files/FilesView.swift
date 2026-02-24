@@ -19,6 +19,7 @@ struct FilesView: View {
   @State private var viewMode: String = Prefs.shared.filesViewMode
   @State private var pendingFileSelection: String? = nil
   @State private var folderLoading: Bool = false
+  @FocusState private var isFileListFocused: Bool
 
   private var folderPath: [String] {
     get { self.serverState.fileFolderPath }
@@ -49,6 +50,7 @@ struct FilesView: View {
           listView
         }
       }
+      .focused($isFileListFocused)
       .task {
         if !self.model.filesLoaded {
           let _ = try? await self.model.getFileList()
@@ -61,9 +63,17 @@ struct FilesView: View {
       // After loading, any pending file link selection is resolved.
       .task(id: self.folderPath) {
         if !self.folderPath.isEmpty {
-          self.folderLoading = true
-          let _ = try? await self.model.getFileList(path: self.folderPath)
-          self.folderLoading = false
+          // Skip reloading if the folder was already fetched from the server.
+          // Reloading replaces FileInfo objects (new UUIDs), which would
+          // invalidate any pending file link selection. Placeholder folders
+          // created by ensureIntermediateFolders have loaded == false, so
+          // they will still be fetched on first visit.
+          let existingFolder = self.findFolder(in: self.model.files, at: self.folderPath)
+          if existingFolder?.loaded != true {
+            self.folderLoading = true
+            let _ = try? await self.model.getFileList(path: self.folderPath)
+            self.folderLoading = false
+          }
         }
         self.resolvePendingFileSelection()
       }
@@ -166,7 +176,16 @@ struct FilesView: View {
             .disabled(self.selection == nil || self.model.access?.contains(.canDownloadFiles) != true)
 
             Divider()
-            
+
+            Button {
+              if let selectedFile = self.selection {
+                self.actions.copyFileLink(selectedFile)
+              }
+            } label: {
+              Label("Copy Link", systemImage: "link")
+            }
+            .disabled(self.selection == nil)
+
             Button {
               if let selectedFile = self.selection {
                 Task {
@@ -284,6 +303,7 @@ struct FilesView: View {
     }
     .onChange(of: viewMode) { _, newValue in
       Prefs.shared.filesViewMode = newValue
+      self.isFileListFocused = true
     }
     .onAppear {
       if searchText != model.fileSearchQuery {
@@ -427,17 +447,26 @@ struct FilesView: View {
   }
 
   private var listContent: some View {
-    List(self.displayedFiles, id: \.self, selection: self.$selection) { file in
-      if file.isFolder {
-        FolderItemView(file: file, depth: 0).tag(file.id)
+    ScrollViewReader { proxy in
+      List(self.displayedFiles, id: \.self, selection: self.$selection) { file in
+        if file.isFolder {
+          FolderItemView(file: file, depth: 0).tag(file.id)
+        }
+        else {
+          FileItemView(file: file, depth: 0).tag(file.id)
+        }
       }
-      else {
-        FileItemView(file: file, depth: 0).tag(file.id)
+      .environment(\.defaultMinListRowHeight, 28)
+      .listStyle(.inset)
+      .alternatingRowBackgrounds(.enabled)
+      .onChange(of: self.selection) { _, newValue in
+        if let file = newValue {
+          withAnimation {
+            proxy.scrollTo(file, anchor: nil)
+          }
+        }
       }
     }
-    .environment(\.defaultMinListRowHeight, 28)
-    .listStyle(.inset)
-    .alternatingRowBackgrounds(.enabled)
     .onDrop(of: [.fileURL], isTargeted: self.$dragOver) { items in
       guard self.model.access?.contains(.canUploadFiles) == true,
             let item = items.first,
@@ -566,6 +595,7 @@ struct FilesView: View {
       print("[FileLink] Resolved pending selection: \(match.name)")
       self.pendingFileSelection = nil
       self.selection = match
+      self.isFileListFocused = true
     }
   }
 
@@ -580,6 +610,11 @@ struct FilesView: View {
     let parentPath = path.count > 1 ? Array(path.dropLast()) : [String]()
     self.folderPath = parentPath
     self.pendingFileSelection = path.last
+
+    // Try to resolve immediately if the folder data is already loaded.
+    // This handles the case where folderPath didn't change (so .task
+    // won't re-fire) but the file data is already available.
+    self.resolvePendingFileSelection()
   }
 
   private var isShowingSearchResults: Bool {

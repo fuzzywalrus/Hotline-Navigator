@@ -70,6 +70,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     AppLaunchState.shared.launchState = .terminated
   }
 
+  // MARK: - URL Handling
+
+  func application(_ application: NSApplication, open urls: [URL]) {
+    for url in urls {
+      guard url.scheme?.lowercased() == "hotline" else { continue }
+      if let server = Server(url: url) {
+        AppState.shared.pendingServerOpen = server
+      }
+    }
+  }
+
   // MARK: - UNUserNotificationCenterDelegate
 
   func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
@@ -155,6 +166,20 @@ struct Application: App {
       if self.update.showWindow {
         self.openWindow(id: "update")
       }
+    }
+    .onChange(of: AppState.shared.pendingServerOpen) {
+      guard var server = AppState.shared.pendingServerOpen else { return }
+      AppState.shared.pendingServerOpen = nil
+
+      // Use saved bookmark credentials if the URL didn't include any.
+      self.mergeBookmarkCredentials(into: &server)
+
+      // Signal for already-connected servers to navigate to the linked file.
+      if server.initialFilePath != nil {
+        AppState.shared.pendingFileLink = server
+      }
+
+      self.openWindow(id: "server", value: server)
     }
     
     // MARK: About Box
@@ -373,6 +398,24 @@ struct Application: App {
     .defaultSize(width: 450, height: 550)
     .defaultPosition(.center)
     .restorationBehavior(.disabled)
+  }
+
+  /// Look up bookmarks for a matching server and merge saved credentials.
+  private func mergeBookmarkCredentials(into server: inout Server) {
+    let context = ModelContext(self.modelContainer)
+    let descriptor = FetchDescriptor<Bookmark>()
+    guard let bookmarks = try? context.fetch(descriptor) else { return }
+
+    if let bookmark = bookmarks.first(where: {
+      $0.type == .server && $0.address.lowercased() == server.address && $0.port == server.port
+    }) {
+      if server.login.isEmpty, let login = bookmark.login, !login.isEmpty {
+        server.login = login
+      }
+      if server.password.isEmpty, let password = bookmark.password, !password.isEmpty {
+        server.password = password
+      }
+    }
   }
 
   func connect(to item: TrackerSelection) {

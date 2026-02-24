@@ -383,11 +383,6 @@ struct TrackerView: View {
         .help("Connect to Server")
       }
     }
-    .onOpenURL(perform: { url in
-      if let s = Server(url: url) {
-        openWindow(id: "server", value: s)
-      }
-    })
     .searchable(text: $searchText, isPresented: $isSearching, placement: .automatic, prompt: "Search")
     .background(Button("", action: { isSearching = true }).keyboardShortcut("f").hidden())
   }

@@ -67,12 +67,28 @@ struct ChatView: View {
           self.model.chatRenderedText = text
           self.model.chatRenderedCount = count
         },
-        server: self.model.server,
-        onFileLinkClicked: { path in
-          print("[FileLink] ChatView handler called with path: \(path)")
-          self.serverState.fileNavigationPath = path
-          self.serverState.selection = .files
-          print("[FileLink] Set fileNavigationPath=\(path), selection=.files")
+        openURL: { url in
+          if url.scheme?.lowercased() == "hotline",
+             let linkServer = Server(url: url) {
+            if let currentServer = self.model.server,
+               linkServer.address == currentServer.address && linkServer.port == currentServer.port {
+              // Same server — navigate to the file directly.
+              // FilesView handles folder loading via .task(id: folderPath).
+              if let filePath = linkServer.initialFilePath {
+                self.serverState.fileNavigationPath = filePath
+                self.serverState.selection = .files
+              }
+            }
+            else {
+              // Different server — route through AppState so the App
+              // struct handles it without activating the wrong window.
+              AppState.shared.pendingServerOpen = linkServer
+            }
+          }
+          else {
+            // Non-hotline link — open externally.
+            NSWorkspace.shared.open(url)
+          }
         }
       )
       .frame(maxWidth: .infinity, maxHeight: .infinity)

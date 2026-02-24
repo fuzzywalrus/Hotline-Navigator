@@ -92,8 +92,10 @@ struct FileActions {
     components.scheme = "hotline"
     components.host = server.address
     components.port = server.port == HotlinePorts.DefaultServerPort ? nil : server.port
-    components.path = "/files/" + file.path.map {
-      $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? $0
+    var pathComponentAllowed = CharacterSet.urlPathAllowed
+    pathComponentAllowed.remove(charactersIn: "/")
+    components.percentEncodedPath = "/files/" + file.path.map {
+      $0.addingPercentEncoding(withAllowedCharacters: pathComponentAllowed) ?? $0
     }.joined(separator: "/")
 
     guard let urlString = components.string else { return }

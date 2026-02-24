@@ -11,8 +11,7 @@ struct ChatTextView: NSViewRepresentable {
   var cachedText: NSAttributedString?
   var cachedCount: Int = 0
   var onCacheUpdate: ((NSAttributedString, Int) -> Void)?
-  var server: Server?
-  var onFileLinkClicked: (([String]) -> Void)?
+  var openURL: ((URL) -> Void)?
   
   func makeCoordinator() -> Coordinator {
     Coordinator()
@@ -41,8 +40,7 @@ struct ChatTextView: NSViewRepresentable {
     ]
 
     textView.delegate = textView
-    textView.currentServer = self.server
-    textView.onFileLinkClicked = self.onFileLinkClicked
+    textView.openURLAction = self.openURL
 
     let scrollView = BottomPinningScrollView()
     scrollView.contentView = BottomClipView()
@@ -65,8 +63,7 @@ struct ChatTextView: NSViewRepresentable {
     coordinator.onCacheUpdate = self.isFiltered ? nil : self.onCacheUpdate
 
     if let textView = coordinator.textView {
-      textView.currentServer = self.server
-      textView.onFileLinkClicked = self.onFileLinkClicked
+      textView.openURLAction = self.openURL
     }
     
     if coordinator.needsFullRebuild(for: self.messages) {
@@ -583,8 +580,7 @@ class BottomAnchoredTextView: NSTextView, NSTextViewDelegate {
   static let chatDividerKey = NSAttributedString.Key("chatDividerLine")
   private var hoveredLinkRange: NSRange?
 
-  var currentServer: Server?
-  var onFileLinkClicked: (([String]) -> Void)?
+  var openURLAction: ((URL) -> Void)?
 
   private static let bubblePaddingV: CGFloat = 10
   private static let bubbleCornerRadius: CGFloat = 10
@@ -807,48 +803,15 @@ class BottomAnchoredTextView: NSTextView, NSTextViewDelegate {
 
     guard let url = url else { return false }
 
-    if url.scheme?.lowercased() == "hotline" {
-      // Check if this link points to the same server we're connected to
-      if let server = self.currentServer {
-        let linkHost = url.host?.lowercased() ?? ""
-        let linkPort = url.port ?? HotlinePorts.DefaultServerPort
-        let serverHost = server.address.lowercased()
-        let serverPort = server.port
-
-        print("[FileLink] URL: \(url)")
-        print("[FileLink] linkHost=\(linkHost) linkPort=\(linkPort) serverHost=\(serverHost) serverPort=\(serverPort)")
-        print("[FileLink] pathComponents: \(url.pathComponents)")
-        print("[FileLink] hasCallback: \(self.onFileLinkClicked != nil)")
-
-        if linkHost == serverHost && linkPort == serverPort {
-          let pathComponents = url.pathComponents.filter { $0 != "/" }
-            .map { $0.removingPercentEncoding ?? $0 }
-
-          // Route by first path component: /files/... navigates to Files tab
-          if pathComponents.first == "files" {
-            let filePath = Array(pathComponents.dropFirst())
-            print("[FileLink] Same server — navigating to file: \(filePath)")
-            self.onFileLinkClicked?(filePath)
-            return true
-          }
-
-          // Unknown route — open externally
-          NSWorkspace.shared.open(url)
-          return true
-        } else {
-          print("[FileLink] Different server, opening externally")
-        }
-      } else {
-        print("[FileLink] No current server set")
-      }
-
-      // Different server or no current server — open externally
+    // Route through SwiftUI's openURL so hotline:// links fire
+    // the app's onOpenURL handlers without leaving the process.
+    // Falls back to NSWorkspace for non-hotline links or if
+    // the SwiftUI action isn't available.
+    if let openURL = self.openURLAction {
+      openURL(url)
+    } else {
       NSWorkspace.shared.open(url)
-      return true
     }
-
-    // Non-hotline link — open in default browser
-    NSWorkspace.shared.open(url)
     return true
   }
 

@@ -19,6 +19,14 @@ final class AppState {
 
   var cloudKitReady: Bool = false
 
+  /// Pending server to open from a hotline:// URL. Set by AppDelegate,
+  /// consumed by the App struct's scene observer which calls openWindow.
+  var pendingServerOpen: Server? = nil
+
+  /// Pending file link from a hotline:// URL opened while the target server
+  /// is already connected. ServerView observes this and navigates to the file.
+  var pendingFileLink: Server? = nil
+
   // MARK: - Transfers
 
   /// All active transfers across all servers
