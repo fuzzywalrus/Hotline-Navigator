@@ -669,7 +669,9 @@ class HotlineState: Equatable {
       self.recordChatMessage(divider)
 
       let username = Prefs.shared.username
-      let joinedMessage = ChatMessage(text: "\(username) connected", type: .joined, date: Date())
+      let selfUser = self.users.first(where: { $0.name == username })
+      var joinedMessage = ChatMessage(text: "\(username) connected", type: .joined, date: Date())
+      joinedMessage.isAdmin = selfUser?.isAdmin ?? false
       self.recordChatMessage(joinedMessage)
     }
 
@@ -755,7 +757,9 @@ class HotlineState: Equatable {
     if self.status == .loggedIn {
       // Record a "left" message for yourself.
       let username = Prefs.shared.username
-      let leftMessage = ChatMessage(text: "\(username) disconnected", type: .left, date: Date())
+      let selfUser = self.users.first(where: { $0.name == username })
+      var leftMessage = ChatMessage(text: "\(username) disconnected", type: .left, date: Date())
+      leftMessage.isAdmin = selfUser?.isAdmin ?? false
       self.recordChatMessage(leftMessage, persist: true, display: false)
     }
 
