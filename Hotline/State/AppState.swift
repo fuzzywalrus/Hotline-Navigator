@@ -23,9 +23,9 @@ final class AppState {
   /// consumed by the App struct's scene observer which calls openWindow.
   var pendingServerOpen: Server? = nil
 
-  /// Pending file link from a hotline:// URL opened while the target server
-  /// is already connected. ServerView observes this and navigates to the file.
-  var pendingFileLink: Server? = nil
+  /// Pending link from a hotline:// URL opened while the target server
+  /// is already connected. ServerView observes this and navigates to the section.
+  var pendingLink: Server? = nil
 
   // MARK: - Transfers
 

@@ -72,11 +72,12 @@ struct ChatView: View {
              let linkServer = Server(url: url) {
             if let currentServer = self.model.server,
                linkServer.address == currentServer.address && linkServer.port == currentServer.port {
-              // Same server — navigate to the file directly.
-              // FilesView handles folder loading via .task(id: folderPath).
-              if let filePath = linkServer.initialFilePath {
-                self.serverState.fileNavigationPath = filePath
-                self.serverState.selection = .files
+              // Same server — navigate directly.
+              if let section = linkServer.initialSection {
+                self.serverState.selection = section
+                if section == .files, let filePath = linkServer.initialFilePath {
+                  self.serverState.fileNavigationPath = filePath
+                }
               }
             }
             else {

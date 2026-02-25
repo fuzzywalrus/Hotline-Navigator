@@ -447,9 +447,9 @@ class HotlineState: Equatable {
   // Files
   var files: [FileInfo] = []
   var filesLoaded: Bool = false
-  /// Set by post-login when a cross-server file link was used to connect.
-  /// The view layer observes this to switch to the Files tab and select the target.
-  var pendingFileNavigation: [String]? = nil
+  /// Set by post-login when a link was used to connect to a new server.
+  /// The view layer observes this to navigate to the target section.
+  var pendingNavigation: (section: ServerNavigationType, filePath: [String]?)? = nil
 
   // Accounts
   var accounts: [HotlineAccount] = []
@@ -703,11 +703,13 @@ class HotlineState: Equatable {
 
       print("HotlineState: Post-login: Preloading files, news, and message board...")
       let _ = try? await self.getFileList()
-      // If we connected via a file link (hotline://host/files/path/...),
-      // signal the view layer to navigate. FilesView handles folder loading.
-      if let filePath = self.server?.initialFilePath, !filePath.isEmpty {
+      // If we connected via a deep link (hotline://host/section/...),
+      // signal the view layer to navigate to the target section.
+      if let section = self.server?.initialSection {
+        let filePath = self.server?.initialFilePath
+        self.server?.initialSection = nil
         self.server?.initialFilePath = nil
-        self.pendingFileNavigation = filePath
+        self.pendingNavigation = (section: section, filePath: filePath)
       }
       try? await self.getNewsList()
       let _ = try? await self.getMessageBoard()
@@ -805,7 +807,7 @@ class HotlineState: Equatable {
     self.newsLookup = [:]
     self.files = []
     self.filesLoaded = false
-    self.pendingFileNavigation = nil
+    self.pendingNavigation = nil
     self.accounts = []
     self.accountsLoaded = false
     self.bannerImage = nil

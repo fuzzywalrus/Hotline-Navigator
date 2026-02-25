@@ -10,7 +10,10 @@ struct Server: Codable {
   var login: String = ""
   var password: String = ""
 
-  /// File path to navigate to after connecting (transient, not persisted).
+  /// Section to navigate to after connecting (transient, not persisted).
+  var initialSection: ServerNavigationType?
+
+  /// File path to navigate to within the Files section (transient, not persisted).
   var initialFilePath: [String]?
 
   /// Controls what SwiftUI persists for window state restoration.
@@ -73,12 +76,28 @@ struct Server: Codable {
     self.login = url.user(percentEncoded: false) ?? ""
     self.password = url.password(percentEncoded: false) ?? ""
 
-    // Parse /files/... path for deep-linking to a file after connecting
+    // Parse path for deep-linking to a section after connecting.
+    // Supported paths: /, /files/..., /news, /board
     let pathComponents = url.pathComponents.filter { $0 != "/" }
       .map { $0.removingPercentEncoding ?? $0 }
-    if pathComponents.first == "files" {
-      let filePath = Array(pathComponents.dropFirst())
-      self.initialFilePath = filePath.isEmpty ? nil : filePath
+    if pathComponents.isEmpty {
+      // hotline://host/ → chat (but hotline://host with no path → no section)
+      if !url.path.isEmpty {
+        self.initialSection = .chat
+      }
+    } else {
+      switch pathComponents.first {
+      case "files":
+        self.initialSection = .files
+        let filePath = Array(pathComponents.dropFirst())
+        self.initialFilePath = filePath.isEmpty ? nil : filePath
+      case "news":
+        self.initialSection = .news
+      case "board":
+        self.initialSection = .board
+      default:
+        break
+      }
     }
   }
   

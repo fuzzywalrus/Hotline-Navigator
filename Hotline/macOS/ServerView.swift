@@ -147,11 +147,13 @@ struct ServerView: View {
       else if self.model.status == .loggedIn {
         self.serverView
           .environment(self.model)
-          .onChange(of: self.model.pendingFileNavigation) { _, newValue in
-            if let filePath = newValue {
-              self.model.pendingFileNavigation = nil
-              self.state.fileNavigationPath = filePath
-              self.state.selection = .files
+          .onChange(of: self.model.pendingNavigation?.section) { _, _ in
+            if let nav = self.model.pendingNavigation {
+              self.model.pendingNavigation = nil
+              self.state.selection = nav.section
+              if nav.section == .files, let filePath = nav.filePath {
+                self.state.fileNavigationPath = filePath
+              }
             }
           }
           .onChange(of: Prefs.shared.userIconID) {
@@ -222,14 +224,14 @@ struct ServerView: View {
     .onChange(of: self.model.serverTitle) {
       self.state.serverName = self.model.serverTitle
     }
-    .onChange(of: AppState.shared.pendingFileLink) { _, _ in
-      self.consumePendingFileLink()
+    .onChange(of: AppState.shared.pendingLink) { _, _ in
+      self.consumePendingLink()
     }
     .onChange(of: self.controlActiveState) { _, newValue in
       // When openWindow brings this window forward, check for pending
-      // file links. More reliable than onChange across window scenes.
+      // links. More reliable than onChange across window scenes.
       if newValue == .key {
-        self.consumePendingFileLink()
+        self.consumePendingLink()
       }
     }
     .onAppear {
@@ -473,17 +475,18 @@ struct ServerView: View {
   // MARK: -
 
 
-  private func consumePendingFileLink() {
-    guard let pending = AppState.shared.pendingFileLink,
+  private func consumePendingLink() {
+    guard let pending = AppState.shared.pendingLink,
           pending.address == self.server.address && pending.port == self.server.port,
-          let filePath = pending.initialFilePath,
+          let section = pending.initialSection,
           self.model.status == .loggedIn else {
       return
     }
-    AppState.shared.pendingFileLink = nil
-    // FilesView handles folder loading via .task(id: folderPath).
-    self.state.fileNavigationPath = filePath
-    self.state.selection = .files
+    AppState.shared.pendingLink = nil
+    self.state.selection = section
+    if section == .files, let filePath = pending.initialFilePath {
+      self.state.fileNavigationPath = filePath
+    }
   }
 
   private func syncFieldsFromServer() {

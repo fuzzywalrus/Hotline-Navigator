@@ -174,9 +174,9 @@ struct Application: App {
       // Use saved bookmark credentials if the URL didn't include any.
       self.mergeBookmarkCredentials(into: &server)
 
-      // Signal for already-connected servers to navigate to the linked file.
-      if server.initialFilePath != nil {
-        AppState.shared.pendingFileLink = server
+      // Signal for already-connected servers to navigate to the linked section.
+      if server.initialSection != nil {
+        AppState.shared.pendingLink = server
       }
 
       self.openWindow(id: "server", value: server)
