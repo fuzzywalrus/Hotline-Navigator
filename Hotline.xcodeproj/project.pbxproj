@@ -82,11 +82,19 @@
 		DA9CAFC12B126D5800CDA197 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DA9CAFC02B126D5800CDA197 /* Assets.xcassets */; };
 		DA9CAFC42B126D5800CDA197 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DA9CAFC32B126D5800CDA197 /* Preview Assets.xcassets */; };
 		DA9CAFCB2B126E3300CDA197 /* HotlineTrackerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA9CAFCA2B126E3300CDA197 /* HotlineTrackerClient.swift */; };
+		DAA15B152F50C96700FAC1B2 /* HotlineState+Users.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA15B142F50C96700FAC1B2 /* HotlineState+Users.swift */; };
+		DAA15B172F50C98D00FAC1B2 /* HotlineState+EventHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA15B162F50C98D00FAC1B2 /* HotlineState+EventHandlers.swift */; };
+		DAA15B192F50C9AE00FAC1B2 /* HotlineState+News.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA15B182F50C9AE00FAC1B2 /* HotlineState+News.swift */; };
+		DAA15B1B2F50C9D700FAC1B2 /* HotlineState+Files.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA15B1A2F50C9D700FAC1B2 /* HotlineState+Files.swift */; };
+		DAA15B1D2F50C9E000FAC1B2 /* HotlineState+Chat.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA15B1C2F50C9E000FAC1B2 /* HotlineState+Chat.swift */; };
+		DAA15B1F2F50C9E600FAC1B2 /* HotlineState+Connection.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA15B1E2F50C9E600FAC1B2 /* HotlineState+Connection.swift */; };
 		DAA98C3F2F479C20002C6334 /* FilesGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA98C3E2F479C20002C6334 /* FilesGridView.swift */; };
 		DAA98C412F479C32002C6334 /* FileActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA98C402F479C32002C6334 /* FileActions.swift */; };
 		DAA98C772F4CFEEE002C6334 /* IdentitySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA98C762F4CFEEE002C6334 /* IdentitySettingsView.swift */; };
 		DAA98C792F4CFEF5002C6334 /* NotificationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA98C782F4CFEF5002C6334 /* NotificationSettingsView.swift */; };
 		DAA98C7B2F4CFF0B002C6334 /* ChatSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA98C7A2F4CFF0B002C6334 /* ChatSettingsView.swift */; };
+		DAA98CC52F4F8331002C6334 /* AppearanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA98CC42F4F8331002C6334 /* AppearanceSettingsView.swift */; };
+		DAA98CD02F4F84A8002C6334 /* AppIconManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA98CCF2F4F84A8002C6334 /* AppIconManager.swift */; };
 		DAAEE66B2B3FBC2100A5BA07 /* TransferInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAAEE66A2B3FBC2100A5BA07 /* TransferInfo.swift */; };
 		DAAEE66D2B475F1400A5BA07 /* PreviewFileInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAAEE66C2B475F1400A5BA07 /* PreviewFileInfo.swift */; };
 		DAAEE66F2B47625600A5BA07 /* FilePreviewImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAAEE66E2B47625600A5BA07 /* FilePreviewImageView.swift */; platformFilters = (macos, ); };
@@ -216,11 +224,19 @@
 		DA9CAFC02B126D5800CDA197 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		DA9CAFC32B126D5800CDA197 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		DA9CAFCA2B126E3300CDA197 /* HotlineTrackerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotlineTrackerClient.swift; sourceTree = "<group>"; };
+		DAA15B142F50C96700FAC1B2 /* HotlineState+Users.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HotlineState+Users.swift"; sourceTree = "<group>"; };
+		DAA15B162F50C98D00FAC1B2 /* HotlineState+EventHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HotlineState+EventHandlers.swift"; sourceTree = "<group>"; };
+		DAA15B182F50C9AE00FAC1B2 /* HotlineState+News.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HotlineState+News.swift"; sourceTree = "<group>"; };
+		DAA15B1A2F50C9D700FAC1B2 /* HotlineState+Files.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HotlineState+Files.swift"; sourceTree = "<group>"; };
+		DAA15B1C2F50C9E000FAC1B2 /* HotlineState+Chat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HotlineState+Chat.swift"; sourceTree = "<group>"; };
+		DAA15B1E2F50C9E600FAC1B2 /* HotlineState+Connection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HotlineState+Connection.swift"; sourceTree = "<group>"; };
 		DAA98C3E2F479C20002C6334 /* FilesGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesGridView.swift; sourceTree = "<group>"; };
 		DAA98C402F479C32002C6334 /* FileActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileActions.swift; sourceTree = "<group>"; };
 		DAA98C762F4CFEEE002C6334 /* IdentitySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentitySettingsView.swift; sourceTree = "<group>"; };
 		DAA98C782F4CFEF5002C6334 /* NotificationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSettingsView.swift; sourceTree = "<group>"; };
 		DAA98C7A2F4CFF0B002C6334 /* ChatSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatSettingsView.swift; sourceTree = "<group>"; };
+		DAA98CC42F4F8331002C6334 /* AppearanceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettingsView.swift; sourceTree = "<group>"; };
+		DAA98CCF2F4F84A8002C6334 /* AppIconManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconManager.swift; sourceTree = "<group>"; };
 		DAAEE66A2B3FBC2100A5BA07 /* TransferInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferInfo.swift; sourceTree = "<group>"; };
 		DAAEE66C2B475F1400A5BA07 /* PreviewFileInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewFileInfo.swift; sourceTree = "<group>"; };
 		DAAEE66E2B47625600A5BA07 /* FilePreviewImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePreviewImageView.swift; sourceTree = "<group>"; };
@@ -309,6 +325,12 @@
 				DA3429B42EBA8A450010784E /* FilePreviewState.swift */,
 				DA5268B02EB2708E00DCB941 /* HotlineState.swift */,
 				DA501BEF2EBED848001714F8 /* BonjourState.swift */,
+				DAA15B1E2F50C9E600FAC1B2 /* HotlineState+Connection.swift */,
+				DAA15B162F50C98D00FAC1B2 /* HotlineState+EventHandlers.swift */,
+				DAA15B1C2F50C9E000FAC1B2 /* HotlineState+Chat.swift */,
+				DAA15B142F50C96700FAC1B2 /* HotlineState+Users.swift */,
+				DAA15B182F50C9AE00FAC1B2 /* HotlineState+News.swift */,
+				DAA15B1A2F50C9D700FAC1B2 /* HotlineState+Files.swift */,
 			);
 			path = State;
 			sourceTree = "<group>";
@@ -370,9 +392,11 @@
 			children = (
 				DA2863D72B37AD1C00A7D050 /* SettingsView.swift */,
 				DA52689B2EB0738B00DCB941 /* GeneralSettingsView.swift */,
+				DAA98C762F4CFEEE002C6334 /* IdentitySettingsView.swift */,
+				DAA98CCF2F4F84A8002C6334 /* AppIconManager.swift */,
+				DAA98CC42F4F8331002C6334 /* AppearanceSettingsView.swift */,
 				DAA98C782F4CFEF5002C6334 /* NotificationSettingsView.swift */,
 				DAA98C7A2F4CFF0B002C6334 /* ChatSettingsView.swift */,
-				DAA98C762F4CFEEE002C6334 /* IdentitySettingsView.swift */,
 				DA52689F2EB073BC00DCB941 /* SoundSettingsView.swift */,
 			);
 			path = Settings;
@@ -736,17 +760,21 @@
 				DAC3D9832BC33FD000A727C9 /* AppState.swift in Sources */,
 				DA65499C2BEC3FBD00EDB697 /* ServerAgreementView.swift in Sources */,
 				DABAFBEA2EC58C170015E889 /* AccountDetailsView.swift in Sources */,
+				DAA15B1F2F50C9E600FAC1B2 /* HotlineState+Connection.swift in Sources */,
 				DA5268BC2EB95A7700DCB941 /* HotlineFolderDownloadClient.swift in Sources */,
 				DA2863DD2B3E8B7000A7D050 /* FilePreview.swift in Sources */,
+				DAA15B1B2F50C9D700FAC1B2 /* HotlineState+Files.swift in Sources */,
 				DA3429B02EBA70790010784E /* HotlineFolderUploadClient.swift in Sources */,
 				DA5268AB2EB11EA300DCB941 /* ColorArt.swift in Sources */,
 				DA2863D82B37AD1C00A7D050 /* SettingsView.swift in Sources */,
 				DA5268BA2EB91B5E00DCB941 /* FileProgress.swift in Sources */,
 				DA7725412B21435B006C5ABB /* ObservableScrollView.swift in Sources */,
+				DAA15B152F50C96700FAC1B2 /* HotlineState+Users.swift in Sources */,
 				DAE734FF2B2E6750000C56F6 /* ChatView.swift in Sources */,
 				DA5268B52EB6840A00DCB941 /* TransfersView.swift in Sources */,
 				DA501BE42EBE9517001714F8 /* ServerBookmarkSheet.swift in Sources */,
 				11F8288B2BF9428100216BA0 /* AccountManagerView.swift in Sources */,
+				DAA98CD02F4F84A8002C6334 /* AppIconManager.swift in Sources */,
 				DAC6B2E42EAFE92F004E2CBA /* SpinningGlobeView.swift in Sources */,
 				DADDB28D2B22B5920024040D /* Server.swift in Sources */,
 				DA5268AF2EB2682B00DCB941 /* HotlineClient.swift in Sources */,
@@ -788,6 +816,8 @@
 				DA72A0DD2B4CD0BF00A0F48A /* NewsEditorView.swift in Sources */,
 				DA52689C2EB0738B00DCB941 /* GeneralSettingsView.swift in Sources */,
 				DA501BE92EBE9589001714F8 /* TrackerItemView.swift in Sources */,
+				DAA98CC52F4F8331002C6334 /* AppearanceSettingsView.swift in Sources */,
+				DAA15B172F50C98D00FAC1B2 /* HotlineState+EventHandlers.swift in Sources */,
 				DA5A6F142F456DC900060F18 /* ChatInputField.swift in Sources */,
 				DA57536C2B36BA1D00FAC277 /* TextDocument.swift in Sources */,
 				DACCE5E12EABE4B4008CDD92 /* AppUpdate.swift in Sources */,
@@ -819,8 +849,10 @@
 				DADDB28B2B22B31F0024040D /* Tracker.swift in Sources */,
 				DAC87F072C5010E80060FADF /* HotlineExtensions.swift in Sources */,
 				DAE734FD2B2E65E9000C56F6 /* MessageBoardView.swift in Sources */,
+				DAA15B1D2F50C9E000FAC1B2 /* HotlineState+Chat.swift in Sources */,
 				DA6980832BFFD06C003E434B /* BookmarkDocument.swift in Sources */,
 				DA501BF22EBEF415001714F8 /* BonjourServerRow.swift in Sources */,
+				DAA15B192F50C9AE00FAC1B2 /* HotlineState+News.swift in Sources */,
 				DAA98C772F4CFEEE002C6334 /* IdentitySettingsView.swift in Sources */,
 				DA501BE72EBE9542001714F8 /* TrackerBookmarkSheet.swift in Sources */,
 				DAB4D87E2B4C8BCA0048A05C /* FilePreviewTextView.swift in Sources */,

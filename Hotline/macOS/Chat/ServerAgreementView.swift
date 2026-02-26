@@ -78,50 +78,58 @@ struct ServerAgreementSheet: View {
   @Environment(\.dismiss) private var dismiss
 
   var body: some View {
+    ScrollView(.vertical) {
+      Text(model.agreementText?.convertToAttributedStringWithLinks() ?? AttributedString())
+        .font(.system(size: 12))
+        .fontDesign(.monospaced)
+        .textSelection(.enabled)
+        .tint(Color("Link Color"))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(24)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .bottomBar {
+      self.buttonBar
+    }
+    .frame(width: 450, height: 400)
+    .interactiveDismissDisabled()
+  }
+
+  private var buttonBar: some View {
     VStack(spacing: 0) {
-//      Text("Agreement")
-//        .font(.headline)
-//        .padding(.top, 20)
-//        .padding(.bottom, 12)
-
-      ScrollView(.vertical) {
-        Text(model.agreementText?.convertToAttributedStringWithLinks() ?? AttributedString())
-          .font(.system(size: 12))
-          .fontDesign(.monospaced)
-          .textSelection(.enabled)
-          .tint(Color("Link Color"))
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(24)
+      if #unavailable(macOS 26) {
+        Divider()
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-      Divider()
 
       HStack {
-        Button("Disagree") {
+        Button("Disagree", role: .cancel) {
           Task {
-            await model.disconnect()
+            await self.model.disconnect()
           }
         }
-        
+        .glassButtonStyle()
+        .buttonBorderShape(.capsule)
+        .controlSize(.extraLarge)
+
         Spacer()
 
         Button("Agree") {
           Task {
             do {
-              try await model.sendAgree()
+              try await self.model.sendAgree()
             } catch {
               print("HotlineState: Agree failed: \(error), disconnecting")
-              await model.disconnect()
+              await self.model.disconnect()
             }
           }
         }
         .keyboardShortcut(.defaultAction)
+        .buttonBorderShape(.capsule)
+        .glassProminentButtonStyle()
+        .controlSize(.extraLarge)
       }
       .padding(20)
     }
-    .frame(width: 450, height: 400)
-    .interactiveDismissDisabled()
   }
 }
 

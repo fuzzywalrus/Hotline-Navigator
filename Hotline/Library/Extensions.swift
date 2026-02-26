@@ -421,3 +421,36 @@ extension Color {
     self.init(red: Double((hex >> 16) & 0xFF) / 255.0, green: Double((hex >> 8) & 0xFF) / 255.0, blue: Double(hex & 0xFF) / 255.0, opacity: opacity)
   }
 }
+
+// MARK: - Glass Button Styles
+
+#if os(macOS)
+extension View {
+  @ViewBuilder
+  func glassButtonStyle() -> some View {
+    if #available(macOS 26, *) {
+      self.buttonStyle(.glass)
+    } else {
+      self
+    }
+  }
+
+  @ViewBuilder
+  func glassProminentButtonStyle() -> some View {
+    if #available(macOS 26, *) {
+      self.buttonStyle(.glassProminent)
+    } else {
+      self.buttonStyle(.borderedProminent)
+    }
+  }
+
+  @ViewBuilder
+  func bottomBar<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    if #available(macOS 26, *) {
+      self.safeAreaBar(edge: .bottom, content: content)
+    } else {
+      self.safeAreaInset(edge: .bottom, spacing: 0, content: content)
+    }
+  }
+}
+#endif

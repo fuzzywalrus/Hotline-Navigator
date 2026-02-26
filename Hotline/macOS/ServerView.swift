@@ -592,7 +592,7 @@ struct ServerTransferRow: View {
             .frame(maxWidth: 40)
         }
         else {
-          ProgressView(value: self.transfer.progress, total: 1.0)
+          ProgressView(value: min(max(self.transfer.progress, 0.0), 1.0), total: 1.0)
             .progressViewStyle(.linear)
             .controlSize(.extraLarge)
             .frame(maxWidth: 40)
