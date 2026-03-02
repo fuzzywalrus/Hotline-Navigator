@@ -8,6 +8,49 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 
+/// Encode a UTF-8 folder name to bytes suitable for the Hotline FilePath field.
+/// Tries MacRoman encoding first (which is what the protocol uses natively).
+/// Falls back to raw UTF-8 bytes if MacRoman can't represent the characters.
+fn encode_path_component(name: &str) -> Vec<u8> {
+    let (encoded, _encoding, had_unmappable) = encoding_rs::MACINTOSH.encode(name);
+    if had_unmappable {
+        // Characters that can't be represented in MacRoman — send as UTF-8
+        // (modern servers like Mobius handle UTF-8)
+        name.as_bytes().to_vec()
+    } else {
+        encoded.into_owned()
+    }
+}
+
+/// Build the binary FilePath field data from a path component list.
+/// Returns None if path is empty (no field needed).
+fn encode_file_path(path: &[String]) -> Option<Vec<u8>> {
+    if path.is_empty() {
+        return None;
+    }
+
+    let mut path_data = Vec::new();
+    path_data.extend_from_slice(&(path.len() as u16).to_be_bytes());
+
+    for folder in path {
+        let folder_bytes = encode_path_component(folder);
+        if folder_bytes.len() > 255 {
+            // Protocol only supports 1-byte length — truncate to 255 bytes
+            // (this matches the protocol spec limit)
+            let truncated = &folder_bytes[..255];
+            path_data.extend_from_slice(&[0x00, 0x00]);
+            path_data.push(255u8);
+            path_data.extend_from_slice(truncated);
+        } else {
+            path_data.extend_from_slice(&[0x00, 0x00]);
+            path_data.push(folder_bytes.len() as u8);
+            path_data.extend_from_slice(&folder_bytes);
+        }
+    }
+
+    Some(path_data)
+}
+
 impl HotlineClient {
     pub async fn get_file_list(&self, path: Vec<String>) -> Result<(), String> {
         println!("Requesting file list for path: {:?}", path);
@@ -22,23 +65,8 @@ impl HotlineClient {
         }
 
         // Encode path as FilePath field
-        // FilePath format: 2 bytes item count + for each item: 2 bytes (0x0000) + 1 byte name length + name
-        if !path.is_empty() {
-            let mut path_data = Vec::new();
-            path_data.extend_from_slice(&(path.len() as u16).to_be_bytes());
-
-            for folder in &path {
-                let folder_bytes = folder.as_bytes();
-                // Add separator bytes (0x0000)
-                path_data.extend_from_slice(&[0x00, 0x00]);
-                // Add name length as single byte
-                path_data.push(folder_bytes.len() as u8);
-                // Add name
-                path_data.extend_from_slice(folder_bytes);
-            }
-
+        if let Some(path_data) = encode_file_path(&path) {
             println!("Path data encoded ({} bytes): {:02X?}", path_data.len(), path_data);
-
             transaction.add_field(TransactionField {
                 field_type: FieldType::FilePath,
                 data: path_data,
@@ -77,17 +105,7 @@ impl HotlineClient {
         transaction.add_field(TransactionField::from_string(FieldType::FileName, &file_name));
 
         // Add FilePath field if not at root
-        if !path.is_empty() {
-            let mut path_data = Vec::new();
-            path_data.extend_from_slice(&(path.len() as u16).to_be_bytes());
-
-            for folder in &path {
-                let folder_bytes = folder.as_bytes();
-                path_data.extend_from_slice(&[0x00, 0x00]);
-                path_data.push(folder_bytes.len() as u8);
-                path_data.extend_from_slice(folder_bytes);
-            }
-
+        if let Some(path_data) = encode_file_path(&path) {
             transaction.add_field(TransactionField {
                 field_type: FieldType::FilePath,
                 data: path_data,
@@ -651,16 +669,7 @@ impl HotlineClient {
         });
 
         // Add file path field if not root
-        if !path.is_empty() {
-            let mut path_data = Vec::new();
-            path_data.extend_from_slice(&(path.len() as u16).to_be_bytes());
-
-            for folder in &path {
-                path_data.extend_from_slice(&[0x00, 0x00]); // Separator
-                path_data.push(folder.as_bytes().len() as u8); // Name length
-                path_data.extend_from_slice(folder.as_bytes()); // Name
-            }
-
+        if let Some(path_data) = encode_file_path(&path) {
             transaction.add_field(TransactionField {
                 field_type: FieldType::FilePath,
                 data: path_data,

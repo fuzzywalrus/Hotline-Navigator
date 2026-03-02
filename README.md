@@ -1,10 +1,11 @@
-<img width="836" height="188" alt="GitHub Banner" src="https://github.com/user-attachments/assets/73873a25-e18f-4dfd-9454-4c71ce271054" />
 
 # Hotline Navigator
 
 A modern, cross-platform Hotline client built with **Tauri**, React, and Rust. This is a spiritual port of David Mierau's wonderful [Hotline app](https://github.com/mierau/hotline), bringing the classic Hotline protocol to modern platforms.
 
 ## Platform Support
+
+Right now the iOS and iPadOS versions are not in the app store and must be built manually.
 
 | Platform | Architecture | Status |
 |----------|--------------|--------|
@@ -29,30 +30,3 @@ This is a **Tauri-based Hotline client** that provides a modern, cross-platform 
 
 For more details about the Tauri client implementation, see the [`hotline-tauri/README.md`](hotline-tauri/README.md).
 
----
-
-## Original Swift/macOS Client
-
-The repository also contains the original Swift/macOS Hotline client. Below is information about that version:
-
-# Requirements
-
-| macOS                      | iOS                   | iPadOS            | visionOS          |
-|----------------------------|-----------------------|-------------------|-------------------|
-| Sequoia 15.7 or greater    | iOS 18.7 or greater   | Not yet available | Not yet available |
-
-To keep this software fresh and running on Apple's latest platforms, the intention is to support the last two major OS releases from Apple. This gives people time to move to the latest major OS release while also allowing this project to make use of the latest APIs.
-
-# What is Hotline?
-
-Hotline was released in 1997 for Mac OS. A suite of three (free) applications that allowed people to join or host online communities directly from their Macs. No subscriptions. No ads.
-
-When connected to a Hotline server you could chat with other users like IRC, message others privately like AIM, read or write threaded news like a forum, post to the server’s message board like BBS, and browse, upload, or download files like FTP. And as someone operating a Hotline server you had full control over all of it.
-
-Hotline also included Trackers. Trackers tracked servers. If you ran a Hotline server, you could list it on one or more Trackers so people could find your server—and anyone could run a Tracker.
-
-At a time when people were chatting over email and file sharing was passing physical media between friends, Hotline was a kind of revelation. The promise of the Internet, in a way. Computers owned by individuals, connected and passing information between each other. No central server that could take the entire network offline.
-
-Perhaps that’s why you can still find Hotline servers and trackers running today 25 years later. Though the company who built Hotline is no longer around, and the software they made is only available through retro Mac software archives, these communities are still operating.
-
-And this project is an attempt to create a modern open source version of Hotline for modern Apple systems. Join in. Contribute. Run your own server! Perhaps Hotline can live on for another 25 years. :)

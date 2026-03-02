@@ -56,15 +56,23 @@ impl TransactionField {
         // Write count of path components
         data.extend_from_slice(&(path.len() as u16).to_be_bytes());
 
-        // Write each path component
+        // Write each path component with MacRoman encoding
         for component in path {
+            // Try MacRoman first (native Hotline encoding), fall back to UTF-8
+            let (encoded, _, had_unmappable) = encoding_rs::MACINTOSH.encode(component);
+            let component_bytes = if had_unmappable {
+                component.as_bytes()
+            } else {
+                &encoded
+            };
+
             // Write separator (always 0)
             data.extend_from_slice(&0u16.to_be_bytes());
 
-            // Write component length and data
-            let component_bytes = component.as_bytes();
-            data.push(component_bytes.len() as u8);
-            data.extend_from_slice(component_bytes);
+            // Protocol limits component length to 1 byte (255 max)
+            let len = component_bytes.len().min(255);
+            data.push(len as u8);
+            data.extend_from_slice(&component_bytes[..len]);
         }
 
         Self {
@@ -262,5 +270,164 @@ impl Transaction {
         }
 
         Ok(transaction)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::constants::{FieldType, TransactionType, TRANSACTION_HEADER_SIZE};
+
+    // ── TransactionField ──────────────────────────────────────────
+
+    #[test]
+    fn field_from_string_roundtrip() {
+        let field = TransactionField::from_string(FieldType::UserName, "hello");
+        assert_eq!(field.to_string().unwrap(), "hello");
+    }
+
+    #[test]
+    fn field_from_encoded_string_xor() {
+        let field = TransactionField::from_encoded_string(FieldType::UserPassword, "abc");
+        // Each byte XOR 0xFF
+        assert_eq!(field.data, vec![0x61 ^ 0xFF, 0x62 ^ 0xFF, 0x63 ^ 0xFF]);
+    }
+
+    #[test]
+    fn field_u16_roundtrip() {
+        let field = TransactionField::from_u16(FieldType::UserId, 42);
+        assert_eq!(field.to_u16().unwrap(), 42);
+    }
+
+    #[test]
+    fn field_u16_max() {
+        let field = TransactionField::from_u16(FieldType::UserId, u16::MAX);
+        assert_eq!(field.to_u16().unwrap(), u16::MAX);
+    }
+
+    #[test]
+    fn field_u32_roundtrip() {
+        let field = TransactionField::from_u32(FieldType::FileSize, 123456);
+        assert_eq!(field.to_u32().unwrap(), 123456);
+    }
+
+    #[test]
+    fn field_u64_roundtrip() {
+        let field = TransactionField::from_u64(FieldType::TransferSize, 9_876_543_210);
+        assert_eq!(field.to_u64().unwrap(), 9_876_543_210);
+    }
+
+    #[test]
+    fn field_u16_wrong_size() {
+        let field = TransactionField::new(FieldType::UserId, vec![0, 0, 0]);
+        assert!(field.to_u16().is_err());
+    }
+
+    #[test]
+    fn field_u32_wrong_size() {
+        let field = TransactionField::new(FieldType::FileSize, vec![0]);
+        assert!(field.to_u32().is_err());
+    }
+
+    #[test]
+    fn field_u64_wrong_size() {
+        let field = TransactionField::new(FieldType::TransferSize, vec![0; 4]);
+        assert!(field.to_u64().is_err());
+    }
+
+    #[test]
+    fn field_encode_format() {
+        let field = TransactionField::from_u16(FieldType::UserId, 1);
+        let encoded = field.encode();
+        // field_type (2) + field_size (2) + data (2) = 6 bytes
+        assert_eq!(encoded.len(), 6);
+        // First 2 bytes: field type (UserId = 103)
+        assert_eq!(u16::from_be_bytes([encoded[0], encoded[1]]), 103);
+        // Next 2 bytes: data length (2)
+        assert_eq!(u16::from_be_bytes([encoded[2], encoded[3]]), 2);
+    }
+
+    #[test]
+    fn field_from_path_encoding() {
+        let path = vec!["folder".to_string(), "subfolder".to_string()];
+        let field = TransactionField::from_path(FieldType::FilePath, &path);
+        // First 2 bytes: count of components (2)
+        assert_eq!(u16::from_be_bytes([field.data[0], field.data[1]]), 2);
+    }
+
+    #[test]
+    fn field_string_with_carriage_returns() {
+        let field = TransactionField::from_string(FieldType::Data, "line1\rline2\rline3");
+        let result = field.to_string().unwrap();
+        assert_eq!(result, "line1\nline2\nline3");
+    }
+
+    // ── Transaction ───────────────────────────────────────────────
+
+    #[test]
+    fn transaction_encode_decode_roundtrip() {
+        let mut tx = Transaction::new(42, TransactionType::SendChat);
+        tx.add_field(TransactionField::from_string(FieldType::Data, "Hello!"));
+        tx.add_field(TransactionField::from_u16(FieldType::UserId, 7));
+
+        let encoded = tx.encode();
+        let decoded = Transaction::decode(&encoded).unwrap();
+
+        assert_eq!(decoded.id, 42);
+        assert_eq!(decoded.transaction_type, TransactionType::SendChat);
+        assert_eq!(decoded.fields.len(), 2);
+        assert_eq!(decoded.fields[0].to_string().unwrap(), "Hello!");
+        assert_eq!(decoded.fields[1].to_u16().unwrap(), 7);
+    }
+
+    #[test]
+    fn transaction_empty_fields() {
+        let tx = Transaction::new(1, TransactionType::Login);
+        let encoded = tx.encode();
+        let decoded = Transaction::decode(&encoded).unwrap();
+
+        assert_eq!(decoded.id, 1);
+        assert_eq!(decoded.transaction_type, TransactionType::Login);
+        assert!(decoded.fields.is_empty());
+    }
+
+    #[test]
+    fn transaction_header_size() {
+        let tx = Transaction::new(1, TransactionType::Reply);
+        let encoded = tx.encode();
+        // Header (20) + field count (2) = 22 bytes minimum
+        assert!(encoded.len() >= TRANSACTION_HEADER_SIZE);
+    }
+
+    #[test]
+    fn transaction_flags_and_error_code() {
+        let mut tx = Transaction::new(99, TransactionType::Error);
+        tx.flags = 1;
+        tx.is_reply = 1;
+        tx.error_code = 500;
+
+        let encoded = tx.encode();
+        let decoded = Transaction::decode(&encoded).unwrap();
+
+        assert_eq!(decoded.flags, 1);
+        assert_eq!(decoded.is_reply, 1);
+        assert_eq!(decoded.error_code, 500);
+    }
+
+    #[test]
+    fn transaction_decode_too_short() {
+        let data = vec![0u8; 10]; // Less than TRANSACTION_HEADER_SIZE
+        assert!(Transaction::decode(&data).is_err());
+    }
+
+    #[test]
+    fn transaction_get_field() {
+        let mut tx = Transaction::new(1, TransactionType::SendChat);
+        tx.add_field(TransactionField::from_string(FieldType::Data, "msg"));
+        tx.add_field(TransactionField::from_u16(FieldType::ChatId, 5));
+
+        assert!(tx.get_field(FieldType::Data).is_some());
+        assert!(tx.get_field(FieldType::ChatId).is_some());
+        assert!(tx.get_field(FieldType::UserName).is_none());
     }
 }

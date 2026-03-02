@@ -16,8 +16,70 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ─── Lint & Test ─────────────────────────────────────────────────
+  check:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: hotline-tauri/package-lock.json
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: 'hotline-tauri/src-tauri -> target'
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev
+
+      - name: Install frontend dependencies
+        working-directory: hotline-tauri
+        run: npm ci
+
+      - name: TypeScript typecheck
+        working-directory: hotline-tauri
+        run: npm run typecheck
+
+      - name: ESLint
+        working-directory: hotline-tauri
+        run: npm run lint
+
+      - name: Vitest
+        working-directory: hotline-tauri
+        run: npm test
+
+      - name: Cargo clippy
+        working-directory: hotline-tauri/src-tauri
+        run: cargo clippy -- -D warnings
+
+      - name: Cargo test
+        working-directory: hotline-tauri/src-tauri
+        run: cargo test
+
   # ─── macOS Universal Binary ────────────────────────────────────────
   build-macos:
+    needs: check
     runs-on: macos-latest
     permissions:
       contents: write
@@ -103,6 +165,7 @@ jobs:
 
   # ─── iOS ───────────────────────────────────────────────────────────
   build-ios:
+    needs: check
     runs-on: macos-latest
     permissions:
       contents: write
@@ -195,6 +258,7 @@ jobs:
 
   # ─── Windows x64 ──────────────────────────────────────────────────
   build-windows:
+    needs: check
     runs-on: windows-latest
     permissions:
       contents: write
@@ -246,6 +310,7 @@ jobs:
 
   # ─── Linux x64 ────────────────────────────────────────────────────
   build-linux:
+    needs: check
     runs-on: ubuntu-22.04
     permissions:
       contents: write

@@ -30,6 +30,7 @@ interface NewsTabProps {
   onNewsBack: () => void;
   onNavigateNews: (category: NewsCategory) => void;
   onSelectArticle: (article: NewsArticle) => void;
+  onClearSelectedArticle?: () => void;
   onToggleComposer: () => void;
   onComposerTitleChange: (value: string) => void;
   onComposerBodyChange: (value: string) => void;
@@ -51,15 +52,19 @@ export default function NewsTab({
   onNewsBack,
   onNavigateNews,
   onSelectArticle,
+  onClearSelectedArticle,
   onToggleComposer,
   onComposerTitleChange,
   onComposerBodyChange,
   onPostNews,
 }: NewsTabProps) {
+  // On mobile, show article detail view if an article is selected or composer is open
+  const showMobileDetail = selectedArticle || showComposer;
+
   return (
-    <div className="flex-1 flex h-full overflow-hidden">
-      {/* Left panel: Categories and Articles */}
-      <div className="w-1/2 border-r border-gray-200 dark:border-gray-700 flex flex-col h-full overflow-hidden">
+    <div className="flex-1 flex md:flex-row flex-col h-full overflow-hidden">
+      {/* Left panel: Categories and Articles — hidden on mobile when viewing article */}
+      <div className={`md:w-1/2 md:border-r border-gray-200 dark:border-gray-700 flex flex-col h-full overflow-hidden ${showMobileDetail ? 'hidden md:flex' : 'flex'}`}>
         {/* Path breadcrumb */}
         <div className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2 flex items-center gap-2">
           <button
@@ -180,14 +185,23 @@ export default function NewsTab({
         </div>
       </div>
 
-      {/* Right panel: Article viewer or composer */}
-      <div className="w-1/2 flex flex-col h-full overflow-hidden">
+      {/* Right panel: Article viewer or composer — full width on mobile */}
+      <div className={`md:w-1/2 flex flex-col h-full overflow-hidden ${showMobileDetail ? 'flex' : 'hidden md:flex'}`}>
         {showComposer ? (
           /* Composer */
           <form onSubmit={onPostNews} className="flex-1 flex flex-col p-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-              {selectedArticle ? `Reply to: ${selectedArticle.title}` : 'Post New Article'}
-            </h3>
+            <div className="flex items-center gap-2 mb-4">
+              <button
+                type="button"
+                onClick={() => { onToggleComposer(); }}
+                className="md:hidden text-sm text-blue-600 dark:text-blue-400"
+              >
+                ← Back
+              </button>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                {selectedArticle ? `Reply to: ${selectedArticle.title}` : 'Post New Article'}
+              </h3>
+            </div>
             <input
               type="text"
               value={composerTitle}
@@ -214,6 +228,14 @@ export default function NewsTab({
           /* Article viewer */
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="border-b border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-800">
+              {onClearSelectedArticle && (
+                <button
+                  onClick={onClearSelectedArticle}
+                  className="md:hidden text-sm text-blue-600 dark:text-blue-400 mb-2"
+                >
+                  ← Back to articles
+                </button>
+              )}
               <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                 {selectedArticle.title}
               </h2>

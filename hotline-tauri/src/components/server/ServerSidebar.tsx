@@ -21,7 +21,7 @@ export default function ServerSidebar({
   unreadCounts,
 }: ServerSidebarProps) {
   return (
-    <div className="w-[200px] bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+    <div className="hidden md:flex w-[200px] bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex-col">
       {/* Tab navigation */}
       <div className="flex flex-col gap-1 p-2">
         <button

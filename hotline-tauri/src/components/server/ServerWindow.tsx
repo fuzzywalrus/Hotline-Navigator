@@ -11,6 +11,7 @@ import NewsTab from '../news/NewsTab';
 import ServerBanner from './ServerBanner';
 import ServerHeader from './ServerHeader';
 import ServerSidebar from './ServerSidebar';
+import MobileTabBar from './MobileTabBar';
 import TransferList from '../transfers/TransferList';
 import NotificationLog from '../notifications/NotificationLog';
 import { ServerInfo, ConnectionStatus } from '../../types';
@@ -138,11 +139,16 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
 
   // Request file list when Files tab is activated or path changes
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
-  
+  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleFileListReceived = (path: string[]) => {
     // Clear loading state when file list arrives for the current path
     if (JSON.stringify(path) === JSON.stringify(currentPath)) {
       setIsLoadingFiles(false);
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+        loadingTimeoutRef.current = null;
+      }
     }
   };
 
@@ -222,7 +228,16 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     if (activeTab === 'files') {
       // Set loading state immediately to prevent race conditions
       setIsLoadingFiles(true);
-      
+
+      // Safety timeout: if server never responds, unblock the UI after 10s
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+      }
+      loadingTimeoutRef.current = setTimeout(() => {
+        setIsLoadingFiles(false);
+        loadingTimeoutRef.current = null;
+      }, 10_000);
+
       // Check cache first for instant display
       const cached = getFileCache(serverId, currentPath);
       if (cached) {
@@ -238,20 +253,60 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
         .catch((error) => {
           console.error('Failed to get file list:', error);
           setIsLoadingFiles(false);
+          if (loadingTimeoutRef.current) {
+            clearTimeout(loadingTimeoutRef.current);
+            loadingTimeoutRef.current = null;
+          }
         });
     }
+
+    return () => {
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+        loadingTimeoutRef.current = null;
+      }
+    };
   }, [activeTab, currentPath, serverId, getFileCache, setFiles]);
 
   // Pre-fetch file listings when connected
   useEffect(() => {
     if (users.length > 0 && fileCacheDepth > 0) {
       let cancelled = false;
-      
+      const cleanups: Array<() => void> = [];
+
+      // Wait for a specific path's file list via a one-shot event listener
+      const waitForFileList = (targetPath: string[]): Promise<FileItem[]> => {
+        const targetKey = targetPath.join('/');
+        return new Promise((resolve, reject) => {
+          // Set a timeout so we don't wait forever
+          const timeout = setTimeout(() => {
+            cleanup();
+            reject(new Error(`Timeout waiting for file list: ${targetKey}`));
+          }, 5_000);
+
+          const unlistenPromise = listen<{ files: FileItem[]; path: string[] }>(
+            `file-list-${serverId}`,
+            (event) => {
+              if (event.payload.path.join('/') === targetKey) {
+                cleanup();
+                resolve(event.payload.files);
+              }
+            }
+          );
+
+          const cleanup = () => {
+            clearTimeout(timeout);
+            unlistenPromise.then((fn) => fn()).catch(() => {});
+          };
+          cleanups.push(cleanup);
+        });
+      };
+
       const visited = new Set<string>();
       const prefetchFiles = async (path: string[], depth: number): Promise<void> => {
         if (depth < 0 || cancelled) return;
 
-        // Guard against cycles (e.g. server returns a subfolder with the same name as its parent)
+        // Guard against cycles
         const pathKey = path.join('/');
         if (visited.has(pathKey)) return;
         visited.add(pathKey);
@@ -259,7 +314,6 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
         // Check if already cached
         const cached = getFileCache(serverId, path);
         if (cached) {
-          // Already cached, recurse into folders
           for (const file of cached) {
             if (file.isFolder && !cancelled) {
               await prefetchFiles([...path, file.name], depth - 1);
@@ -268,31 +322,21 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
           return;
         }
 
-        // Fetch this path and wait for the event
+        // Set up event listener BEFORE sending the request to avoid race
         try {
-          await invoke('get_file_list', {
-            serverId,
-            path,
-          });
+          const filesPromise = waitForFileList(path);
+          await invoke('get_file_list', { serverId, path });
+          const files = await filesPromise;
 
-          // Wait for the file list event to arrive and be cached
-          let attempts = 0;
-          while (attempts < 50 && !cancelled) {
-            await new Promise(resolve => setTimeout(resolve, 50));
-            const cached = getFileCache(serverId, path);
-            if (cached) {
-              // Now recurse into folders
-              for (const file of cached) {
-                if (file.isFolder && !cancelled) {
-                  await prefetchFiles([...path, file.name], depth - 1);
-                }
-              }
-              return;
+          for (const file of files) {
+            if (file.isFolder && !cancelled) {
+              await prefetchFiles([...path, file.name], depth - 1);
             }
-            attempts++;
           }
         } catch (error) {
-          console.error(`Failed to prefetch files at ${path.join('/')}:`, error);
+          if (!cancelled) {
+            console.error(`Failed to prefetch files at ${path.join('/')}:`, error);
+          }
         }
       };
 
@@ -301,6 +345,10 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
 
       return () => {
         cancelled = true;
+        // Clean up any pending listeners
+        for (const cleanup of cleanups) {
+          cleanup();
+        }
       };
     }
   }, [serverId, users.length, fileCacheDepth, getFileCache]);
@@ -591,6 +639,17 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
         onShowNotificationLog={() => setShowNotificationLog(true)}
       />
 
+      {/* Mobile section tabs (above content on mobile) */}
+      <MobileTabBar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        users={users}
+        onUserClick={handleUserClick}
+        onUserRightClick={handleUserRightClick}
+        onOpenMessageDialog={handleOpenMessageDialog}
+        unreadCounts={unreadCounts}
+      />
+
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
         <ServerSidebar
@@ -652,6 +711,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
               onNewsBack={handleNewsBackWrapper}
               onNavigateNews={handleNavigateNewsWrapper}
               onSelectArticle={handleSelectArticleWrapper}
+              onClearSelectedArticle={() => setSelectedArticle(null)}
               onToggleComposer={() => setShowComposer(!showComposer)}
               onComposerTitleChange={setComposerTitle}
               onComposerBodyChange={setComposerBody}
@@ -705,6 +765,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
             )}
           </div>
         </div>
+
       </div>
 
       {/* User Info Dialog */}

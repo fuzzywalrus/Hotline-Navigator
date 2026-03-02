@@ -425,6 +425,16 @@ impl HotlineClient {
             }
         }
 
+        // Clean up pending state
+        {
+            let mut paths = self.file_list_paths.write().await;
+            paths.clear();
+        }
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.clear();
+        }
+
         let mut status = self.status.lock().await;
         *status = ConnectionStatus::Disconnected;
         let _ = self.event_tx.send(HotlineEvent::StatusChanged(ConnectionStatus::Disconnected));
@@ -576,23 +586,26 @@ impl HotlineClient {
                         }
                     }
 
-                    // Send file list event if we parsed any files
-                    if has_file_info {
-                        // Get the path for this transaction
+                    // Check if this reply corresponds to a file list request
+                    // (even if empty — an empty folder has zero FileNameWithInfo fields)
+                    let is_file_list_reply = {
+                        let paths = file_list_paths.read().await;
+                        paths.contains_key(&transaction.id)
+                    };
+
+                    if is_file_list_reply {
                         let path = {
-                            let paths = file_list_paths.read().await;
-                            paths.get(&transaction.id).cloned().unwrap_or_default()
-                        };
-                        // Remove the path from tracking
-                        {
                             let mut paths = file_list_paths.write().await;
-                            paths.remove(&transaction.id);
-                        }
+                            paths.remove(&transaction.id).unwrap_or_default()
+                        };
                         let _ = event_tx.send(HotlineEvent::FileList { files, path });
+                    } else if has_file_info {
+                        // Fallback: file info fields found but no tracked path
+                        let _ = event_tx.send(HotlineEvent::FileList { files, path: Vec::new() });
                     }
 
                     // If it's not a user/file list reply, forward to pending transaction handlers
-                    if !has_user_info && !has_file_info {
+                    if !has_user_info && !is_file_list_reply && !has_file_info {
                         // Remove transaction from pending and get the sender
                         // Do this quickly to minimize lock time
                         let tx_opt = {

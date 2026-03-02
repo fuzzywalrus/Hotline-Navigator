@@ -51,8 +51,8 @@ export default function TabBar() {
               setActiveTab(tab.id);
             }}
             className={`
-              flex items-center gap-2 px-4 h-full cursor-pointer border-r border-gray-200 dark:border-gray-700
-              transition-colors min-w-[120px] max-w-[240px]
+              flex items-center gap-1.5 md:gap-2 px-2 md:px-4 h-full cursor-pointer border-r border-gray-200 dark:border-gray-700
+              transition-colors min-w-[80px] md:min-w-[120px] max-w-[240px]
               ${activeTabId === tab.id
                 ? 'bg-white dark:bg-gray-700 border-b-2 border-b-blue-500 dark:border-b-purple-500 text-gray-900 dark:text-white'
                 : 'bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
