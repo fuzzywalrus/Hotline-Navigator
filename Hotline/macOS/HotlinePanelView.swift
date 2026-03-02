@@ -140,11 +140,13 @@ struct HotlinePanelView: View {
         .frame(width: 20, height: 20)
         .help("File Transfers")
 
-        SettingsLink(label: {
+        Button {
+          self.openWindow(id: "settings")
+        } label: {
           Image("Section Settings")
             .resizable()
             .scaledToFit()
-        })
+        }
         .buttonStyle(.plain)
         .frame(width: 20, height: 20)
         .help("Settings")

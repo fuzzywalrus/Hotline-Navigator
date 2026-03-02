@@ -64,6 +64,7 @@ enum PrefsKeys: String {
   case playChatInvitationSound = "play chat invitation sound"
   case showPrivateMessageNotifications = "show private message notifications"
   case showWatchWordNotifications = "show watch word notifications"
+  case showTransferNotifications = "show transfer notifications"
   case showMentionNotifications = "show mention notifications"
   case showBannerToolbar = "show banner toolbar"
   case showJoinLeaveMessages = "show join leave messages"
@@ -95,6 +96,7 @@ class Prefs {
       PrefsKeys.playErrorSound.rawValue: true,
       PrefsKeys.playChatInvitationSound.rawValue: true,
       PrefsKeys.showPrivateMessageNotifications.rawValue: true,
+      PrefsKeys.showTransferNotifications.rawValue: true,
       PrefsKeys.showWatchWordNotifications.rawValue: true,
       PrefsKeys.showMentionNotifications.rawValue: true,
       PrefsKeys.showBannerToolbar.rawValue: true,
@@ -119,6 +121,7 @@ class Prefs {
     self.playErrorSound = UserDefaults.standard.bool(forKey: PrefsKeys.playErrorSound.rawValue)
     self.playChatInvitationSound = UserDefaults.standard.bool(forKey: PrefsKeys.playChatInvitationSound.rawValue)
     self.showPrivateMessageNotifications = UserDefaults.standard.bool(forKey: PrefsKeys.showPrivateMessageNotifications.rawValue)
+    self.showTransferNotifications = UserDefaults.standard.bool(forKey: PrefsKeys.showTransferNotifications.rawValue)
     self.showWatchWordNotifications = UserDefaults.standard.bool(forKey: PrefsKeys.showWatchWordNotifications.rawValue)
     self.showMentionNotifications = UserDefaults.standard.bool(forKey: PrefsKeys.showMentionNotifications.rawValue)
     self.showBannerToolbar = UserDefaults.standard.bool(forKey: PrefsKeys.showBannerToolbar.rawValue)
@@ -203,6 +206,10 @@ class Prefs {
   
   var showPrivateMessageNotifications: Bool {
     didSet { UserDefaults.standard.set(self.showPrivateMessageNotifications, forKey: PrefsKeys.showPrivateMessageNotifications.rawValue) }
+  }
+
+  var showTransferNotifications: Bool {
+    didSet { UserDefaults.standard.set(self.showTransferNotifications, forKey: PrefsKeys.showTransferNotifications.rawValue) }
   }
 
   var showWatchWordNotifications: Bool {

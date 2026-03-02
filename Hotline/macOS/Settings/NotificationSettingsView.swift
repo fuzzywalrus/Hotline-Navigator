@@ -8,8 +8,9 @@ struct NotificationSettingsView: View {
       Toggle("Private Messages", isOn: $preferences.showPrivateMessageNotifications)
       Toggle("Mentions", isOn: $preferences.showMentionNotifications)
       Toggle("Highlighted Words", isOn: $preferences.showWatchWordNotifications)
+      Toggle("File Transfers", isOn: $preferences.showTransferNotifications)
     }
     .formStyle(.grouped)
-    .frame(width: 392, height: 200)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
   }
 }

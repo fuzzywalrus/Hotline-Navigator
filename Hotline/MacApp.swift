@@ -93,6 +93,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         AppState.shared.activeServerState?.selection = .chat
         NSApplication.shared.activate()
       }
+    } else if let type = userInfo["type"] as? String, type == "transfer" {
+      Task { @MainActor in
+        AppState.openTransfersWindow?()
+        NSApplication.shared.activate()
+      }
     } else if let userID = userInfo["userID"] as? UInt16 {
       Task { @MainActor in
         AppState.shared.activeServerState?.selection = .user(userID: userID)
@@ -159,6 +164,9 @@ struct Application: App {
     .keyboardShortcut(.init("R"), modifiers: .command)
     .onChange(of: AppLaunchState.shared.launchState) {
       if AppLaunchState.shared.launchState == .launched {
+        AppState.openTransfersWindow = {
+          self.openWindow(id: "transfers")
+        }
         if Prefs.shared.showBannerToolbar {
           self.showBannerWindow()
         }
@@ -228,6 +236,12 @@ struct Application: App {
             await AppUpdate.shared.checkForUpdatesManually()
           }
         }
+      }
+      CommandGroup(replacing: .appSettings) {
+        Button("Settings...", systemImage: "gearshape") {
+          openWindow(id: "settings")
+        }
+        .keyboardShortcut(",", modifiers: .command)
       }
     }
     
@@ -354,9 +368,12 @@ struct Application: App {
     }
     
     // MARK: Settings Window
-    Settings {
+    Window("Settings", id: "settings") {
       SettingsView()
+        .frame(width: 570, height: 500)
     }
+    .windowResizability(.contentSize)
+    .commandsRemoved()
 
     // MARK: Transfers Window
     Window("Transfers", id: "transfers") {

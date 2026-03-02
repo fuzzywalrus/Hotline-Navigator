@@ -1,5 +1,33 @@
 import SwiftUI
 
+private struct SoundToggleRow: View {
+  let label: String
+  @Binding var isOn: Bool
+  let sound: SoundEffect
+
+  init(_ label: String, isOn: Binding<Bool>, sound: SoundEffect) {
+    self.label = label
+    self._isOn = isOn
+    self.sound = sound
+  }
+
+  var body: some View {
+    HStack {
+      Text(self.label)
+      Spacer()
+      Button {
+        SoundEffects.play(self.sound)
+      } label: {
+        Image(systemName: "speaker.wave.2")
+      }
+      .buttonStyle(.borderless)
+      Toggle("", isOn: self.$isOn)
+        .labelsHidden()
+        .fixedSize()
+    }
+  }
+}
+
 struct SoundSettingsView: View {
   var body: some View {
     @Bindable var preferences = Prefs.shared
@@ -8,32 +36,32 @@ struct SoundSettingsView: View {
       Toggle("Enable Sounds", isOn: $preferences.playSounds)
 
       Section("Sounds") {
-        Toggle("Chat", isOn: $preferences.playChatSound)
+        SoundToggleRow("Chat", isOn: $preferences.playChatSound, sound: .chatMessage)
           .disabled(!preferences.playSounds)
 
-        Toggle("File Transfers", isOn: $preferences.playFileTransferCompleteSound)
+        SoundToggleRow("File Transfers", isOn: $preferences.playFileTransferCompleteSound, sound: .transferComplete)
           .disabled(!preferences.playSounds)
 
-        Toggle("Private Message", isOn: $preferences.playPrivateMessageSound)
+        SoundToggleRow("Private Message", isOn: $preferences.playPrivateMessageSound, sound: .serverMessage)
           .disabled(!preferences.playSounds)
 
-        Toggle("Join", isOn: $preferences.playJoinSound)
+        SoundToggleRow("Join", isOn: $preferences.playJoinSound, sound: .userLogin)
           .disabled(!preferences.playSounds)
 
-        Toggle("Leave", isOn: $preferences.playLeaveSound)
+        SoundToggleRow("Leave", isOn: $preferences.playLeaveSound, sound: .userLogout)
           .disabled(!preferences.playSounds)
 
-        Toggle("Logged in", isOn: $preferences.playLoggedInSound)
+        SoundToggleRow("Logged in", isOn: $preferences.playLoggedInSound, sound: .loggedIn)
           .disabled(!preferences.playSounds)
 
-        Toggle("Error", isOn: $preferences.playErrorSound)
+        SoundToggleRow("Error", isOn: $preferences.playErrorSound, sound: .error)
           .disabled(!preferences.playSounds)
 
-        Toggle("Chat Invitation", isOn: $preferences.playChatInvitationSound)
+        SoundToggleRow("Chat Invitation", isOn: $preferences.playChatInvitationSound, sound: .serverMessage)
           .disabled(!preferences.playSounds)
       }
     }
     .formStyle(.grouped)
-    .frame(width: 392, height: 400)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
   }
 }

@@ -1,34 +1,51 @@
 import SwiftUI
 
 struct SettingsView: View {
-  private enum Tabs: Hashable {
-    case identity, appearance, general, chat, sound, notifications
+  private enum Section: Hashable {
+    case identity, general, chat, sound, notifications
   }
 
-  @State private var selectedTab: Tabs = .identity
+  @State private var selection: Section = .identity
+  private var preferences = Prefs.shared
 
   var body: some View {
-    TabView(selection: self.$selectedTab) {
-      Tab("General", systemImage: "gearshape", value: .general) {
-        GeneralSettingsView()
+    NavigationSplitView {
+      List(selection: self.$selection) {
+        Label {
+          Text(self.preferences.username.isEmpty ? "Identity" : self.preferences.username)
+        } icon: {
+          Image("Classic/\(self.preferences.userIconID)")
+            .interpolation(.none)
+        }
+        .tag(Section.identity)
+
+        Divider()
+
+        Label("General", systemImage: "gearshape")
+          .tag(Section.general)
+        Label("Chat", systemImage: "bubble.left")
+          .tag(Section.chat)
+        Label("Sounds", systemImage: "speaker.wave.3")
+          .tag(Section.sound)
+        Label("Notifications", systemImage: "bell")
+          .tag(Section.notifications)
       }
-      Tab("Identity", systemImage: "face.smiling", value: .identity) {
+      .listStyle(.sidebar)
+      .navigationSplitViewColumnWidth(180)
+    } detail: {
+      switch self.selection {
+      case .identity:
         IdentitySettingsView()
-      }
-      Tab("Appearance", systemImage: "paintbrush", value: .appearance) {
-        AppearanceSettingsView()
-      }
-      Tab("Chat", systemImage: "bubble.left", value: .chat) {
+      case .general:
+        GeneralSettingsView()
+      case .chat:
         ChatSettingsView()
-      }
-      Tab("Sounds", systemImage: "speaker.wave.3", value: .sound) {
+      case .sound:
         SoundSettingsView()
-      }
-      Tab("Notifications", systemImage: "bell", value: .notifications) {
+      case .notifications:
         NotificationSettingsView()
       }
     }
-    .tabViewStyle(.sidebarAdaptable)
   }
 }
 

@@ -1,8 +1,31 @@
 import SwiftUI
+import UserNotifications
 
 // MARK: - Files & Transfers
 
 extension HotlineState {
+
+  private func postTransferNotification(title: String, body: String, transfer: TransferInfo) {
+    #if os(macOS)
+    guard Prefs.shared.showTransferNotifications else { return }
+
+    let content = UNMutableNotificationContent()
+    content.title = title
+    content.body = body
+    if let serverName = transfer.serverName {
+      content.subtitle = serverName
+    }
+    content.sound = .default
+    content.userInfo = ["type": "transfer"]
+
+    let request = UNNotificationRequest(
+      identifier: "transfer-\(transfer.id)",
+      content: content,
+      trigger: nil
+    )
+    UNUserNotificationCenter.current().add(request)
+    #endif
+  }
 
   @discardableResult
   func getFileList(path: [String] = [], suppressErrors: Bool = false, preferCache: Bool = false) async throws -> [FileInfo]? {
@@ -233,6 +256,11 @@ extension HotlineState {
           transfer.downloadCallback?(transfer)
           fileURL.notifyDownloadFinished()
 
+          self?.postTransferNotification(title: "Download Complete", body: fileName, transfer: transfer)
+          if Prefs.shared.playSounds && Prefs.shared.playFileTransferCompleteSound {
+            SoundEffects.play(.transferComplete)
+          }
+
           print("HotlineState: Download complete - \(fileURL.path)")
 
         } catch is CancellationError {
@@ -243,6 +271,7 @@ extension HotlineState {
         } catch {
           // Mark as failed
           transfer.failed = true
+          self?.postTransferNotification(title: "Download Failed", body: fileName, transfer: transfer)
           print("HotlineState: Download failed - \(error)")
         }
 
@@ -360,6 +389,11 @@ extension HotlineState {
 
           folderURL.notifyDownloadFinished()
 
+          self?.postTransferNotification(title: "Download Complete", body: folderName, transfer: transfer)
+          if Prefs.shared.playSounds && Prefs.shared.playFileTransferCompleteSound {
+            SoundEffects.play(.transferComplete)
+          }
+
           print("HotlineState: Folder download complete - \(folderURL.path)")
 
         } catch is CancellationError {
@@ -368,6 +402,7 @@ extension HotlineState {
         } catch {
           // Mark as failed
           transfer.failed = true
+          self?.postTransferNotification(title: "Download Failed", body: folderName, transfer: transfer)
           print("HotlineState: Folder download failed - \(error)")
         }
 
@@ -502,6 +537,11 @@ extension HotlineState {
           // Call completion callback
           transfer.uploadCallback?(transfer)
 
+          self?.postTransferNotification(title: "Upload Complete", body: folderName, transfer: transfer)
+          if Prefs.shared.playSounds && Prefs.shared.playFileTransferCompleteSound {
+            SoundEffects.play(.transferComplete)
+          }
+
           print("HotlineState: Folder upload complete - \(folderName)")
 
         } catch is CancellationError {
@@ -510,6 +550,7 @@ extension HotlineState {
         } catch {
           // Mark as failed
           transfer.failed = true
+          self?.postTransferNotification(title: "Upload Failed", body: folderName, transfer: transfer)
           print("HotlineState: Folder upload failed - \(error)")
         }
 
@@ -629,6 +670,11 @@ extension HotlineState {
           // Call completion callback
           transfer.uploadCallback?(transfer)
 
+          self?.postTransferNotification(title: "Upload Complete", body: fileName, transfer: transfer)
+          if Prefs.shared.playSounds && Prefs.shared.playFileTransferCompleteSound {
+            SoundEffects.play(.transferComplete)
+          }
+
           print("HotlineState: Upload complete - \(fileName)")
 
         } catch is CancellationError {
@@ -637,6 +683,7 @@ extension HotlineState {
         } catch {
           // Mark as failed
           transfer.failed = true
+          self?.postTransferNotification(title: "Upload Failed", body: fileName, transfer: transfer)
           print("HotlineState: Upload failed - \(error)")
         }
 

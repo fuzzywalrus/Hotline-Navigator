@@ -109,7 +109,7 @@ struct ChatSettingsView: View {
       }
     }
     .formStyle(.grouped)
-    .frame(width: 392)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     .confirmationDialog(
       "Clear chat history?",
       isPresented: Binding(

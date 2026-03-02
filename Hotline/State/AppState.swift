@@ -12,6 +12,9 @@ final class AppState {
 
   }
   
+  /// Called from AppDelegate to open the Transfers window when a transfer notification is clicked.
+  static var openTransfersWindow: (() -> Void)?
+
   var bonjourState = BonjourState()
 
   var activeHotline: HotlineState? = nil
