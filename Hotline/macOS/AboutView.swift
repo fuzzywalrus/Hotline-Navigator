@@ -86,17 +86,17 @@ struct AboutView: View {
   }
   
   private var brandView: some View {
-    VStack(alignment: .center, spacing: 4) {
-      Spacer()
-      
-      Image("About Hotline")
+    VStack(alignment: .center, spacing: 0) {
+      InteractiveSpinningLogo(height: 200)
+        .frame(width: 240)
+        .pointerStyle(.grabIdle)
       
       Text("Hotline")
         .font(.system(size: 28))
         .fontWeight(.bold)
-        .padding(.top, 12)
         .kerning(-1.0)
         .foregroundColor(.white)
+        .padding(.bottom, 8)
       
       let appDetails = getAppVersionAndBuild()
       Button {
@@ -115,9 +115,7 @@ struct AboutView: View {
       }
       .buttonStyle(.plain)
       .buttonBorderShape(.capsule)
-      .padding(.bottom, 16)
-
-      Spacer()
+      .padding(.bottom, 40)
     }
     .frame(width: 250)
   }

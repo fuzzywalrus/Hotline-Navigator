@@ -1,194 +1,9 @@
 import SwiftUI
-import SceneKit
-
-class LogoSceneController {
-  var spinNode: SCNNode?
-  private var decelerationTimer: Timer?
-  private static let spinKey = "autoSpin"
-
-  func beginDrag() {
-    self.decelerationTimer?.invalidate()
-    self.spinNode?.removeAction(forKey: Self.spinKey)
-  }
-
-  func drag(deltaX: CGFloat) {
-    self.spinNode?.eulerAngles.y += CGFloat(deltaX * 0.01)
-  }
-
-  func endDrag(velocity: CGFloat) {
-    var clampedVelocity = max(-1500, min(1500, velocity))
-    let autoSpinVelocity: CGFloat = (.pi * 2) / (8.0 * 0.01)
-    let blendRate: CGFloat = 0.06
-    let interval: TimeInterval = 1.0 / 60.0
-
-    self.decelerationTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] timer in
-      guard let self = self, let spinNode = self.spinNode else {
-        timer.invalidate()
-        return
-      }
-
-      clampedVelocity += (autoSpinVelocity - clampedVelocity) * blendRate
-      spinNode.eulerAngles.y += CGFloat(clampedVelocity * CGFloat(interval) * 0.01)
-
-      if abs(clampedVelocity - autoSpinVelocity) < 1.0 {
-        timer.invalidate()
-        self.startAutoSpin()
-      }
-    }
-  }
-
-  func startAutoSpin() {
-    let spin = SCNAction.repeatForever(
-      SCNAction.rotateBy(x: 0, y: .pi * 2, z: 0, duration: 8)
-    )
-    self.spinNode?.runAction(spin, forKey: Self.spinKey)
-  }
-
-  func startWithFastSpin() {
-    let autoSpinVelocity: CGFloat = (.pi * 2) / (8.0 * 0.01)
-    let initialVelocity: CGFloat = autoSpinVelocity * 4.0
-    let blendRate: CGFloat = 0.04
-    let interval: TimeInterval = 1.0 / 60.0
-
-    var currentVelocity = initialVelocity
-
-    self.decelerationTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] timer in
-      guard let self = self, let spinNode = self.spinNode else {
-        timer.invalidate()
-        return
-      }
-
-      currentVelocity += (autoSpinVelocity - currentVelocity) * blendRate
-      spinNode.eulerAngles.y += CGFloat(currentVelocity * CGFloat(interval) * 0.01)
-
-      if abs(currentVelocity - autoSpinVelocity) < 1.0 {
-        timer.invalidate()
-        self.startAutoSpin()
-      }
-    }
-  }
-}
-
-struct NonDraggableArea: NSViewRepresentable {
-  func makeNSView(context: Context) -> NSView {
-    let view = NonDraggableNSView()
-    view.wantsLayer = true
-    view.layer?.backgroundColor = .clear
-    return view
-  }
-  func updateNSView(_ nsView: NSView, context: Context) {}
-}
-
-class NonDraggableNSView: NSView {
-  override var mouseDownCanMoveWindow: Bool { false }
-}
-
-struct SpinningLogoView: NSViewRepresentable {
-  let controller: LogoSceneController
-
-  func makeNSView(context: Context) -> SCNView {
-    let scnView = SCNView()
-    scnView.backgroundColor = .clear
-    scnView.allowsCameraControl = false
-    scnView.autoenablesDefaultLighting = false
-    scnView.antialiasingMode = .multisampling4X
-
-    guard let url = Bundle.main.url(forResource: "Logo", withExtension: "obj"),
-          let scene = try? SCNScene(url: url) else {
-      return scnView
-    }
-    scene.background.contents = NSColor.clear
-    scnView.scene = scene
-
-    // Reparent model nodes into a container so we can fix orientation
-    let containerNode = SCNNode()
-    let modelNodes = scene.rootNode.childNodes.filter { $0.light == nil }
-    for node in modelNodes {
-      node.removeFromParentNode()
-      containerNode.addChildNode(node)
-    }
-    // Stand the model upright (OBJ is flat on XZ plane)
-    containerNode.eulerAngles.x = -.pi / 2
-
-    let spinNode = SCNNode()
-    spinNode.addChildNode(containerNode)
-    scene.rootNode.addChildNode(spinNode)
-    self.controller.spinNode = spinNode
-
-    // Apply white material with custom shading
-    containerNode.enumerateChildNodes { node, _ in
-      if let geometry = node.geometry {
-        let material = SCNMaterial()
-        material.diffuse.contents = NSColor.white
-        material.lightingModel = .constant
-        material.shaderModifiers = [
-          .fragment: """
-            vec3 viewDir = normalize(scn_frame.inverseViewTransform[3].xyz - _surface.position);
-            vec3 envRed = vec3(0.882, 0.0, 0.0);
-            vec3 darkRed = vec3(0.14, 0.0, 0.0);
-
-            // Directional light
-            vec3 lightDir = normalize(vec3(0.3, 0.5, 1.0));
-            float NdotL = max(dot(_surface.normal, lightDir), 0.0);
-            float lighting = smoothstep(0.0, 1.0, NdotL);
-
-            // Fresnel — edges pick up environment red
-            float fresnel = 1.0 - max(dot(_surface.normal, viewDir), 0.0);
-            fresnel = pow(fresnel, 2.0);
-
-            // Base: lit areas are white, unlit areas are dark red
-            vec3 baseColor = mix(darkRed, vec3(1.0), lighting);
-
-            // Blend in environment red at edges
-            baseColor = mix(baseColor, envRed, fresnel * 0.7);
-
-            // Specular glint
-            vec3 halfVec = normalize(lightDir + viewDir);
-            float spec = pow(max(dot(_surface.normal, halfVec), 0.0), 60.0);
-            baseColor += vec3(1.0) * spec * 0.4;
-
-            _output.color.rgb = baseColor;
-          """
-        ]
-        geometry.materials = [material]
-      }
-    }
-
-    // Start with a fast spin that decelerates to natural speed
-    self.controller.startWithFastSpin()
-
-    // Camera — pulled back to avoid clipping
-    let cameraNode = SCNNode()
-    cameraNode.camera = SCNCamera()
-    cameraNode.camera!.fieldOfView = 40
-    cameraNode.position = SCNVector3(0, 0, 10)
-    cameraNode.look(at: SCNVector3Zero)
-    scene.rootNode.addChildNode(cameraNode)
-    scnView.pointOfView = cameraNode
-
-    // Directional light from camera direction
-    let directionalLight = SCNNode()
-    directionalLight.light = SCNLight()
-    directionalLight.light!.type = .directional
-    directionalLight.light!.intensity = 1000
-    directionalLight.light!.color = NSColor.white
-    directionalLight.eulerAngles = SCNVector3(0, 0, 0)
-    scene.rootNode.addChildNode(directionalLight)
-
-    return scnView
-  }
-
-  func updateNSView(_ nsView: SCNView, context: Context) {}
-}
 
 struct OnboardingView: View {
   @Environment(\.dismissWindow) private var dismissWindow
   @Environment(\.openWindow) private var openWindow
 
-  @State private var logoController = LogoSceneController()
-  @State private var lastDragX: CGFloat = 0
-  @State private var lastDragTime: TimeInterval = 0
-  @State private var dragVelocity: CGFloat = 0
   @State private var step: Int = 0
   @State private var username: String = Prefs.shared.username == "guest" ? "" : Prefs.shared.username
   @State private var selectedIconID: Int = Prefs.shared.userIconID
@@ -235,7 +50,7 @@ struct OnboardingView: View {
       self.navigationArea
         .padding(.bottom, 24)
     }
-    .frame(width: 480, height: 520)
+    .frame(width: 420, height: 540)
     .background {
       Color.hotlineRed.ignoresSafeArea()
       RadialGradient(
@@ -276,45 +91,9 @@ struct OnboardingView: View {
 
   private var welcomeStep: some View {
     VStack(spacing: 0) {
-      SpinningLogoView(controller: self.logoController)
-        .frame(width: 200, height: 350)
-        .overlay(NonDraggableArea())
+      InteractiveSpinningLogo(height: 350)
+        .frame(width: 200)
         .pointerStyle(.grabIdle)
-        .gesture(
-          DragGesture(minimumDistance: 2)
-            .onChanged { value in
-              let now = CACurrentMediaTime()
-              let dt = now - self.lastDragTime
-              let deltaX = value.translation.width - self.lastDragX
-
-              if self.lastDragX == 0 && self.lastDragTime == 0 {
-                // First drag event
-                self.logoController.beginDrag()
-              }
-
-              self.logoController.drag(deltaX: deltaX)
-
-              if dt > 0 {
-                let instantVelocity = deltaX / CGFloat(dt)
-                self.dragVelocity = self.dragVelocity * 0.1 + instantVelocity * 0.9
-              }
-
-              self.lastDragX = value.translation.width
-              self.lastDragTime = now
-            }
-            .onEnded { _ in
-              self.logoController.endDrag(velocity: self.dragVelocity)
-              self.lastDragX = 0
-              self.lastDragTime = 0
-              self.dragVelocity = 0
-            }
-        )
-
-//      Text("Welcome to Hotline")
-//        .font(.system(size: 24))
-//        .fontWeight(.semibold)
-//        .kerning(-1.0)
-//        .foregroundStyle(.white)
     }
   }
 
@@ -333,12 +112,11 @@ struct OnboardingView: View {
         .foregroundStyle(.white)
 
       Text("""
-          Hotline is a network of internet communities run by individuals like yourself all over the world. Spaces where people chat, share files, and post thoughts together in newsgroups.
+          Hotline is a network of internet communities run by individuals all over the world. Spaces where people chat, share files, and post thoughts together in newsgroups.
           
-          These communities are tracked and made discoverable through Hotline Trackers which are also run by individuals.
+          These communities optionally make themselves discoverable through Hotline Trackers which are also independently operated.
           
-          No company owns this. No subscriptions or ads.
-          Simple and free. It's Hotline.
+          No company owns this. There is no business model. Simple and free. It's Hotline.
           """)
         .font(.system(size: 15))
         .foregroundStyle(.white.opacity(0.7))
@@ -458,9 +236,9 @@ struct OnboardingView: View {
   }
 
   private var navigationArea: some View {
-    VStack(spacing: 16) {
-      
       HStack {
+        Spacer()
+        
         Button {
           if self.step < self.totalSteps - 1 {
             withAnimation(.easeInOut(duration: 0.3)) {
@@ -485,10 +263,11 @@ struct OnboardingView: View {
         .buttonBorderShape(.capsule)
         .glassProminentButtonStyle()
         .tint(Color.white.opacity(0.7))
+        
+        Spacer()
       }
-
-      self.dotIndicators
-    }
+    
+      .padding(.bottom, 24)
   }
 
   private var dotIndicators: some View {

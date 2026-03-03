@@ -16,6 +16,7 @@
 		DA20BBE12BF5237600B94E7C /* Bookmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA20BBE02BF5237600B94E7C /* Bookmark.swift */; };
 		DA22F51F2F56477400E2EA02 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA22F51E2F56477400E2EA02 /* OnboardingView.swift */; };
 		DA22F5212F56826C00E2EA02 /* Logo.obj in Resources */ = {isa = PBXBuildFile; fileRef = DA22F5202F56826C00E2EA02 /* Logo.obj */; };
+		DA22F5232F5748AE00E2EA02 /* SpinningLogoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA22F5222F5748AE00E2EA02 /* SpinningLogoView.swift */; };
 		DA2863D82B37AD1C00A7D050 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA2863D72B37AD1C00A7D050 /* SettingsView.swift */; platformFilters = (macos, ); };
 		DA2863DA2B37BF6E00A7D050 /* Preferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA2863D92B37BF6E00A7D050 /* Preferences.swift */; };
 		DA2863DD2B3E8B7000A7D050 /* FilePreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA2863DC2B3E8B7000A7D050 /* FilePreview.swift */; };
@@ -158,6 +159,7 @@
 		DA20BBE02BF5237600B94E7C /* Bookmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bookmark.swift; sourceTree = "<group>"; };
 		DA22F51E2F56477400E2EA02 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		DA22F5202F56826C00E2EA02 /* Logo.obj */ = {isa = PBXFileReference; lastKnownFileType = text; path = Logo.obj; sourceTree = "<group>"; };
+		DA22F5222F5748AE00E2EA02 /* SpinningLogoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpinningLogoView.swift; sourceTree = "<group>"; };
 		DA2863D72B37AD1C00A7D050 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		DA2863D92B37BF6E00A7D050 /* Preferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Preferences.swift; sourceTree = "<group>"; };
 		DA2863DB2B37DBE000A7D050 /* Hotline.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Hotline.entitlements; sourceTree = "<group>"; };
@@ -622,6 +624,7 @@
 				DA5268A72EB0812E00DCB941 /* Accounts */,
 				DA52689A2EB0737400DCB941 /* Settings */,
 				DA22F51E2F56477400E2EA02 /* OnboardingView.swift */,
+				DA22F5222F5748AE00E2EA02 /* SpinningLogoView.swift */,
 			);
 			path = macOS;
 			sourceTree = "<group>";
@@ -847,6 +850,7 @@
 				DA3429AE2EB9C0280010784E /* HotlineFileUploadClient.swift in Sources */,
 				DAAEE66D2B475F1400A5BA07 /* PreviewFileInfo.swift in Sources */,
 				DAB4D8842B4CABEF0048A05C /* Extensions.swift in Sources */,
+				DA22F5232F5748AE00E2EA02 /* SpinningLogoView.swift in Sources */,
 				DA0D698D2B1E7CF700C71DF5 /* UsersView.swift in Sources */,
 				DAE735052B3218D8000C56F6 /* NewsView.swift in Sources */,
 				DA5268A52EB0743000DCB941 /* FileItemView.swift in Sources */,
