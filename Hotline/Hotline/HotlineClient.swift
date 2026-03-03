@@ -102,7 +102,7 @@ public struct HotlineServerInfo: Sendable {
 /// let client = try await HotlineClient.connect(
 ///   host: "server.example.com",
 ///   port: 5500,
-///   login: HotlineLogin(login: "guest", password: "", username: "John", iconID: 414)
+///   login: HotlineLogin(login: "unnamed", password: "", username: "John", iconID: 414)
 /// )
 ///
 /// // Listen for events

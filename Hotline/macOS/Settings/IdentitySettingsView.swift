@@ -11,7 +11,7 @@ struct IdentitySettingsView: View {
     @Bindable var preferences = Prefs.shared
 
     Form {
-      TextField("Your Name", text: self.$username, prompt: Text("guest"))
+      TextField("Nickname", text: self.$username, prompt: Text("unnamed"))
 
       Section("Icon") {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 40), spacing: 0)], spacing: 0) {
@@ -58,6 +58,7 @@ struct IdentitySettingsView: View {
     }
     .onChange(of: self.username) { oldValue, newValue in
       self.usernameChanged = true
+      preferences.username = newValue
     }
     .onReceive(self.saveTimer) { _ in
       if self.usernameChanged {

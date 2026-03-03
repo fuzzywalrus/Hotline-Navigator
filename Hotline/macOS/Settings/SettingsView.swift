@@ -21,14 +21,34 @@ struct SettingsView: View {
 
         Divider()
 
-        Label("General", systemImage: "gearshape")
-          .tag(Section.general)
-        Label("Chat", systemImage: "bubble.left")
-          .tag(Section.chat)
-        Label("Sounds", systemImage: "speaker.wave.3")
-          .tag(Section.sound)
-        Label("Notifications", systemImage: "bell")
-          .tag(Section.notifications)
+        Label {
+          Text("General")
+        } icon: {
+          Image("Settings/General")
+            .shadow(color: .black.opacity(0.08), radius: 1, y: 1)
+        }
+        .tag(Section.general)
+        Label {
+          Text("Chat")
+        } icon: {
+          Image("Settings/Chat")
+            .shadow(color: .black.opacity(0.08), radius: 1, y: 1)
+        }
+        .tag(Section.chat)
+        Label {
+          Text("Sounds")
+        } icon: {
+          Image("Settings/Sounds")
+            .shadow(color: .black.opacity(0.08), radius: 1, y: 1)
+        }
+        .tag(Section.sound)
+        Label {
+          Text("Notifications")
+        } icon: {
+          Image("Settings/Notifications")
+            .shadow(color: .black.opacity(0.08), radius: 1, y: 1)
+        }
+        .tag(Section.notifications)
       }
       .listStyle(.sidebar)
       .navigationSplitViewColumnWidth(180)

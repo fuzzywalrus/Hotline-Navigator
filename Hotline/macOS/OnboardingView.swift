@@ -5,7 +5,7 @@ struct OnboardingView: View {
   @Environment(\.openWindow) private var openWindow
 
   @State private var step: Int = 0
-  @State private var username: String = Prefs.shared.username == "guest" ? "" : Prefs.shared.username
+  @State private var username: String = Prefs.shared.username == "unnamed" ? "" : Prefs.shared.username
   @State private var selectedIconID: Int = Prefs.shared.userIconID
   @State private var hoveredIconID: Int = -1
   @State private var showUsernameAlert: Bool = false

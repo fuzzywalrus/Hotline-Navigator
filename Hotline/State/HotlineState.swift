@@ -387,7 +387,7 @@ class HotlineState: Equatable {
     }
   }
   var serverTitle: String = ""
-  var username: String = "guest"
+  var username: String = "unnamed"
   var iconID: Int = 414
   var access: HotlineUserAccessOptions?
   var agreed: Bool = false

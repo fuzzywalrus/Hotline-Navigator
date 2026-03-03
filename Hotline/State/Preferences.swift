@@ -71,7 +71,6 @@ enum PrefsKeys: String {
   case downloadFolderBookmark = "download folder bookmark"
   case filesViewMode = "files view mode"
   case watchWords = "watch words"
-  case appIcon = "app icon"
   case hasCompletedOnboarding = "has completed onboarding"
 }
 
@@ -81,7 +80,7 @@ class Prefs {
   
   private init() {
     UserDefaults.standard.register(defaults:[
-      PrefsKeys.username.rawValue: "guest",
+      PrefsKeys.username.rawValue: "unnamed",
       PrefsKeys.userIconID.rawValue: 191,
       PrefsKeys.refusePrivateMessages.rawValue: false,
       PrefsKeys.refusePrivateChat.rawValue: false,
@@ -103,7 +102,6 @@ class Prefs {
       PrefsKeys.showBannerToolbar.rawValue: true,
       PrefsKeys.showJoinLeaveMessages.rawValue: true,
       PrefsKeys.filesViewMode.rawValue: "grid",
-      PrefsKeys.appIcon.rawValue: "",
       PrefsKeys.hasCompletedOnboarding.rawValue: false,
     ])
     
@@ -131,7 +129,6 @@ class Prefs {
     self.downloadFolderBookmark = UserDefaults.standard.data(forKey: PrefsKeys.downloadFolderBookmark.rawValue)
     self.filesViewMode = UserDefaults.standard.string(forKey: PrefsKeys.filesViewMode.rawValue)!
 
-    self.appIcon = UserDefaults.standard.string(forKey: PrefsKeys.appIcon.rawValue)!
     self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: PrefsKeys.hasCompletedOnboarding.rawValue)
 
     if let watchWordsData = UserDefaults.standard.data(forKey: PrefsKeys.watchWords.rawValue) {
@@ -241,10 +238,6 @@ class Prefs {
         UserDefaults.standard.set(encoded, forKey: PrefsKeys.watchWords.rawValue)
       }
     }
-  }
-
-  var appIcon: String {
-    didSet { UserDefaults.standard.set(self.appIcon, forKey: PrefsKeys.appIcon.rawValue) }
   }
 
   var hasCompletedOnboarding: Bool {

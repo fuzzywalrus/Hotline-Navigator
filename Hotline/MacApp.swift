@@ -61,8 +61,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
       AppState.shared.cloudKitReady = true
     }
 
-    AppIconManager.apply()
-
     Task {
       await AppUpdate.shared.checkForUpdatesOnLaunch()
     }

@@ -1,17 +1,17 @@
 {
   "images" : [
     {
-      "filename" : "Icon.png",
+      "filename" : "settings-chat.png",
       "idiom" : "universal",
       "scale" : "1x"
     },
     {
-      "filename" : "Icon@2x.png",
+      "filename" : "settings-chat@2x.png",
       "idiom" : "universal",
       "scale" : "2x"
     },
     {
-      "filename" : "Icon@3x.png",
+      "filename" : "settings-chat@3x.png",
       "idiom" : "universal",
       "scale" : "3x"
     }
