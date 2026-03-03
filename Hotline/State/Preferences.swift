@@ -72,6 +72,7 @@ enum PrefsKeys: String {
   case filesViewMode = "files view mode"
   case watchWords = "watch words"
   case appIcon = "app icon"
+  case hasCompletedOnboarding = "has completed onboarding"
 }
 
 @Observable
@@ -103,6 +104,7 @@ class Prefs {
       PrefsKeys.showJoinLeaveMessages.rawValue: true,
       PrefsKeys.filesViewMode.rawValue: "grid",
       PrefsKeys.appIcon.rawValue: "",
+      PrefsKeys.hasCompletedOnboarding.rawValue: false,
     ])
     
     self.username = UserDefaults.standard.string(forKey: PrefsKeys.username.rawValue)!
@@ -130,6 +132,7 @@ class Prefs {
     self.filesViewMode = UserDefaults.standard.string(forKey: PrefsKeys.filesViewMode.rawValue)!
 
     self.appIcon = UserDefaults.standard.string(forKey: PrefsKeys.appIcon.rawValue)!
+    self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: PrefsKeys.hasCompletedOnboarding.rawValue)
 
     if let watchWordsData = UserDefaults.standard.data(forKey: PrefsKeys.watchWords.rawValue) {
       if let decoded = try? JSONDecoder().decode([HighlightWord].self, from: watchWordsData) {
@@ -242,6 +245,10 @@ class Prefs {
 
   var appIcon: String {
     didSet { UserDefaults.standard.set(self.appIcon, forKey: PrefsKeys.appIcon.rawValue) }
+  }
+
+  var hasCompletedOnboarding: Bool {
+    didSet { UserDefaults.standard.set(self.hasCompletedOnboarding, forKey: PrefsKeys.hasCompletedOnboarding.rawValue) }
   }
 
   var downloadFolderBookmark: Data? {

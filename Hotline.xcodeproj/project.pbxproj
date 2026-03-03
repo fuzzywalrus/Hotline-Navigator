@@ -14,6 +14,7 @@
 		DA0D698F2B1E841600C71DF5 /* MessageBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0D698E2B1E841600C71DF5 /* MessageBoardView.swift */; platformFilter = ios; };
 		DA0D69912B1E894800C71DF5 /* FilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0D69902B1E894800C71DF5 /* FilesView.swift */; platformFilter = ios; };
 		DA20BBE12BF5237600B94E7C /* Bookmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA20BBE02BF5237600B94E7C /* Bookmark.swift */; };
+		DA22F51F2F56477400E2EA02 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA22F51E2F56477400E2EA02 /* OnboardingView.swift */; };
 		DA2863D82B37AD1C00A7D050 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA2863D72B37AD1C00A7D050 /* SettingsView.swift */; platformFilters = (macos, ); };
 		DA2863DA2B37BF6E00A7D050 /* Preferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA2863D92B37BF6E00A7D050 /* Preferences.swift */; };
 		DA2863DD2B3E8B7000A7D050 /* FilePreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA2863DC2B3E8B7000A7D050 /* FilePreview.swift */; };
@@ -154,6 +155,7 @@
 		DA0D698E2B1E841600C71DF5 /* MessageBoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBoardView.swift; sourceTree = "<group>"; };
 		DA0D69902B1E894800C71DF5 /* FilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesView.swift; sourceTree = "<group>"; };
 		DA20BBE02BF5237600B94E7C /* Bookmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bookmark.swift; sourceTree = "<group>"; };
+		DA22F51E2F56477400E2EA02 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		DA2863D72B37AD1C00A7D050 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		DA2863D92B37BF6E00A7D050 /* Preferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Preferences.swift; sourceTree = "<group>"; };
 		DA2863DB2B37DBE000A7D050 /* Hotline.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Hotline.entitlements; sourceTree = "<group>"; };
@@ -616,6 +618,7 @@
 				DA5268A12EB073E600DCB941 /* Files */,
 				DA5268A72EB0812E00DCB941 /* Accounts */,
 				DA52689A2EB0737400DCB941 /* Settings */,
+				DA22F51E2F56477400E2EA02 /* OnboardingView.swift */,
 			);
 			path = macOS;
 			sourceTree = "<group>";
@@ -857,6 +860,7 @@
 				DA501BE72EBE9542001714F8 /* TrackerBookmarkSheet.swift in Sources */,
 				DAB4D87E2B4C8BCA0048A05C /* FilePreviewTextView.swift in Sources */,
 				DA5A6F122F454D4600060F18 /* ChatTextView.swift in Sources */,
+				DA22F51F2F56477400E2EA02 /* OnboardingView.swift in Sources */,
 				DA3429B72EBAB1750010784E /* QuickLookPreviewView.swift in Sources */,
 				DABAFBEC2EC599700015E889 /* BroadcastMessageSheet.swift in Sources */,
 				DA4F2C012B1A558E00D8ADDC /* ChatView.swift in Sources */,

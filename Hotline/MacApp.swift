@@ -116,6 +116,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 struct Application: App {
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.openWindow) private var openWindow
+  @Environment(\.dismissWindow) private var dismissWindow
   @Environment(\.openURL) private var openURL
   
   @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -167,9 +168,17 @@ struct Application: App {
         AppState.openTransfersWindow = {
           self.openWindow(id: "transfers")
         }
-        if Prefs.shared.showBannerToolbar {
+        if !Prefs.shared.hasCompletedOnboarding {
+          self.dismissWindow(id: "servers")
+          self.openWindow(id: "onboarding")
+        } else if Prefs.shared.showBannerToolbar {
           self.showBannerWindow()
         }
+      }
+    }
+    .onChange(of: Prefs.shared.hasCompletedOnboarding) {
+      if Prefs.shared.hasCompletedOnboarding && Prefs.shared.showBannerToolbar {
+        self.showBannerWindow()
       }
     }
     .onChange(of: self.update.showWindow) {
@@ -192,6 +201,37 @@ struct Application: App {
       self.openWindow(id: "server", value: server)
     }
     
+    // MARK: Onboarding Window
+    Window("Welcome", id: "onboarding") {
+      OnboardingView()
+        .background(Color.hotlineRed, ignoresSafeAreaEdges: .all)
+        .windowFullScreenBehavior(.disabled)
+        .toolbar(removing: .title)
+        .gesture(WindowDragGesture())
+        .background(
+          WindowConfigurator { window in
+            window.titlebarAppearsTransparent = true
+            window.titlebarSeparatorStyle = .none
+            window.isMovableByWindowBackground = true
+
+            if let btn = window.standardWindowButton(.closeButton) {
+              btn.isHidden = true
+            }
+            if let btn = window.standardWindowButton(.zoomButton) {
+              btn.isHidden = true
+            }
+            if let btn = window.standardWindowButton(.miniaturizeButton) {
+              btn.isHidden = true
+            }
+          }
+        )
+    }
+    .windowResizability(.contentSize)
+    .windowStyle(.hiddenTitleBar)
+    .restorationBehavior(.disabled)
+    .defaultPosition(.center)
+    .commandsRemoved()
+
     // MARK: About Box
     Window("About", id: "about") {
       AboutView()
