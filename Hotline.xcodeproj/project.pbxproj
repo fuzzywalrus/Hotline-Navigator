@@ -15,6 +15,7 @@
 		DA0D69912B1E894800C71DF5 /* FilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0D69902B1E894800C71DF5 /* FilesView.swift */; platformFilter = ios; };
 		DA20BBE12BF5237600B94E7C /* Bookmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA20BBE02BF5237600B94E7C /* Bookmark.swift */; };
 		DA22F51F2F56477400E2EA02 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA22F51E2F56477400E2EA02 /* OnboardingView.swift */; };
+		DA22F5212F56826C00E2EA02 /* Logo.obj in Resources */ = {isa = PBXBuildFile; fileRef = DA22F5202F56826C00E2EA02 /* Logo.obj */; };
 		DA2863D82B37AD1C00A7D050 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA2863D72B37AD1C00A7D050 /* SettingsView.swift */; platformFilters = (macos, ); };
 		DA2863DA2B37BF6E00A7D050 /* Preferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA2863D92B37BF6E00A7D050 /* Preferences.swift */; };
 		DA2863DD2B3E8B7000A7D050 /* FilePreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA2863DC2B3E8B7000A7D050 /* FilePreview.swift */; };
@@ -156,6 +157,7 @@
 		DA0D69902B1E894800C71DF5 /* FilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesView.swift; sourceTree = "<group>"; };
 		DA20BBE02BF5237600B94E7C /* Bookmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bookmark.swift; sourceTree = "<group>"; };
 		DA22F51E2F56477400E2EA02 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		DA22F5202F56826C00E2EA02 /* Logo.obj */ = {isa = PBXFileReference; lastKnownFileType = text; path = Logo.obj; sourceTree = "<group>"; };
 		DA2863D72B37AD1C00A7D050 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		DA2863D92B37BF6E00A7D050 /* Preferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Preferences.swift; sourceTree = "<group>"; };
 		DA2863DB2B37DBE000A7D050 /* Hotline.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Hotline.entitlements; sourceTree = "<group>"; };
@@ -341,6 +343,7 @@
 			isa = PBXGroup;
 			children = (
 				DA81CA0D2ECBAA4200B198C5 /* App Icon.icon */,
+				DA22F5202F56826C00E2EA02 /* Logo.obj */,
 				DABE8BF22B55DBFC00884D28 /* Sounds */,
 			);
 			path = Assets;
@@ -602,10 +605,10 @@
 		DAE734F72B2E4126000C56F6 /* macOS */ = {
 			isa = PBXGroup;
 			children = (
+				DAE734F82B2E4185000C56F6 /* ServerView.swift */,
 				DA55AC762BE589F700034857 /* AboutView.swift */,
 				DACCE5E22EABE86A008CDD92 /* AppUpdateView.swift */,
 				DAE136B92B9D1147007D8307 /* HotlinePanelView.swift */,
-				DAE734F82B2E4185000C56F6 /* ServerView.swift */,
 				DAF5BC6B2EC2727100551E4D /* ConnectView.swift */,
 				DAE735022B30C0BB000C56F6 /* MessageView.swift */,
 				DAC0E4222EC78E1100E999DB /* UserClientInfoSheet.swift */,
@@ -738,6 +741,7 @@
 				DABE8BFB2B55DC6800884D28 /* user-login.aiff in Resources */,
 				DA9CAFC42B126D5800CDA197 /* Preview Assets.xcassets in Resources */,
 				DABE8BF82B55DC6100884D28 /* logged-in.aiff in Resources */,
+				DA22F5212F56826C00E2EA02 /* Logo.obj in Resources */,
 				DA9CAFC12B126D5800CDA197 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
