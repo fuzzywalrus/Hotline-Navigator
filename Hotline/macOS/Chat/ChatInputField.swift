@@ -84,6 +84,12 @@ struct ChatInputField: NSViewRepresentable {
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
     context.coordinator.parent = self
     guard let textView = context.coordinator.textView else { return }
+    // Never overwrite the text view's string while the IME is composing
+    // (has marked text). Doing so clears the uncommitted composition,
+    // causing input to vanish — especially when text wraps to a new line.
+    if textView.hasMarkedText() {
+      return
+    }
     if textView.string != self.text {
       textView.string = self.text
       // Defer recalculation so the @Binding height update is not dropped
