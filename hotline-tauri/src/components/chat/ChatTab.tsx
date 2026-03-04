@@ -32,14 +32,14 @@ export default function ChatTab({
   messages,
   message,
   sending,
-  bannerUrl,
+  bannerUrl: _bannerUrl,
   agreementText,
   canBroadcast,
   onMessageChange,
   onSendMessage,
   onSendBroadcast,
-  onAcceptAgreement,
-  onDeclineAgreement,
+  onAcceptAgreement: _onAcceptAgreement,
+  onDeclineAgreement: _onDeclineAgreement,
 }: ChatTabProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [broadcastMode, setBroadcastMode] = useState(false);

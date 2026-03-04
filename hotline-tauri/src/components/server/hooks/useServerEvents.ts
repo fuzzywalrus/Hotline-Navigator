@@ -55,7 +55,7 @@ export function useServerEvents({
   const soundsRef = useRef(sounds);
   const usersRef = useRef<User[]>([]);
   const { updateTabUnread } = useAppStore();
-  const { username, mentionPopup, mutedUsers } = usePreferencesStore();
+  const { username } = usePreferencesStore();
   
   // Helper to check if this server's tab is active
   const isTabActive = () => {

@@ -19,7 +19,7 @@ export default function Linkify({ text, className }: LinkifyProps) {
             rel="noopener noreferrer"
             onClick={(e) => {
               e.preventDefault();
-              window.__TAURI_INTERNALS__
+              (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
                 ? import('@tauri-apps/plugin-opener').then(({ openUrl }) => openUrl(part))
                 : window.open(part, '_blank');
             }}
