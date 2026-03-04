@@ -47,6 +47,30 @@ impl HotlineClient {
         Ok(())
     }
 
+    pub async fn send_broadcast(&self, message: String) -> Result<(), String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::UserBroadcast);
+        transaction.add_field(TransactionField::from_string(FieldType::Data, &message));
+
+        let encoded = transaction.encode();
+
+        let mut write_guard = self.write_half.lock().await;
+        let write_stream = write_guard
+            .as_mut()
+            .ok_or("Not connected".to_string())?;
+
+        write_stream
+            .write_all(&encoded)
+            .await
+            .map_err(|e| format!("Failed to send broadcast: {}", e))?;
+
+        write_stream
+            .flush()
+            .await
+            .map_err(|e| format!("Failed to flush: {}", e))?;
+
+        Ok(())
+    }
+
     pub async fn send_private_message(&self, user_id: u16, message: String) -> Result<(), String> {
         println!("Sending private message to user {}: {}", user_id, message);
 

@@ -54,6 +54,13 @@ pub fn run() {
             commands::disconnect_user,
             commands::test_connection,
             commands::check_for_updates,
+            commands::pick_download_folder,
+            commands::send_broadcast,
+            commands::create_folder,
+            commands::create_news_category,
+            commands::create_news_folder,
+            commands::delete_news_item,
+            commands::delete_news_article,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

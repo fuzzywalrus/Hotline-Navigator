@@ -736,6 +736,69 @@ impl HotlineClient {
         Ok(())
     }
 
+    pub async fn create_folder(&self, path: Vec<String>, name: String) -> Result<(), String> {
+        println!("Creating folder '{}' at path: {:?}", name, path);
+
+        let transaction_id = self.next_transaction_id();
+        let mut transaction = Transaction::new(transaction_id, TransactionType::NewFolder);
+
+        // Add folder name
+        transaction.add_field(TransactionField {
+            field_type: FieldType::FileName,
+            data: name.as_bytes().to_vec(),
+        });
+
+        // Add path field if not at root
+        if let Some(path_data) = encode_file_path(&path) {
+            transaction.add_field(TransactionField {
+                field_type: FieldType::FilePath,
+                data: path_data,
+            });
+        }
+
+        let encoded = transaction.encode();
+
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        let mut write_guard = self.write_half.lock().await;
+        let write_stream = write_guard
+            .as_mut()
+            .ok_or("Not connected".to_string())?;
+
+        write_stream
+            .write_all(&encoded)
+            .await
+            .map_err(|e| format!("Failed to send NewFolder: {}", e))?;
+
+        write_stream
+            .flush()
+            .await
+            .map_err(|e| format!("Failed to flush: {}", e))?;
+
+        drop(write_guard);
+
+        let reply = tokio::time::timeout(Duration::from_secs(10), rx.recv())
+            .await
+            .map_err(|_| "Timeout waiting for create folder reply".to_string())?
+            .ok_or("Channel closed".to_string())?;
+
+        if reply.error_code != 0 {
+            let error_msg = reply
+                .get_field(FieldType::ErrorText)
+                .and_then(|f| f.to_string().ok())
+                .unwrap_or_else(|| format!("Error code: {}", reply.error_code));
+            return Err(format!("Create folder failed: {}", error_msg));
+        }
+
+        println!("Folder '{}' created successfully", name);
+
+        Ok(())
+    }
+
     /// Perform the actual file upload transfer
     async fn perform_file_upload<F>(
         &self,

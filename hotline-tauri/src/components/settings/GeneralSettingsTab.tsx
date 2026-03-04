@@ -6,19 +6,28 @@ import { showNotification } from '../../stores/notificationStore';
 import type { Bookmark } from '../../types';
 
 export default function GeneralSettingsTab() {
-  const { username, setUsername, fileCacheDepth, setFileCacheDepth, enablePrivateMessaging, setEnablePrivateMessaging, darkMode, setDarkMode } = usePreferencesStore();
+  const { username, setUsername, enablePrivateMessaging, setEnablePrivateMessaging, darkMode, setDarkMode, downloadFolder, setDownloadFolder } = usePreferencesStore();
   const { setBookmarks } = useAppStore();
   const [localUsername, setLocalUsername] = useState(username);
-  const [localFileCacheDepth, setLocalFileCacheDepth] = useState(fileCacheDepth);
   const [isAddingDefaults, setIsAddingDefaults] = useState(false);
 
   useEffect(() => {
     setLocalUsername(username);
-    setLocalFileCacheDepth(fileCacheDepth);
-  }, [username, fileCacheDepth]);
+  }, [username]);
 
   const handleSave = () => {
     setUsername(localUsername.trim() || 'guest');
+  };
+
+  const handlePickDownloadFolder = async () => {
+    try {
+      const folder = await invoke<string | null>('pick_download_folder');
+      if (folder) {
+        setDownloadFolder(folder);
+      }
+    } catch (error) {
+      console.error('Failed to pick download folder:', error);
+    }
   };
 
   const handleAddDefaults = async () => {
@@ -60,24 +69,6 @@ export default function GeneralSettingsTab() {
         />
         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
           This name will be displayed to other users on servers you connect to.
-        </p>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          File Cache Depth
-        </label>
-        <input
-          type="number"
-          min="0"
-          max="10"
-          value={localFileCacheDepth}
-          onChange={(e) => setLocalFileCacheDepth(parseInt(e.target.value) || 0)}
-          onBlur={() => setFileCacheDepth(Math.max(0, Math.min(10, localFileCacheDepth)))}
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-          Number of folder layers to pre-fetch and cache when connecting to a server. Higher values improve browsing speed but use more memory. (0-10, default: 2)
         </p>
       </div>
 
@@ -147,6 +138,31 @@ export default function GeneralSettingsTab() {
               <p className="text-xs text-gray-500 dark:text-gray-400">Always use dark mode</p>
             </div>
           </label>
+        </div>
+      </div>
+
+      <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Download Folder
+        </label>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+          {downloadFolder ? downloadFolder : 'System Downloads folder'}
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={handlePickDownloadFolder}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors"
+          >
+            Choose...
+          </button>
+          {downloadFolder && (
+            <button
+              onClick={() => setDownloadFolder(null)}
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-md font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            >
+              Reset to Default
+            </button>
+          )}
         </div>
       </div>
 

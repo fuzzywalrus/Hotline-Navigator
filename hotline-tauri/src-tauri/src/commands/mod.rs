@@ -145,10 +145,24 @@ pub async fn download_file(
     path: Vec<String>,
     file_name: String,
     file_size: u32,
+    download_folder: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     println!("Command: download_file {} (size: {} bytes)", file_name, file_size);
-    state.download_file(&server_id, path, file_name, file_size).await
+    state.download_file(&server_id, path, file_name, file_size, download_folder).await
+}
+
+#[tauri::command]
+pub async fn pick_download_folder() -> Result<Option<String>, String> {
+    let result = tokio::task::spawn_blocking(|| {
+        rfd::FileDialog::new()
+            .set_title("Choose Download Folder")
+            .pick_folder()
+            .map(|p| p.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| format!("Dialog error: {}", e))?;
+    Ok(result)
 }
 
 #[tauri::command]
@@ -205,6 +219,71 @@ pub async fn post_news_article(
 ) -> Result<(), String> {
     println!("Command: post_news_article to {} path {:?}", server_id, path);
     state.post_news_article(&server_id, title, text, path, parent_id).await
+}
+
+#[tauri::command]
+pub async fn send_broadcast(
+    server_id: String,
+    message: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    println!("Command: send_broadcast to {}: {}", server_id, message);
+    state.send_broadcast(&server_id, message).await
+}
+
+#[tauri::command]
+pub async fn create_folder(
+    server_id: String,
+    path: Vec<String>,
+    name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    println!("Command: create_folder '{}' at path {:?} on {}", name, path, server_id);
+    state.create_folder(&server_id, path, name).await
+}
+
+#[tauri::command]
+pub async fn create_news_category(
+    server_id: String,
+    path: Vec<String>,
+    name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    println!("Command: create_news_category '{}' at path {:?} on {}", name, path, server_id);
+    state.create_news_category(&server_id, path, name).await
+}
+
+#[tauri::command]
+pub async fn create_news_folder(
+    server_id: String,
+    path: Vec<String>,
+    name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    println!("Command: create_news_folder '{}' at path {:?} on {}", name, path, server_id);
+    state.create_news_folder(&server_id, path, name).await
+}
+
+#[tauri::command]
+pub async fn delete_news_item(
+    server_id: String,
+    path: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    println!("Command: delete_news_item at path {:?} on {}", path, server_id);
+    state.delete_news_item(&server_id, path).await
+}
+
+#[tauri::command]
+pub async fn delete_news_article(
+    server_id: String,
+    path: Vec<String>,
+    article_id: u32,
+    recursive: bool,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    println!("Command: delete_news_article {} at path {:?} on {}", article_id, path, server_id);
+    state.delete_news_article(&server_id, path, article_id, recursive).await
 }
 
 #[tauri::command]

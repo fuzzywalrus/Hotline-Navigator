@@ -87,11 +87,15 @@ export function useServerEvents({
       
       // Check if message contains a mention of the current user
       const isMention = containsMention(event.payload.message, username);
-      
+
+      // Look up sender's admin status from current users
+      const sender = usersRef.current.find(u => u.userId === event.payload.userId);
+
       const messageData = {
         ...event.payload,
         timestamp: new Date(),
         isMention,
+        isAdmin: sender?.isAdmin ?? false,
       };
       
       setMessages((prev) => [...prev, messageData]);
@@ -150,7 +154,7 @@ export function useServerEvents({
       const { files, path } = event.payload;
       
       // Only update UI if this is for the current path
-      if (path.join('/') === currentPathRef.current.join('/')) {
+      if (path.length === currentPathRef.current.length && path.every((v, i) => v === currentPathRef.current[i])) {
         setFiles(files);
         // Notify that file list was received for current path
         if (onFileListReceived) {

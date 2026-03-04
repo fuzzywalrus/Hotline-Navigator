@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 interface NewsCategory {
   type: number;
   count: number;
@@ -26,6 +28,11 @@ interface NewsTabProps {
   composerTitle: string;
   composerBody: string;
   postingNews: boolean;
+  canCreateCategory?: boolean;
+  canDeleteCategory?: boolean;
+  canCreateFolder?: boolean;
+  canDeleteFolder?: boolean;
+  canDeleteArticle?: boolean;
   onNewsPathChange: (path: string[]) => void;
   onNewsBack: () => void;
   onNavigateNews: (category: NewsCategory) => void;
@@ -35,6 +42,10 @@ interface NewsTabProps {
   onComposerTitleChange: (value: string) => void;
   onComposerBodyChange: (value: string) => void;
   onPostNews: (e: React.FormEvent) => void;
+  onCreateCategory?: (name: string) => Promise<void>;
+  onCreateFolder?: (name: string) => Promise<void>;
+  onDeleteItem?: (path: string[]) => Promise<void>;
+  onDeleteArticle?: (articleId: number, path: string[]) => Promise<void>;
 }
 
 export default function NewsTab({
@@ -48,6 +59,11 @@ export default function NewsTab({
   composerTitle,
   composerBody,
   postingNews,
+  canCreateCategory = false,
+  canDeleteCategory = false,
+  canCreateFolder = false,
+  canDeleteFolder = false,
+  canDeleteArticle = false,
   onNewsPathChange,
   onNewsBack,
   onNavigateNews,
@@ -57,9 +73,16 @@ export default function NewsTab({
   onComposerTitleChange,
   onComposerBodyChange,
   onPostNews,
+  onCreateCategory,
+  onCreateFolder,
+  onDeleteItem,
+  onDeleteArticle,
 }: NewsTabProps) {
   // On mobile, show article detail view if an article is selected or composer is open
   const showMobileDetail = selectedArticle || showComposer;
+
+  const [newItemMode, setNewItemMode] = useState<'category' | 'folder' | null>(null);
+  const [newItemName, setNewItemName] = useState('');
 
   return (
     <div className="flex-1 flex md:flex-row flex-col h-full overflow-hidden">
@@ -101,28 +124,89 @@ export default function NewsTab({
         {/* Categories list */}
         {newsCategories.length > 0 && (
           <div className="border-b border-gray-200 dark:border-gray-700">
-            <div className="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-xs font-semibold text-gray-600 dark:text-gray-400">
-              CATEGORIES
+            <div className="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-xs font-semibold text-gray-600 dark:text-gray-400 flex items-center justify-between">
+              <span>CATEGORIES</span>
+              <div className="flex gap-1">
+                {canCreateCategory && onCreateCategory && (
+                  <button onClick={() => { setNewItemMode('category'); setNewItemName(''); }} className="text-xs text-blue-600 dark:text-blue-400 hover:underline">+ Category</button>
+                )}
+                {canCreateFolder && onCreateFolder && (
+                  <button onClick={() => { setNewItemMode('folder'); setNewItemName(''); }} className="text-xs text-blue-600 dark:text-blue-400 hover:underline ml-2">+ Folder</button>
+                )}
+              </div>
             </div>
+            {/* Inline new item input */}
+            {newItemMode && (
+              <div className="px-4 py-2 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-800 flex gap-2">
+                <input
+                  type="text"
+                  value={newItemName}
+                  onChange={(e) => setNewItemName(e.target.value)}
+                  placeholder={`${newItemMode === 'category' ? 'Category' : 'Folder'} name...`}
+                  autoFocus
+                  onKeyDown={async (e) => {
+                    if (e.key === 'Enter' && newItemName.trim()) {
+                      if (newItemMode === 'category') await onCreateCategory!(newItemName.trim());
+                      else await onCreateFolder!(newItemName.trim());
+                      setNewItemMode(null);
+                      setNewItemName('');
+                    }
+                    if (e.key === 'Escape') { setNewItemMode(null); setNewItemName(''); }
+                  }}
+                  className="flex-1 px-2 py-1 text-sm border border-blue-300 dark:border-blue-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  onClick={async () => {
+                    if (newItemName.trim()) {
+                      if (newItemMode === 'category') await onCreateCategory!(newItemName.trim());
+                      else await onCreateFolder!(newItemName.trim());
+                    }
+                    setNewItemMode(null);
+                    setNewItemName('');
+                  }}
+                  disabled={!newItemName.trim()}
+                  className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded"
+                >Create</button>
+                <button onClick={() => { setNewItemMode(null); setNewItemName(''); }} className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+              </div>
+            )}
             <div className="divide-y divide-gray-200 dark:divide-gray-700">
               {newsCategories.map((category, index) => {
                 // Create unique key from category path and name
                 const uniqueKey = `category-${category.path.join('/')}-${category.name}-${index}`;
+                const canDelete = (canDeleteCategory || canDeleteFolder) && onDeleteItem;
                 return (
-                <button
-                  key={uniqueKey}
-                  onClick={() => onNavigateNews(category)}
-                  className="w-full px-4 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                      📁 {category.name}
-                    </span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {category.count} {category.count === 1 ? 'item' : 'items'}
-                    </span>
-                  </div>
-                </button>
+                <div key={uniqueKey} className="flex items-center hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors group">
+                  <button
+                    onClick={() => onNavigateNews(category)}
+                    className="flex-1 px-4 py-2 text-left"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                        📁 {category.name}
+                      </span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {category.count} {category.count === 1 ? 'item' : 'items'}
+                      </span>
+                    </div>
+                  </button>
+                  {canDelete && (
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (confirm(`Delete "${category.name}"? This cannot be undone.`)) {
+                          await onDeleteItem!(category.path);
+                        }
+                      }}
+                      className="opacity-0 group-hover:opacity-100 px-2 py-1 mr-2 text-red-500 hover:text-red-700 transition-opacity"
+                      title="Delete"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
                 );
               })}
             </div>
@@ -139,6 +223,16 @@ export default function NewsTab({
             <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-8 px-4">
               <p className="mb-2">No news available</p>
               <p className="text-xs">This server may not support news, or there are no news articles.</p>
+              {(canCreateCategory || canCreateFolder) && !newItemMode && (
+                <div className="flex gap-2 justify-center mt-4">
+                  {canCreateCategory && onCreateCategory && (
+                    <button onClick={() => { setNewItemMode('category'); setNewItemName(''); }} className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded">+ Category</button>
+                  )}
+                  {canCreateFolder && onCreateFolder && (
+                    <button onClick={() => { setNewItemMode('folder'); setNewItemName(''); }} className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded">+ Folder</button>
+                  )}
+                </div>
+              )}
             </div>
           ) : newsArticles.length === 0 ? (
             <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">
@@ -147,28 +241,45 @@ export default function NewsTab({
           ) : (
             <div className="divide-y divide-gray-200 dark:divide-gray-700">
               {newsArticles.map((article) => (
-                <button
-                  key={article.id}
-                  onClick={() => onSelectArticle(article)}
-                  className={`w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors ${
-                    selectedArticle?.id === article.id ? 'bg-blue-50 dark:bg-blue-900/20' : ''
-                  }`}
-                >
-                  <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                    {article.title}
-                  </div>
-                  <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                    by {article.poster}
-                    {article.date && (
-                      <span className="ml-2 text-gray-500 dark:text-gray-500">
-                        • {article.date}
-                      </span>
-                    )}
-                    {article.parent_id > 0 && (
-                      <span className="ml-2 text-blue-600 dark:text-blue-400">↳ Reply</span>
-                    )}
-                  </div>
-                </button>
+                <div key={article.id} className="flex items-center group hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                  <button
+                    onClick={() => onSelectArticle(article)}
+                    className={`flex-1 px-4 py-3 text-left ${
+                      selectedArticle?.id === article.id ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                    }`}
+                  >
+                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                      {article.title}
+                    </div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                      by {article.poster}
+                      {article.date && (
+                        <span className="ml-2 text-gray-500 dark:text-gray-500">
+                          • {article.date}
+                        </span>
+                      )}
+                      {article.parent_id > 0 && (
+                        <span className="ml-2 text-blue-600 dark:text-blue-400">↳ Reply</span>
+                      )}
+                    </div>
+                  </button>
+                  {canDeleteArticle && onDeleteArticle && (
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (confirm(`Delete article "${article.title}"? This cannot be undone.`)) {
+                          await onDeleteArticle(article.id, article.path);
+                        }
+                      }}
+                      className="opacity-0 group-hover:opacity-100 px-2 py-1 mr-2 text-red-500 hover:text-red-700 transition-opacity"
+                      title="Delete article"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           )}
@@ -236,15 +347,34 @@ export default function NewsTab({
                   ← Back to articles
                 </button>
               )}
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                {selectedArticle.title}
-              </h2>
-              <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                by {selectedArticle.poster}
-                {selectedArticle.date && (
-                  <span className="ml-2 text-gray-500 dark:text-gray-500">
-                    • {selectedArticle.date}
-                  </span>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                    {selectedArticle.title}
+                  </h2>
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                    by {selectedArticle.poster}
+                    {selectedArticle.date && (
+                      <span className="ml-2 text-gray-500 dark:text-gray-500">
+                        • {selectedArticle.date}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {canDeleteArticle && onDeleteArticle && (
+                  <button
+                    onClick={async () => {
+                      if (confirm(`Delete article "${selectedArticle.title}"? This cannot be undone.`)) {
+                        await onDeleteArticle(selectedArticle.id, selectedArticle.path);
+                      }
+                    }}
+                    className="flex-shrink-0 p-1 text-red-500 hover:text-red-700"
+                    title="Delete article"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
                 )}
               </div>
             </div>

@@ -8,6 +8,7 @@ interface UseServerHandlersProps {
   serverId: string;
   serverName: string;
   currentPath: string[];
+  downloadFolder?: string | null;
   setMessage: React.Dispatch<React.SetStateAction<string>>;
   setSending: React.Dispatch<React.SetStateAction<boolean>>;
   setBoardMessage: React.Dispatch<React.SetStateAction<string>>;
@@ -31,6 +32,7 @@ export function useServerHandlers({
   serverId,
   serverName,
   currentPath,
+  downloadFolder,
   setMessage,
   setSending,
   setBoardMessage,
@@ -119,6 +121,7 @@ export function useServerHandlers({
         path: currentPath,
         fileName,
         fileSize,
+        downloadFolder: downloadFolder ?? null,
       });
 
       setDownloadProgress((prev) => {

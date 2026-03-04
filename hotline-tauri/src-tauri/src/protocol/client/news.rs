@@ -543,6 +543,178 @@ impl HotlineClient {
         Ok(())
     }
 
+    pub async fn create_news_category(&self, path: Vec<String>, name: String) -> Result<(), String> {
+        println!("Creating news category '{}' at path: {:?}", name, path);
+
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::NewNewsCategory);
+        if !path.is_empty() {
+            transaction.add_field(TransactionField::from_path(FieldType::NewsPath, &path));
+        }
+        transaction.add_field(TransactionField::from_string(FieldType::NewsCategoryName, &name));
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        let encoded = transaction.encode();
+        let write_result = {
+            let mut write_guard = self.write_half.lock().await;
+            let write_stream = write_guard.as_mut().ok_or("Not connected".to_string())?;
+            let r = write_stream.write_all(&encoded).await;
+            write_stream.flush().await.ok();
+            r
+        };
+        if let Err(e) = write_result {
+            let mut pending = self.pending_transactions.write().await;
+            pending.remove(&transaction_id);
+            return Err(format!("Failed to send request: {}", e));
+        }
+
+        let reply = match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(r)) => r,
+            Ok(None) => { let mut p = self.pending_transactions.write().await; p.remove(&transaction_id); return Err("Channel closed".to_string()); }
+            Err(_) => { let mut p = self.pending_transactions.write().await; p.remove(&transaction_id); return Err("Timeout".to_string()); }
+        };
+
+        if reply.error_code != 0 {
+            let msg = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok()).unwrap_or_else(|| format!("Error code: {}", reply.error_code));
+            return Err(format!("Create news category failed: {}", msg));
+        }
+        println!("News category '{}' created", name);
+        Ok(())
+    }
+
+    pub async fn create_news_folder(&self, path: Vec<String>, name: String) -> Result<(), String> {
+        println!("Creating news folder '{}' at path: {:?}", name, path);
+
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::NewNewsFolder);
+        if !path.is_empty() {
+            transaction.add_field(TransactionField::from_path(FieldType::NewsPath, &path));
+        }
+        transaction.add_field(TransactionField::from_string(FieldType::FileName, &name));
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        let encoded = transaction.encode();
+        let write_result = {
+            let mut write_guard = self.write_half.lock().await;
+            let write_stream = write_guard.as_mut().ok_or("Not connected".to_string())?;
+            let r = write_stream.write_all(&encoded).await;
+            write_stream.flush().await.ok();
+            r
+        };
+        if let Err(e) = write_result {
+            let mut pending = self.pending_transactions.write().await;
+            pending.remove(&transaction_id);
+            return Err(format!("Failed to send request: {}", e));
+        }
+
+        let reply = match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(r)) => r,
+            Ok(None) => { let mut p = self.pending_transactions.write().await; p.remove(&transaction_id); return Err("Channel closed".to_string()); }
+            Err(_) => { let mut p = self.pending_transactions.write().await; p.remove(&transaction_id); return Err("Timeout".to_string()); }
+        };
+
+        if reply.error_code != 0 {
+            let msg = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok()).unwrap_or_else(|| format!("Error code: {}", reply.error_code));
+            return Err(format!("Create news folder failed: {}", msg));
+        }
+        println!("News folder '{}' created", name);
+        Ok(())
+    }
+
+    pub async fn delete_news_item(&self, path: Vec<String>) -> Result<(), String> {
+        println!("Deleting news item at path: {:?}", path);
+
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::DeleteNewsItem);
+        transaction.add_field(TransactionField::from_path(FieldType::NewsPath, &path));
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        let encoded = transaction.encode();
+        let write_result = {
+            let mut write_guard = self.write_half.lock().await;
+            let write_stream = write_guard.as_mut().ok_or("Not connected".to_string())?;
+            let r = write_stream.write_all(&encoded).await;
+            write_stream.flush().await.ok();
+            r
+        };
+        if let Err(e) = write_result {
+            let mut pending = self.pending_transactions.write().await;
+            pending.remove(&transaction_id);
+            return Err(format!("Failed to send request: {}", e));
+        }
+
+        let reply = match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(r)) => r,
+            Ok(None) => { let mut p = self.pending_transactions.write().await; p.remove(&transaction_id); return Err("Channel closed".to_string()); }
+            Err(_) => { let mut p = self.pending_transactions.write().await; p.remove(&transaction_id); return Err("Timeout".to_string()); }
+        };
+
+        if reply.error_code != 0 {
+            let msg = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok()).unwrap_or_else(|| format!("Error code: {}", reply.error_code));
+            return Err(format!("Delete news item failed: {}", msg));
+        }
+        println!("News item deleted at path: {:?}", path);
+        Ok(())
+    }
+
+    pub async fn delete_news_article(&self, path: Vec<String>, article_id: u32, recursive: bool) -> Result<(), String> {
+        println!("Deleting news article {} at path: {:?} (recursive: {})", article_id, path, recursive);
+
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::DeleteNewsArticle);
+        transaction.add_field(TransactionField::from_path(FieldType::NewsPath, &path));
+        transaction.add_field(TransactionField::from_u32(FieldType::NewsArticleId, article_id));
+        transaction.add_field(TransactionField::from_u16(FieldType::NewsArticleRecursiveDelete, if recursive { 1 } else { 0 }));
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        let encoded = transaction.encode();
+        let write_result = {
+            let mut write_guard = self.write_half.lock().await;
+            let write_stream = write_guard.as_mut().ok_or("Not connected".to_string())?;
+            let r = write_stream.write_all(&encoded).await;
+            write_stream.flush().await.ok();
+            r
+        };
+        if let Err(e) = write_result {
+            let mut pending = self.pending_transactions.write().await;
+            pending.remove(&transaction_id);
+            return Err(format!("Failed to send request: {}", e));
+        }
+
+        let reply = match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(r)) => r,
+            Ok(None) => { let mut p = self.pending_transactions.write().await; p.remove(&transaction_id); return Err("Channel closed".to_string()); }
+            Err(_) => { let mut p = self.pending_transactions.write().await; p.remove(&transaction_id); return Err("Timeout".to_string()); }
+        };
+
+        if reply.error_code != 0 {
+            let msg = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok()).unwrap_or_else(|| format!("Error code: {}", reply.error_code));
+            return Err(format!("Delete news article failed: {}", msg));
+        }
+        println!("News article {} deleted", article_id);
+        Ok(())
+    }
+
     // Helper method to parse a single news category from binary data
     fn parse_news_category(&self, data: &[u8], parent_path: &[String]) -> Result<NewsCategory, String> {
         if data.len() < 4 {

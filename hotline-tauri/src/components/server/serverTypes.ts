@@ -6,6 +6,7 @@ export interface ChatMessage {
   message: string;
   timestamp: Date;
   isMention?: boolean; // Indicates if this message mentions the current user
+  isAdmin?: boolean; // Indicates if the sender is an admin
 }
 
 export interface User {

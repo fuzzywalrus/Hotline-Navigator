@@ -332,6 +332,60 @@ impl AppState {
         }
     }
 
+    pub async fn send_broadcast(&self, server_id: &str, message: String) -> Result<(), String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.send_broadcast(message).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn create_folder(&self, server_id: &str, path: Vec<String>, name: String) -> Result<(), String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.create_folder(path, name).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn create_news_category(&self, server_id: &str, path: Vec<String>, name: String) -> Result<(), String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.create_news_category(path, name).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn create_news_folder(&self, server_id: &str, path: Vec<String>, name: String) -> Result<(), String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.create_news_folder(path, name).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn delete_news_item(&self, server_id: &str, path: Vec<String>) -> Result<(), String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.delete_news_item(path).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn delete_news_article(&self, server_id: &str, path: Vec<String>, article_id: u32, recursive: bool) -> Result<(), String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.delete_news_article(path, article_id, recursive).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
     pub async fn get_pending_agreement(&self, server_id: &str) -> Option<String> {
         let pending = self.pending_agreements.read().await;
         pending.get(server_id).cloned()
@@ -415,7 +469,7 @@ impl AppState {
         }
     }
 
-    pub async fn download_file(&self, server_id: &str, path: Vec<String>, file_name: String, file_size: u32) -> Result<String, String> {
+    pub async fn download_file(&self, server_id: &str, path: Vec<String>, file_name: String, file_size: u32, download_folder: Option<String>) -> Result<String, String> {
         let clients = self.clients.read().await;
 
         if let Some(client) = clients.get(server_id) {
@@ -461,10 +515,10 @@ impl AppState {
 
             println!("File transfer complete, {} bytes received", file_data.len());
 
-            // Get downloads directory
-            // On iOS, use the Documents directory so files are visible in the Files app
-            // (requires UIFileSharingEnabled and LSSupportsOpeningDocumentsInPlace in Info.plist)
-            let downloads_dir = if cfg!(target_os = "ios") {
+            // Get downloads directory: use user preference if set, otherwise fall back to system default
+            let downloads_dir = if let Some(ref folder) = download_folder {
+                std::path::PathBuf::from(folder)
+            } else if cfg!(target_os = "ios") {
                 self.app_handle
                     .path()
                     .document_dir()

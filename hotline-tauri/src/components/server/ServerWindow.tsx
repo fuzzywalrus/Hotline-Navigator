@@ -31,7 +31,7 @@ interface ServerWindowProps {
 
 export default function ServerWindow({ serverId, serverName, onClose }: ServerWindowProps) {
   const { setFileCache, getFileCache, clearFileCache, clearFileCachePath, addTransfer, updateTransfer, updateTabTitle } = useAppStore();
-  const { fileCacheDepth, enablePrivateMessaging } = usePreferencesStore();
+  const { enablePrivateMessaging, downloadFolder } = usePreferencesStore();
   const [showTransferList, setShowTransferList] = useState(false);
   const [showNotificationLog, setShowNotificationLog] = useState(false);
   const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
@@ -139,17 +139,63 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
 
   // Request file list when Files tab is activated or path changes
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [isServerUnresponsive, setIsServerUnresponsive] = useState(false);
   const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Synchronous guard — set immediately in onPathChange, reset only when file list arrives.
+  // Using a ref so it takes effect within the same event loop tick, unlike isLoadingFiles state.
+  const navigationBlockedRef = useRef(false);
+  // Set to true by handleFileListReceived; tells useEffect([files]) it's safe to release guard
+  const serverRespondedRef = useRef(false);
+  // Path we navigated FROM, used to restore on cancel
+  const previousPathRef = useRef<string[]>([]);
+
+  const pathsEqual = (a: string[], b: string[]) =>
+    a.length === b.length && a.every((v, i) => v === b[i]);
 
   const handleFileListReceived = (path: string[]) => {
-    // Clear loading state when file list arrives for the current path
-    if (JSON.stringify(path) === JSON.stringify(currentPath)) {
-      setIsLoadingFiles(false);
+    if (pathsEqual(path, currentPathRef.current)) {
       if (loadingTimeoutRef.current) {
         clearTimeout(loadingTimeoutRef.current);
         loadingTimeoutRef.current = null;
       }
+      // Signal useEffect([files]) to release guard on next render
+      serverRespondedRef.current = true;
     }
+  };
+
+  // Release navigation guard only after the SERVER responds and files actually render.
+  // Cache hits also call setFiles, so we use serverRespondedRef to distinguish them.
+  useEffect(() => {
+    if (serverRespondedRef.current) {
+      serverRespondedRef.current = false;
+      navigationBlockedRef.current = false;
+      setIsLoadingFiles(false);
+      setIsServerUnresponsive(false);
+    }
+  }, [files]);
+
+  const handleWaitForServer = () => {
+    setIsServerUnresponsive(false);
+    // Give 30 more seconds before asking again
+    loadingTimeoutRef.current = setTimeout(() => {
+      setIsServerUnresponsive(true);
+      loadingTimeoutRef.current = null;
+    }, 30_000);
+  };
+
+  const handleCancelNavigation = () => {
+    setIsServerUnresponsive(false);
+    setIsLoadingFiles(false);
+    navigationBlockedRef.current = false;
+    serverRespondedRef.current = false;
+    if (loadingTimeoutRef.current) {
+      clearTimeout(loadingTimeoutRef.current);
+      loadingTimeoutRef.current = null;
+    }
+    // Restore path we navigated from
+    const prevPath = previousPathRef.current;
+    currentPathRef.current = prevPath;
+    setCurrentPath(prevPath);
   };
 
   // Use server events hook (handles all event listeners)
@@ -229,12 +275,12 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
       // Set loading state immediately to prevent race conditions
       setIsLoadingFiles(true);
 
-      // Safety timeout: if server never responds, unblock the UI after 10s
+      // Safety timeout: if server is slow, ask the user whether to wait or cancel
       if (loadingTimeoutRef.current) {
         clearTimeout(loadingTimeoutRef.current);
       }
       loadingTimeoutRef.current = setTimeout(() => {
-        setIsLoadingFiles(false);
+        setIsServerUnresponsive(true);
         loadingTimeoutRef.current = null;
       }, 10_000);
 
@@ -268,90 +314,6 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     };
   }, [activeTab, currentPath, serverId, getFileCache, setFiles]);
 
-  // Pre-fetch file listings when connected
-  useEffect(() => {
-    if (users.length > 0 && fileCacheDepth > 0) {
-      let cancelled = false;
-      const cleanups: Array<() => void> = [];
-
-      // Wait for a specific path's file list via a one-shot event listener
-      const waitForFileList = (targetPath: string[]): Promise<FileItem[]> => {
-        const targetKey = targetPath.join('/');
-        return new Promise((resolve, reject) => {
-          // Set a timeout so we don't wait forever
-          const timeout = setTimeout(() => {
-            cleanup();
-            reject(new Error(`Timeout waiting for file list: ${targetKey}`));
-          }, 5_000);
-
-          const unlistenPromise = listen<{ files: FileItem[]; path: string[] }>(
-            `file-list-${serverId}`,
-            (event) => {
-              if (event.payload.path.join('/') === targetKey) {
-                cleanup();
-                resolve(event.payload.files);
-              }
-            }
-          );
-
-          const cleanup = () => {
-            clearTimeout(timeout);
-            unlistenPromise.then((fn) => fn()).catch(() => {});
-          };
-          cleanups.push(cleanup);
-        });
-      };
-
-      const visited = new Set<string>();
-      const prefetchFiles = async (path: string[], depth: number): Promise<void> => {
-        if (depth < 0 || cancelled) return;
-
-        // Guard against cycles
-        const pathKey = path.join('/');
-        if (visited.has(pathKey)) return;
-        visited.add(pathKey);
-
-        // Check if already cached
-        const cached = getFileCache(serverId, path);
-        if (cached) {
-          for (const file of cached) {
-            if (file.isFolder && !cancelled) {
-              await prefetchFiles([...path, file.name], depth - 1);
-            }
-          }
-          return;
-        }
-
-        // Set up event listener BEFORE sending the request to avoid race
-        try {
-          const filesPromise = waitForFileList(path);
-          await invoke('get_file_list', { serverId, path });
-          const files = await filesPromise;
-
-          for (const file of files) {
-            if (file.isFolder && !cancelled) {
-              await prefetchFiles([...path, file.name], depth - 1);
-            }
-          }
-        } catch (error) {
-          if (!cancelled) {
-            console.error(`Failed to prefetch files at ${path.join('/')}:`, error);
-          }
-        }
-      };
-
-      // Start prefetching from root
-      prefetchFiles([], fileCacheDepth).catch(console.error);
-
-      return () => {
-        cancelled = true;
-        // Clean up any pending listeners
-        for (const cleanup of cleanups) {
-          cleanup();
-        }
-      };
-    }
-  }, [serverId, users.length, fileCacheDepth, getFileCache]);
 
   // Clear cache when disconnecting
   useEffect(() => {
@@ -534,6 +496,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     serverId,
     serverName,
     currentPath,
+    downloadFolder,
     setMessage,
     setSending,
     setBoardMessage,
@@ -552,6 +515,88 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     clearFileCachePath,
     onClose,
   });
+
+  // Permission-gated feature flags
+  const canBroadcast = hasPermission(32);
+  const canCreateFolder = hasPermission(5);
+  const canCreateNewsCategories = hasPermission(34);
+  const canDeleteNewsCategories = hasPermission(35);
+  const canCreateNewsFolders = hasPermission(36);
+  const canDeleteNewsFolders = hasPermission(37);
+  const canDeleteNewsArticles = hasPermission(33);
+
+  const handleSendBroadcast = async (msg: string) => {
+    try {
+      await invoke('send_broadcast', { serverId, message: msg });
+    } catch (error) {
+      console.error('Failed to send broadcast:', error);
+    }
+  };
+
+  const handleCreateFolder = async (name: string) => {
+    try {
+      await invoke('create_folder', { serverId, path: currentPath, name });
+      // Refresh file list
+      clearFileCachePath(serverId, currentPath);
+      invoke('get_file_list', { serverId, path: currentPath }).catch(console.error);
+    } catch (error) {
+      console.error('Failed to create folder:', error);
+      alert(`Failed to create folder: ${error}`);
+    }
+  };
+
+  const handleCreateNewsCategory = async (name: string) => {
+    try {
+      await invoke('create_news_category', { serverId, path: newsPath, name });
+      // Reload news
+      const categories = await invoke<NewsCategory[]>('get_news_categories', { serverId, path: newsPath });
+      setNewsCategories(categories);
+    } catch (error) {
+      console.error('Failed to create news category:', error);
+      alert(`Failed to create category: ${error}`);
+    }
+  };
+
+  const handleCreateNewsFolder = async (name: string) => {
+    try {
+      await invoke('create_news_folder', { serverId, path: newsPath, name });
+      const categories = await invoke<NewsCategory[]>('get_news_categories', { serverId, path: newsPath });
+      setNewsCategories(categories);
+    } catch (error) {
+      console.error('Failed to create news folder:', error);
+      alert(`Failed to create folder: ${error}`);
+    }
+  };
+
+  const handleDeleteNewsItem = async (itemPath: string[]) => {
+    try {
+      await invoke('delete_news_item', { serverId, path: itemPath });
+      // Reload current news path
+      if (newsPath.length === 0) {
+        const categories = await invoke<NewsCategory[]>('get_news_categories', { serverId, path: newsPath });
+        setNewsCategories(categories);
+      } else {
+        const articles = await invoke<NewsArticle[]>('get_news_articles', { serverId, path: newsPath });
+        setNewsArticles(articles);
+      }
+    } catch (error) {
+      console.error('Failed to delete news item:', error);
+      alert(`Failed to delete: ${error}`);
+    }
+  };
+
+  const handleDeleteNewsArticle = async (articleId: number, articlePath: string[]) => {
+    try {
+      await invoke('delete_news_article', { serverId, path: articlePath, articleId, recursive: false });
+      const articles = await invoke<NewsArticle[]>('get_news_articles', { serverId, path: newsPath });
+      setNewsArticles(articles);
+      setSelectedArticle(null);
+      setArticleContent('');
+    } catch (error) {
+      console.error('Failed to delete news article:', error);
+      alert(`Failed to delete article: ${error}`);
+    }
+  };
 
   // Wrapper functions for handlers that need additional state
   const handleSendMessageWrapper = (e: React.FormEvent) => {
@@ -675,8 +720,10 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
               sending={sending}
               bannerUrl={bannerUrl}
               agreementText={agreementText}
+              canBroadcast={canBroadcast}
               onMessageChange={setMessage}
               onSendMessage={handleSendMessageWrapper}
+              onSendBroadcast={handleSendBroadcast}
               onAcceptAgreement={handleAcceptAgreement}
               onDeclineAgreement={handleDeclineAgreement}
             />
@@ -707,6 +754,11 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
               composerTitle={composerTitle}
               composerBody={composerBody}
               postingNews={postingNews}
+              canCreateCategory={canCreateNewsCategories}
+              canDeleteCategory={canDeleteNewsCategories}
+              canCreateFolder={canCreateNewsFolders}
+              canDeleteFolder={canDeleteNewsFolders}
+              canDeleteArticle={canDeleteNewsArticles}
               onNewsPathChange={setNewsPath}
               onNewsBack={handleNewsBackWrapper}
               onNavigateNews={handleNavigateNewsWrapper}
@@ -716,6 +768,10 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
               onComposerTitleChange={setComposerTitle}
               onComposerBodyChange={setComposerBody}
               onPostNews={handlePostNewsWrapper}
+              onCreateCategory={handleCreateNewsCategory}
+              onCreateFolder={handleCreateNewsFolder}
+              onDeleteItem={handleDeleteNewsItem}
+              onDeleteArticle={handleDeleteNewsArticle}
             />
           )}
 
@@ -729,10 +785,19 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
               uploadProgress={uploadProgress}
               isLoading={isLoadingFiles}
               onPathChange={(path) => {
-                if (!isLoadingFiles) {
+                if (!navigationBlockedRef.current) {
+                  navigationBlockedRef.current = true;
+                  serverRespondedRef.current = false; // cancel stale pending guard release
+                  previousPathRef.current = currentPath; // save for cancel
+                  currentPathRef.current = path;
                   setCurrentPath(path);
                 }
               }}
+              isServerUnresponsive={isServerUnresponsive}
+              onWaitForServer={handleWaitForServer}
+              onCancelNavigation={handleCancelNavigation}
+              canCreateFolder={canCreateFolder}
+              onCreateFolder={handleCreateFolder}
               onDownloadFile={handleDownloadFile}
               onUploadFile={handleUploadFile}
               onRefresh={() => {

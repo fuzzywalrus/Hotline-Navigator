@@ -6,10 +6,13 @@ export type DarkModePreference = 'system' | 'light' | 'dark';
 interface PreferencesState {
   username: string;
   userIconId: number;
-  fileCacheDepth: number;
   enablePrivateMessaging: boolean;
   darkMode: DarkModePreference;
   
+  // Download preferences
+  downloadFolder: string | null;
+  setDownloadFolder: (folder: string | null) => void;
+
   // Sound preferences
   playSounds: boolean;
   playChatSound: boolean;
@@ -25,7 +28,6 @@ interface PreferencesState {
   // Actions
   setUsername: (username: string) => void;
   setUserIconId: (iconId: number) => void;
-  setFileCacheDepth: (depth: number) => void;
   setEnablePrivateMessaging: (enabled: boolean) => void;
   setDarkMode: (mode: DarkModePreference) => void;
   setPlaySounds: (enabled: boolean) => void;
@@ -45,10 +47,13 @@ export const usePreferencesStore = create<PreferencesState>()(
     (set) => ({
       username: 'guest',
       userIconId: 191, // Default icon from Swift code
-      fileCacheDepth: 2, // Default to 2 layers deep
       enablePrivateMessaging: true, // Private messaging enabled by default
       darkMode: 'system', // Default to system preference
-      
+
+      // Download preferences
+      downloadFolder: null,
+      setDownloadFolder: (downloadFolder) => set({ downloadFolder }),
+
       // Sound preferences (all enabled by default)
       playSounds: true,
       playChatSound: true,
@@ -63,7 +68,6 @@ export const usePreferencesStore = create<PreferencesState>()(
       
       setUsername: (username) => set({ username }),
       setUserIconId: (userIconId) => set({ userIconId }),
-      setFileCacheDepth: (fileCacheDepth) => set({ fileCacheDepth }),
       setEnablePrivateMessaging: (enablePrivateMessaging) => set({ enablePrivateMessaging }),
       setPlaySounds: (playSounds) => set({ playSounds }),
       setPlayChatSound: (playChatSound) => set({ playChatSound }),

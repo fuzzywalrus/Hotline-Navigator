@@ -23,6 +23,11 @@ interface FilesTabProps {
   onRefresh?: () => void;
   getAllCachedFiles?: () => Array<{ file: FileItem; path: string[] }>;
   isLoading?: boolean;
+  isServerUnresponsive?: boolean;
+  onWaitForServer?: () => void;
+  onCancelNavigation?: () => void;
+  canCreateFolder?: boolean;
+  onCreateFolder?: (name: string) => Promise<void>;
 }
 
 export default function FilesTab({
@@ -36,11 +41,17 @@ export default function FilesTab({
   onRefresh,
   getAllCachedFiles,
   isLoading = false,
+  isServerUnresponsive = false,
+  onWaitForServer,
+  onCancelNavigation,
+  canCreateFolder = false,
+  onCreateFolder,
 }: FilesTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [showNewFolderInput, setShowNewFolderInput] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
   const [searchResults, setSearchResults] = useState<Array<{ file: FileItem; path: string[] }>>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const navigationPendingRef = useRef(false);
   const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
   const previewableExtensions = [
     // Images
@@ -62,7 +73,7 @@ export default function FilesTab({
   }>({ file: null, path: [], src: null, loading: false });
   const [previewCache, setPreviewCache] = useState<Map<string, { src: string | null; text?: string }>>(new Map());
 
-  // Search through all cached files
+  // Search through cached files, scoped to current path when inside a folder
   useEffect(() => {
     if (!searchQuery.trim() || !getAllCachedFiles) {
       setSearchResults([]);
@@ -71,11 +82,15 @@ export default function FilesTab({
 
     const query = searchQuery.toLowerCase().trim();
     const allFiles = getAllCachedFiles();
-    const results = allFiles.filter(({ file }) => 
-      file.name.toLowerCase().includes(query)
-    );
+    const results = allFiles.filter(({ file, path }) => {
+      if (!file.name.toLowerCase().includes(query)) return false;
+      if (currentPath.length === 0) return true;
+      // Scope: the file's parent path must start with currentPath
+      if (path.length < currentPath.length) return false;
+      return currentPath.every((segment, i) => path[i] === segment);
+    });
     setSearchResults(results);
-  }, [searchQuery, getAllCachedFiles]);
+  }, [searchQuery, getAllCachedFiles, currentPath]);
 
   const isSearching = searchQuery.trim().length > 0;
   const displayedFiles = isSearching ? searchResults.map(r => r.file) : files;
@@ -97,7 +112,7 @@ export default function FilesTab({
       modifiers: { meta: true },
       description: 'Focus search',
       action: () => {
-        const searchInput = document.querySelector('input[placeholder="Search files..."]') as HTMLInputElement;
+        const searchInput = document.querySelector('input[placeholder^="Search"]') as HTMLInputElement;
         if (searchInput) {
           searchInput.focus();
         }
@@ -106,21 +121,12 @@ export default function FilesTab({
     },
   ]);
 
-  // Reset navigation guard whenever the path actually changes
-  useEffect(() => {
-    navigationPendingRef.current = false;
-  }, [currentPath]);
-
   const handleFileClick = (file: FileItem, path?: string[]) => {
-    if (isLoading || navigationPendingRef.current) {
-      return;
-    }
+    if (isLoading) return;
     if (isSearching && path) {
-      // If searching, navigate to the file's location
       onPathChange(path);
-      setSearchQuery(''); // Clear search to show the directory
+      setSearchQuery('');
     } else if (file.isFolder) {
-      navigationPendingRef.current = true;
       onPathChange([...currentPath, file.name]);
     }
   };
@@ -255,14 +261,14 @@ export default function FilesTab({
   };
 
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col relative">
       {/* Search bar */}
       {getAllCachedFiles && (
         <div className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2">
           <div className="relative">
             <input
               type="text"
-              placeholder="Search files..."
+              placeholder={currentPath.length > 0 ? `Search in "${currentPath[currentPath.length - 1]}"...` : "Search files..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full px-3 py-1.5 pl-8 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -362,6 +368,18 @@ export default function FilesTab({
               </button>
             </>
           )}
+          {canCreateFolder && onCreateFolder && (
+            <button
+              onClick={() => { setShowNewFolderInput(true); setNewFolderName(''); }}
+              className="px-2 py-1 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors flex items-center gap-1"
+              title="New Folder"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+              </svg>
+              New Folder
+            </button>
+          )}
           {onRefresh && (
             <button
               onClick={onRefresh}
@@ -376,6 +394,82 @@ export default function FilesTab({
           )}
         </div>
       </div>
+
+      {/* New folder inline input */}
+      {showNewFolderInput && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-800 px-4 py-2 flex items-center gap-2">
+          <svg className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+          </svg>
+          <input
+            type="text"
+            value={newFolderName}
+            onChange={(e) => setNewFolderName(e.target.value)}
+            placeholder="Folder name..."
+            autoFocus
+            onKeyDown={async (e) => {
+              if (e.key === 'Enter' && newFolderName.trim()) {
+                await onCreateFolder!(newFolderName.trim());
+                setShowNewFolderInput(false);
+                setNewFolderName('');
+              }
+              if (e.key === 'Escape') {
+                setShowNewFolderInput(false);
+                setNewFolderName('');
+              }
+            }}
+            className="flex-1 px-2 py-1 text-sm border border-blue-300 dark:border-blue-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <button
+            onClick={async () => {
+              if (newFolderName.trim()) {
+                await onCreateFolder!(newFolderName.trim());
+              }
+              setShowNewFolderInput(false);
+              setNewFolderName('');
+            }}
+            disabled={!newFolderName.trim()}
+            className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded disabled:cursor-not-allowed"
+          >
+            Create
+          </button>
+          <button
+            onClick={() => { setShowNewFolderInput(false); setNewFolderName(''); }}
+            className="px-2 py-1 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Server unresponsive overlay */}
+      {isServerUnresponsive && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg p-6 max-w-sm w-full mx-4 text-center">
+            <div className="text-gray-500 dark:text-gray-400 mb-1">
+              <svg className="w-8 h-8 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              </svg>
+            </div>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">Server is taking a while</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">The server hasn't responded yet. This folder may have a lot of files.</p>
+            <div className="flex gap-2 justify-center">
+              <button
+                onClick={onCancelNavigation}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={onWaitForServer}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
+              >
+                Keep Waiting
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* File list */}
       <div className="flex-1 overflow-y-auto p-4">
