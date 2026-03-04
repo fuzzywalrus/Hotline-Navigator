@@ -18,7 +18,7 @@ export default function BoardTab({
   onPostBoard,
 }: BoardTabProps) {
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col min-h-0">
       {/* Posts list */}
       <div className="flex-1 overflow-y-auto p-4">
         {loadingBoard ? (
