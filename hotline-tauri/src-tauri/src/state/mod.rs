@@ -479,6 +479,18 @@ impl AppState {
                 self.app_handle
                     .path()
                     .download_dir()
+                    .or_else(|_| {
+                        self.app_handle
+                            .path()
+                            .home_dir()
+                            .map(|dir| dir.join("Downloads"))
+                    })
+                    .or_else(|_| {
+                        self.app_handle
+                            .path()
+                            .app_data_dir()
+                            .map(|dir| dir.join("Downloads"))
+                    })
                     .map_err(|e| format!("Failed to get downloads directory: {}", e))?
             };
 
