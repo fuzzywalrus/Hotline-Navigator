@@ -48,5 +48,5 @@ For more details about the Tauri client implementation, see the [`hotline-tauri/
 ## More Info about Hotline
 
 
-Looking for other Hotline Client? see [The Hotline Wiki](https://hlwiki.com/index.php/Clients_New)
+Looking for other Hotline Client? see [The Hotline Wiki](https://hlwiki.com/index.php/Clients_New) and [Hotline City](https://hotline.retro-os.live/index.php/downloads/category/9-hotline-clients)
 
