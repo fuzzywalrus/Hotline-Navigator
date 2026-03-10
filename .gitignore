@@ -33,3 +33,6 @@ IDEWorkspaceSharedSettings.plist
 *.aab
 *.keystore
 *.jks
+
+# iOS
+*.ipa

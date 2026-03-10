@@ -45,8 +45,21 @@ This is a **Tauri-based Hotline client** that provides a modern, cross-platform 
 
 For more details about the Tauri client implementation, see the [`hotline-tauri/README.md`](hotline-tauri/README.md).
 
-## More Info about Hotline
+## Sideloading on Mobile
 
+### iOS/iPadOS
+
+The iOS/iPadOS IPA is unsigned and must be sideloaded using a signing tool:
+
+- **[AltStore](https://altstore.io/)** / **[SideStore](https://sidestore.io/)** — Free sideloading using your Apple ID. Apps must be refreshed every 7 days (or 365 days with a paid Apple Developer account).
+- **[TrollStore](https://github.com/opa334/TrollStore)** — Permanent installs with no expiration, but only available on specific iOS versions (14.0–16.6.1, 17.0).
+- **[Sideloadly](https://sideloadly.io/)** — Desktop app for sideloading IPAs via USB.
+
+### Android
+
+Download the APK from the releases page and install it directly. You may need to enable "Install from unknown sources" in your device settings.
+
+## More Info about Hotline
 
 Looking for other Hotline Client? see [The Hotline Wiki](https://hlwiki.com/index.php?title=Clients) and [Hotline City](https://hotline.retro-os.live/index.php/downloads/category/9-hotline-clients)
 
