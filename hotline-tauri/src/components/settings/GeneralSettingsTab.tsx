@@ -3,11 +3,13 @@ import { invoke } from '@tauri-apps/api/core';
 import { usePreferencesStore } from '../../stores/preferencesStore';
 import { useAppStore } from '../../stores/appStore';
 import { showNotification } from '../../stores/notificationStore';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import type { Bookmark } from '../../types';
 
 export default function GeneralSettingsTab() {
   const { username, setUsername, enablePrivateMessaging, setEnablePrivateMessaging, darkMode, setDarkMode, downloadFolder, setDownloadFolder, showServerBanner, setShowServerBanner, clickableLinks, setClickableLinks, autoDetectTls, setAutoDetectTls, mentionPopup, setMentionPopup, mutedUsers, addMutedUser, removeMutedUser, watchWords, addWatchWord, removeWatchWord } = usePreferencesStore();
   const { setBookmarks } = useAppStore();
+  const isMobile = useIsMobile();
   const [localUsername, setLocalUsername] = useState(username);
   const [isAddingDefaults, setIsAddingDefaults] = useState(false);
   const [muteInput, setMuteInput] = useState('');
@@ -311,30 +313,32 @@ export default function GeneralSettingsTab() {
         </div>
       </div>
 
-      <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          Download Folder
-        </label>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-          {downloadFolder ? downloadFolder : 'System Downloads folder'}
-        </p>
-        <div className="flex gap-2">
-          <button
-            onClick={handlePickDownloadFolder}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors"
-          >
-            Choose...
-          </button>
-          {downloadFolder && (
+      {!isMobile && (
+        <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Download Folder
+          </label>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            {downloadFolder ? downloadFolder : 'System Downloads folder'}
+          </p>
+          <div className="flex gap-2">
             <button
-              onClick={() => setDownloadFolder(null)}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-md font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              onClick={handlePickDownloadFolder}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors"
             >
-              Reset to Default
+              Choose...
             </button>
-          )}
+            {downloadFolder && (
+              <button
+                onClick={() => setDownloadFolder(null)}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-md font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                Reset to Default
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

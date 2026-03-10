@@ -21,9 +21,14 @@ else
 fi
 
 # Verify required environment variables
+# Support both naming conventions
+APP_PASSWORD="${APP_PASSWORD:-$APPLE_PASSWORD}"
+TEAM_ID="${TEAM_ID:-$APPLE_TEAM_ID}"
+SIGNING_IDENTITY="${SIGNING_IDENTITY:-$APPLE_SIGNING_IDENTITY}"
+
 if [ -z "$APPLE_ID" ] || [ -z "$APP_PASSWORD" ] || [ -z "$TEAM_ID" ] || [ -z "$SIGNING_IDENTITY" ]; then
     echo "❌ Error: Missing required environment variables in .env file"
-    echo "   Required: APPLE_ID, APP_PASSWORD, TEAM_ID, SIGNING_IDENTITY"
+    echo "   Required: APPLE_ID, APP_PASSWORD (or APPLE_PASSWORD), TEAM_ID (or APPLE_TEAM_ID), SIGNING_IDENTITY (or APPLE_SIGNING_IDENTITY)"
     exit 1
 fi
 

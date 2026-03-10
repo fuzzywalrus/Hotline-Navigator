@@ -163,15 +163,23 @@ pub async fn download_file(
 
 #[tauri::command]
 pub async fn pick_download_folder() -> Result<Option<String>, String> {
-    let result = tokio::task::spawn_blocking(|| {
-        rfd::FileDialog::new()
-            .set_title("Choose Download Folder")
-            .pick_folder()
-            .map(|p| p.to_string_lossy().to_string())
-    })
-    .await
-    .map_err(|e| format!("Dialog error: {}", e))?;
-    Ok(result)
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        Err("Download folder selection is not available on mobile".to_string())
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let result = tokio::task::spawn_blocking(|| {
+            rfd::FileDialog::new()
+                .set_title("Choose Download Folder")
+                .pick_folder()
+                .map(|p| p.to_string_lossy().to_string())
+        })
+        .await
+        .map_err(|e| format!("Dialog error: {}", e))?;
+        Ok(result)
+    }
 }
 
 #[tauri::command]
