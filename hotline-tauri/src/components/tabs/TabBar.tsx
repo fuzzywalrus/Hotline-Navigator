@@ -26,18 +26,18 @@ export default function TabBar() {
     removeTab(tabId);
   };
 
-  // Detect iOS/iPadOS for safe area padding
-  const isIOS = typeof window !== 'undefined' && (
-    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  // Detect mobile (iOS/iPadOS/Android) for safe area padding
+  const isMobile = typeof window !== 'undefined' && (
+    /iPad|iPhone|iPod|Android/.test(navigator.userAgent) ||
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) // iPad on iOS 13+
   );
 
   return (
-    <div 
+    <div
       className="flex items-center bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 overflow-x-auto"
-      style={isIOS ? { 
-        paddingTop: `calc(env(safe-area-inset-top) + 0.25rem)`, // safe area + 0.25rem (4px) for minimal spacing
-        minHeight: `calc(2.5rem + env(safe-area-inset-top))` // h-10 (2.5rem) + safe area
+      style={isMobile ? {
+        paddingTop: `calc(env(safe-area-inset-top, 24px) + 0.25rem)`, // safe area + 0.25rem (4px) for minimal spacing
+        minHeight: `calc(2.5rem + env(safe-area-inset-top, 24px))` // h-10 (2.5rem) + safe area
       } : {
         height: '2.5rem' // h-10 equivalent for desktop
       }}

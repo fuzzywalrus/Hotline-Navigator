@@ -51,7 +51,7 @@ export default function BoardTab({
       </div>
 
       {/* Post composer */}
-      <form onSubmit={onPostBoard} className="border-t border-gray-200 dark:border-gray-700 p-4">
+      <form onSubmit={onPostBoard} className="border-t border-gray-200 dark:border-gray-700 p-4 pb-6">
         <div className="flex flex-col gap-2">
           <textarea
             value={boardMessage}

@@ -287,7 +287,7 @@ export default function NewsTab({
         </div>
 
         {/* Post button */}
-        <div className="border-t border-gray-200 dark:border-gray-700 p-4">
+        <div className="border-t border-gray-200 dark:border-gray-700 p-4 pb-6">
           <button
             onClick={onToggleComposer}
             className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium"

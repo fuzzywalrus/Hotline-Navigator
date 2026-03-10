@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../../stores/appStore';
 import { usePreferencesStore } from '../../stores/preferencesStore';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import type { Bookmark, ServerBookmark } from '../../types';
 import EditBookmarkDialog from './EditBookmarkDialog';
 import { useContextMenu, ContextMenuRenderer, type ContextMenuItem } from '../common/ContextMenu';
@@ -73,6 +74,8 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
   const [expandedTrackers, setExpandedTrackers] = useState<Set<string>>(new Set());
   const [trackerServers, setTrackerServers] = useState<Map<string, ServerBookmark[]>>(new Map());
   const [loadingTrackers, setLoadingTrackers] = useState<Set<string>>(new Set());
+  const [mobileActionServer, setMobileActionServer] = useState<{ trackerId: string; server: ServerBookmark } | null>(null);
+  const isMobile = useIsMobile();
   const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
 
   // dnd-kit sensors
@@ -559,12 +562,18 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
                     return (
                       <div
                         key={server.id}
-                        className={`h-[34px] pl-[34px] pr-2 flex items-center gap-1.5 cursor-pointer group min-w-0 ${
+                        className={`${isMobile ? 'min-h-[44px] py-1' : 'h-[34px]'} pl-[34px] pr-2 ${isMobile ? 'flex flex-wrap items-start' : 'flex items-center'} gap-1.5 cursor-pointer group min-w-0 ${
                           serverIsEven
                             ? 'bg-white dark:bg-gray-900'
                             : 'bg-gray-50 dark:bg-gray-800/50'
                         } hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors`}
-                        onClick={() => handleConnectToTrackerServer(bookmark.id, server)}
+                        onClick={() => {
+                          if (isMobile) {
+                            setMobileActionServer({ trackerId: bookmark.id, server });
+                          } else {
+                            handleConnectToTrackerServer(bookmark.id, server);
+                          }
+                        }}
                         onContextMenu={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
@@ -616,9 +625,9 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
                           {server.name}
                         </span>
 
-                        {/* Server description if available - truncates naturally, no max width */}
-                        {server.description && (
-                          <span className="text-xs text-gray-500 dark:text-gray-400 truncate min-w-0 flex-shrink">
+                        {/* Server description if available */}
+                        {server.description && !isMobile && (
+                          <span className="text-xs text-gray-500 dark:text-gray-400 min-w-0 flex-shrink truncate">
                             {server.description}
                           </span>
                         )}
@@ -634,30 +643,41 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
                           </div>
                         )}
 
-                        {/* Hover action buttons */}
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleAddTrackerServerToBookmarks(bookmark.id, server);
-                            }}
-                            className="text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 text-xs px-1.5 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
-                            title="Add to bookmarks"
-                          >
-                            Bookmark
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleConnectToTrackerServer(bookmark.id, server);
-                            }}
-                            disabled={connectingId === trackerServerId}
-                            className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 text-xs px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="Connect to server"
-                          >
-                            {connectingId === trackerServerId ? 'Connecting...' : 'Connect'}
-                          </button>
-                        </div>
+                        {/* Action buttons - hover on desktop only */}
+                        {!isMobile && (
+                          <div className="flex items-center gap-1 transition-opacity flex-shrink-0 opacity-0 group-hover:opacity-100">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAddTrackerServerToBookmarks(bookmark.id, server);
+                              }}
+                              className="text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 text-xs px-1.5 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                              title="Add to bookmarks"
+                            >
+                              Bookmark
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleConnectToTrackerServer(bookmark.id, server);
+                              }}
+                              disabled={connectingId === trackerServerId}
+                              className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 text-xs px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Connect to server"
+                            >
+                              {connectingId === trackerServerId ? 'Connecting...' : 'Connect'}
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Full-width description on mobile */}
+                        {isMobile && server.description && (
+                          <div className="w-full pl-[22px] pb-1">
+                            <span className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
+                              {server.description}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -881,6 +901,63 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
         contextMenu={contextMenu}
         onClose={hideContextMenu}
       />
+
+      {/* Mobile action modal for tracker servers */}
+      {mobileActionServer && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-end justify-center z-50"
+          onClick={() => setMobileActionServer(null)}
+        >
+          <div
+            className="bg-white dark:bg-gray-800 rounded-t-xl shadow-xl w-full max-w-lg mx-0 pb-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 pt-4 pb-2">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-base font-semibold text-gray-900 dark:text-white truncate">
+                  {mobileActionServer.server.name}
+                </h3>
+                <button
+                  onClick={() => setMobileActionServer(null)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1"
+                >
+                  ✕
+                </button>
+              </div>
+              {mobileActionServer.server.description && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mb-1">
+                  {mobileActionServer.server.description}
+                </p>
+              )}
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                {mobileActionServer.server.address}:{mobileActionServer.server.port}
+                {mobileActionServer.server.users > 0 && ` · ${mobileActionServer.server.users} user${mobileActionServer.server.users !== 1 ? 's' : ''}`}
+              </p>
+            </div>
+            <div className="px-4 pt-2 space-y-1">
+              <button
+                onClick={() => {
+                  handleConnectToTrackerServer(mobileActionServer.trackerId, mobileActionServer.server);
+                  setMobileActionServer(null);
+                }}
+                disabled={!!connectingId}
+                className="w-full text-left px-4 py-3 text-sm font-medium text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-50"
+              >
+                Connect to Server
+              </button>
+              <button
+                onClick={() => {
+                  handleAddTrackerServerToBookmarks(mobileActionServer.trackerId, mobileActionServer.server);
+                  setMobileActionServer(null);
+                }}
+                className="w-full text-left px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                Add to Bookmarks
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete confirmation dialog */}
       {deletingId && (

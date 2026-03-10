@@ -66,7 +66,7 @@ export default function NotificationLog({ onClose }: NotificationLogProps) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-2xl h-[600px] flex flex-col transition-all duration-300 ease-in-out ${
+        className={`bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-2xl h-[600px] max-h-[90vh] mx-3 flex flex-col transition-all duration-300 ease-in-out ${
           visible ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-2'
         }`}
       >
@@ -115,11 +115,11 @@ export default function NotificationLog({ onClose }: NotificationLogProps) {
                       <div className="flex items-start justify-between gap-2 mb-1">
                         <div className="flex-1 min-w-0">
                           {notification.title ? (
-                            <div className="font-semibold text-sm text-gray-900 dark:text-white">
+                            <div className="font-semibold text-sm text-gray-900 dark:text-white break-words">
                               {notification.title}
                             </div>
                           ) : (
-                            <div className="text-sm text-gray-900 dark:text-white">
+                            <div className="text-sm text-gray-900 dark:text-white break-words">
                               {notification.message}
                             </div>
                           )}
@@ -134,7 +134,7 @@ export default function NotificationLog({ onClose }: NotificationLogProps) {
                         </span>
                       </div>
                       {notification.title && (
-                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                        <div className="text-sm text-gray-600 dark:text-gray-400 break-words">
                           {notification.message}
                         </div>
                       )}

@@ -37,11 +37,16 @@ export default function MobileTabBar({
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => onTabChange(tab.id)}
+            onClick={() => {
+              onTabChange(tab.id);
+              setShowUsers(false);
+            }}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium transition-colors border-b-2 ${
-              activeTab === tab.id
+              activeTab === tab.id && !showUsers
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400 bg-white dark:bg-gray-700'
-                : 'border-transparent text-gray-500 dark:text-gray-400'
+                : showUsers && activeTab === tab.id
+                  ? 'border-transparent text-gray-400 dark:text-gray-500'
+                  : 'border-transparent text-gray-500 dark:text-gray-400'
             }`}
           >
             <img

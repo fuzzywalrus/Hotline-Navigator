@@ -5,6 +5,7 @@ import SoundSettingsTab from './SoundSettingsTab';
 import KeyboardShortcutsTab from './KeyboardShortcutsTab';
 import AboutSettingsTab from './AboutSettingsTab';
 import UpdateSettingsTab from './UpdateSettingsTab';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 type SettingsTab = 'general' | 'icon' | 'sound' | 'shortcuts' | 'about' | 'updates';
 
@@ -15,6 +16,7 @@ interface SettingsViewProps {
 export default function SettingsView({ onClose }: SettingsViewProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [visible, setVisible] = useState(false);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true));
@@ -34,12 +36,12 @@ export default function SettingsView({ onClose }: SettingsViewProps) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-2xl h-[600px] flex flex-col transition-all duration-300 ease-in-out ${
+        className={`bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-2xl h-[600px] max-h-[90vh] mx-3 flex flex-col transition-all duration-300 ease-in-out ${
           visible ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-2'
         }`}
       >
         {/* Header */}
-        <div className="bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between rounded-t-lg">
+        <div className="bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 md:px-6 py-4 flex items-center justify-between rounded-t-lg">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
             Settings
           </h2>
@@ -51,11 +53,11 @@ export default function SettingsView({ onClose }: SettingsViewProps) {
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="border-b border-gray-200 dark:border-gray-700 flex">
+        {/* Tabs - scrollable on narrow screens */}
+        <div className="border-b border-gray-200 dark:border-gray-700 flex overflow-x-auto">
           <button
             onClick={() => setActiveTab('general')}
-            className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+            className={`px-3 md:px-6 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
               activeTab === 'general'
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
@@ -65,7 +67,7 @@ export default function SettingsView({ onClose }: SettingsViewProps) {
           </button>
           <button
             onClick={() => setActiveTab('icon')}
-            className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+            className={`px-3 md:px-6 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
               activeTab === 'icon'
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
@@ -75,7 +77,7 @@ export default function SettingsView({ onClose }: SettingsViewProps) {
           </button>
           <button
             onClick={() => setActiveTab('sound')}
-            className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+            className={`px-3 md:px-6 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
               activeTab === 'sound'
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
@@ -83,19 +85,21 @@ export default function SettingsView({ onClose }: SettingsViewProps) {
           >
             Sound
           </button>
-          <button
-            onClick={() => setActiveTab('shortcuts')}
-            className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'shortcuts'
-                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
-            }`}
-          >
-            Shortcuts
-          </button>
+          {!isMobile && (
+            <button
+              onClick={() => setActiveTab('shortcuts')}
+              className={`px-3 md:px-6 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === 'shortcuts'
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+              }`}
+            >
+              Shortcuts
+            </button>
+          )}
           <button
             onClick={() => setActiveTab('about')}
-            className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+            className={`px-3 md:px-6 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
               activeTab === 'about'
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
@@ -105,7 +109,7 @@ export default function SettingsView({ onClose }: SettingsViewProps) {
           </button>
           <button
             onClick={() => setActiveTab('updates')}
-            className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+            className={`px-3 md:px-6 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
               activeTab === 'updates'
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
