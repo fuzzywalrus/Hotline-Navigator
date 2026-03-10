@@ -61,5 +61,5 @@ Download the APK from the releases page and install it directly. You may need to
 
 ## More Info about Hotline
 
-Looking for other Hotline Client? see [The Hotline Wiki](https://hlwiki.com/index.php?title=Clients) and [Hotline City](https://hotline.retro-os.live/index.php/downloads/category/9-hotline-clients)
+Looking for other Hotline Clients? see [The Hotline Wiki](https://hlwiki.com/index.php?title=Clients) and [Hotline City](https://hotline.retro-os.live/index.php/downloads/category/9-hotline-clients)
 
