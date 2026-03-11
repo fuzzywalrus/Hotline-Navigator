@@ -3,9 +3,13 @@
 
 ![Hotline Navigator Banner ogo](https://raw.githubusercontent.com/fuzzywalrus/hotline/refs/heads/main/hotline-tauri/public/hotline-navigator-banner.jpg)
 
+[Official Website](https://hotline.greggant.com)
+
 A modern, cross-platform Hotline client built with **Tauri**, React, and Rust. This is a spiritual port of Dustin Mierau's wonderful [Hotline app](https://github.com/mierau/hotline), with the goal of bringing the classic Hotline protocol to as many modern platforms as possible. It provides multi-session, single window interface and a responsive design.
 
 This port is divergent from the original Swift/macOS Hotline client and is not a direct port, rather a recreation of it in Tauri using React and Rust, the source code providing valuable information about the protocol and how to implement it. 
+
+
 
 ## What the hell is Hotline?
 
@@ -13,9 +17,7 @@ Hotline was a very popular Mac-centric chat/file-sharing service from the late 1
 
 Hotline in concept, was to replicate a BBS but for the internet age. Modern users would recongize more as a proto peer-to-peer or a Discord like application
 
-I made a video aobut the [the history of Hotline](https://www.youtube.com/watch?v=1ixx1ZapAPg). (Fair warning, I went too over-the-top on the editing). Salon's 1999 article, [Hotline's civil war
-](https://www.salon.com/1999/02/25/feature_224/) also gives plenty of insight.
-
+Hotline's Navigator's website has a deeper drive [the history of Hotline](https://hotline.greggant.com/history/). 
 
 ## Platform Support
 
