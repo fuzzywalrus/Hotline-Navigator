@@ -367,6 +367,23 @@ impl AppState {
         }
     }
 
+    pub async fn update_user_info_all_servers(&self, username: &str, icon_id: u16) -> Result<(), String> {
+        let clients = self.clients.read().await;
+        let mut errors = Vec::new();
+
+        for (server_id, client) in clients.iter() {
+            if let Err(e) = client.send_set_client_user_info(username, icon_id).await {
+                errors.push(format!("{}: {}", server_id, e));
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(format!("Some servers failed: {}", errors.join(", ")))
+        }
+    }
+
     pub async fn send_chat(&self, server_id: &str, message: String) -> Result<(), String> {
         let clients = self.clients.read().await;
 

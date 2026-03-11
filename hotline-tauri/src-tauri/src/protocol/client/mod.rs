@@ -330,7 +330,7 @@ impl HotlineClient {
             FieldType::UserName,
             &username,
         ));
-        transaction.add_field(TransactionField::from_u32(FieldType::VersionNumber, 123));
+        transaction.add_field(TransactionField::from_u32(FieldType::VersionNumber, 255));
 
         // Send transaction
         let encoded = transaction.encode();

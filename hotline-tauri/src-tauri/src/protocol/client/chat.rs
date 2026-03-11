@@ -101,6 +101,36 @@ impl HotlineClient {
         Ok(())
     }
 
+    pub async fn send_set_client_user_info(&self, username: &str, icon_id: u16) -> Result<(), String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::SetClientUserInfo);
+        transaction.add_field(TransactionField::from_string(FieldType::UserName, username));
+        transaction.add_field(TransactionField::from_u16(FieldType::UserIconId, icon_id));
+        transaction.add_field(TransactionField::from_u16(FieldType::Options, 0));
+
+        let encoded = transaction.encode();
+
+        let mut write_guard = self.write_half.lock().await;
+        let write_stream = write_guard
+            .as_mut()
+            .ok_or("Not connected".to_string())?;
+
+        write_stream
+            .write_all(&encoded)
+            .await
+            .map_err(|e| format!("Failed to send user info update: {}", e))?;
+
+        write_stream
+            .flush()
+            .await
+            .map_err(|e| format!("Failed to flush: {}", e))?;
+
+        // Update local state
+        *self.username.lock().await = username.to_string();
+        *self.user_icon_id.lock().await = icon_id;
+
+        Ok(())
+    }
+
     pub async fn accept_agreement(&self) -> Result<(), String> {
         use std::time::Duration;
         use tokio::sync::mpsc;

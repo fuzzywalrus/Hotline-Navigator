@@ -51,7 +51,7 @@ export default function TransferList({ serverId, serverName, onClose }: Transfer
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-2xl h-[600px] flex flex-col">
+      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-2xl min-h-[400px] h-[70vh] max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between rounded-t-lg">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">

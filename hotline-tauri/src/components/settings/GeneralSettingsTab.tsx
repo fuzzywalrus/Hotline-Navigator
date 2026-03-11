@@ -19,8 +19,14 @@ export default function GeneralSettingsTab() {
     setLocalUsername(username);
   }, [username]);
 
-  const handleSave = () => {
-    setUsername(localUsername.trim() || 'guest');
+  const handleSave = async () => {
+    const newUsername = localUsername.trim() || 'guest';
+    setUsername(newUsername);
+    try {
+      await invoke('update_user_info', { username: newUsername, iconId: usePreferencesStore.getState().userIconId });
+    } catch {
+      // Silently ignore - no servers connected or update failed on some
+    }
   };
 
   const handlePickDownloadFolder = async () => {

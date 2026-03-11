@@ -64,6 +64,15 @@ pub async fn disconnect_from_server(
 }
 
 #[tauri::command]
+pub async fn update_user_info(
+    username: String,
+    icon_id: u16,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.update_user_info_all_servers(&username, icon_id).await
+}
+
+#[tauri::command]
 pub async fn send_chat_message(
     server_id: String,
     message: String,

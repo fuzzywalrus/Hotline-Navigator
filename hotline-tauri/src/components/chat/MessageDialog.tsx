@@ -88,7 +88,7 @@ export default function MessageDialog({ userId, userName, messages, onSendMessag
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`bg-white dark:bg-gray-900 rounded-lg shadow-xl w-[500px] h-[600px] flex flex-col transition-all duration-300 ease-in-out ${
+        className={`bg-white dark:bg-gray-900 rounded-lg shadow-xl w-[500px] min-h-[400px] h-[70vh] max-h-[90vh] flex flex-col transition-all duration-300 ease-in-out ${
           visible ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-2'
         }`}
       >

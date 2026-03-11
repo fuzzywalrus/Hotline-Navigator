@@ -28,6 +28,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::connect_to_server,
             commands::disconnect_from_server,
+            commands::update_user_info,
             commands::send_chat_message,
             commands::send_private_message,
             commands::get_message_board,
