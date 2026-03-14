@@ -14,6 +14,14 @@ val tauriProperties = Properties().apply {
 }
 
 android {
+    signingConfigs {
+        create("release") {
+            storeFile = file("../keystore.jks")
+            storePassword = "hotline123"
+            keyAlias = "hotline"
+            keyPassword = "hotline123"
+        }
+    }
     compileSdk = 36
     namespace = "com.greg.hotline_navigator"
     defaultConfig {
@@ -37,6 +45,7 @@ android {
             }
         }
         getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }
