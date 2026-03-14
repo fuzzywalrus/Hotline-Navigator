@@ -31,6 +31,10 @@ interface PreferencesState {
   addWatchWord: (word: string) => void;
   removeWatchWord: (word: string) => void;
 
+  // Icon preferences
+  useRemoteIcons: boolean;
+  setUseRemoteIcons: (enabled: boolean) => void;
+
   // Connection preferences
   autoDetectTls: boolean;
   setAutoDetectTls: (enabled: boolean) => void;
@@ -101,6 +105,10 @@ export const usePreferencesStore = create<PreferencesState>()(
       removeWatchWord: (word) => set((state) => ({
         watchWords: state.watchWords.filter((w) => w !== word),
       })),
+
+      // Icon preferences
+      useRemoteIcons: true,
+      setUseRemoteIcons: (useRemoteIcons) => set({ useRemoteIcons }),
 
       // Connection preferences
       autoDetectTls: false,

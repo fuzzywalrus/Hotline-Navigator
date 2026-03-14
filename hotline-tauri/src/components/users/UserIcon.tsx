@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { usePreferencesStore } from '../../stores/preferencesStore';
 
 interface UserIconProps {
   iconId: number;
@@ -7,13 +8,19 @@ interface UserIconProps {
 }
 
 export default function UserIcon({ iconId, size = 16, className = '' }: UserIconProps) {
-  const [imageError, setImageError] = useState(false);
-  const iconPath = `/icons/classic/${iconId}.png`;
-  
-  if (imageError) {
-    // Fallback: show icon ID as text
+  const [localError, setLocalError] = useState(false);
+  const [remoteError, setRemoteError] = useState(false);
+  const useRemoteIcons = usePreferencesStore((s) => s.useRemoteIcons);
+
+  const localPath = `/icons/classic/${iconId}.png`;
+  const remotePath = `https://hlwiki.com/ik0ns/${iconId}.png`;
+
+  const showRemote = localError && useRemoteIcons && !remoteError;
+  const showFallback = localError && (!useRemoteIcons || remoteError);
+
+  if (showFallback) {
     return (
-      <div 
+      <div
         className={`inline-flex items-center justify-center bg-gray-300 dark:bg-gray-600 rounded text-xs ${className}`}
         style={{ width: size, height: size, fontSize: `${Math.max(8, size * 0.5)}px` }}
         title={`Icon ${iconId}`}
@@ -22,20 +29,22 @@ export default function UserIcon({ iconId, size = 16, className = '' }: UserIcon
       </div>
     );
   }
-  
+
   return (
-    <div 
+    <div
       className={`inline-flex items-center justify-center ${className}`}
       style={{ width: size, height: size }}
     >
       <img
-        src={iconPath}
+        src={showRemote ? remotePath : localPath}
         alt={`Icon ${iconId}`}
         className="w-full h-full object-contain"
         style={{ imageRendering: 'pixelated' }}
-        onError={() => setImageError(true)}
+        onError={() => {
+          if (!localError) setLocalError(true);
+          else setRemoteError(true);
+        }}
       />
     </div>
   );
 }
-
