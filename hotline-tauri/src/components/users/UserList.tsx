@@ -1,4 +1,4 @@
-import UserIcon from './UserIcon';
+import UserIcon, { UserBanner } from './UserIcon';
 
 interface User {
   userId: number;
@@ -29,7 +29,7 @@ export default function UserList({ users, unreadCounts, onUserClick, onUserRight
             key={user.userId}
             onClick={() => onUserClick(user)}
             onContextMenu={(e) => onUserRightClick?.(user, e)}
-            className={`flex items-center gap-2 text-sm py-1 px-2 rounded cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${
+            className={`relative flex items-center gap-2 text-sm py-1 px-2 rounded cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors overflow-hidden ${
               user.isIdle
                 ? 'opacity-50 text-gray-500 dark:text-gray-500'
                 : user.isAdmin
@@ -38,6 +38,7 @@ export default function UserList({ users, unreadCounts, onUserClick, onUserRight
             }`}
             title={`Click to message${user.isAdmin ? ' (Admin)' : ''}${user.isIdle ? ' (Idle)' : ''} | Right-click for menu`}
           >
+            <UserBanner iconId={user.iconId} />
             <UserIcon iconId={user.iconId} size={16} />
             <span className={`truncate flex-1 ${user.isIdle ? 'italic' : ''}`}>
               {user.userName}

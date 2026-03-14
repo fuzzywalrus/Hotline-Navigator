@@ -34,6 +34,8 @@ interface PreferencesState {
   // Icon preferences
   useRemoteIcons: boolean;
   setUseRemoteIcons: (enabled: boolean) => void;
+  showRemoteBanners: boolean;
+  setShowRemoteBanners: (enabled: boolean) => void;
 
   // Connection preferences
   autoDetectTls: boolean;
@@ -109,6 +111,8 @@ export const usePreferencesStore = create<PreferencesState>()(
       // Icon preferences
       useRemoteIcons: true,
       setUseRemoteIcons: (useRemoteIcons) => set({ useRemoteIcons }),
+      showRemoteBanners: true,
+      setShowRemoteBanners: (showRemoteBanners) => set({ showRemoteBanners }),
 
       // Connection preferences
       autoDetectTls: false,
