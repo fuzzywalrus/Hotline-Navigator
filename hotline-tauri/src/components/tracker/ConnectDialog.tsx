@@ -14,7 +14,7 @@ export default function ConnectDialog({ onClose }: ConnectDialogProps) {
   const [visible, setVisible] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLFormElement>(null);
   const [contentHeight, setContentHeight] = useState<number | 'auto'>('auto');
   const [formData, setFormData] = useState({
     name: '',

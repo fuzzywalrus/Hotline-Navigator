@@ -63,6 +63,43 @@ To implement auto-detect TLS in your own client:
 4. **Certificate verification.** Hotline servers use self-signed certificates, so TLS clients must either skip verification or implement a trust-on-first-use model. We skip verification entirely (`InsecureSkipVerify` equivalent).
 5. **Per-bookmark persistence.** Store whether a bookmark uses TLS so users don't pay the auto-detect timeout cost on every connection. Auto-detect is best suited for tracker listings where TLS capability isn't known in advance.
 
+### Icon System
+
+Hotline servers assign each user a numeric icon ID displayed next to their name in chat and the user list.
+
+**Bundled icons:** The app ships with 631 classic Hotline icons in `public/icons/classic/`, named by ID (e.g. `191.png`). These are 16×16 PNGs rendered with `image-rendering: pixelated` to preserve their pixel art look.
+
+**Remote fallback (hlwiki.com):** Many servers use custom icon IDs beyond the bundled set. When a local icon isn't found, the client loads it from the [hlwiki.com Icon Gallery](https://hlwiki.com/index.php?title=Icon_Gallery):
+
+```
+https://hlwiki.com/ik0ns/{id}.png
+```
+
+The fallback chain in `src/components/users/UserIcon.tsx`:
+
+1. Try local path `/icons/classic/{id}.png`
+2. If that fails and "Remote Icons" is enabled, try `https://hlwiki.com/ik0ns/{id}.png`
+3. If the remote also fails (or remote icons are disabled), show a gray box with the numeric ID
+
+Remote images render at natural size, clipped to the icon container — no scaling. This matters because some hlwiki icons are actually banners.
+
+**Banner icons:** Some icon IDs on hlwiki.com are wide "banner" images (232×18) meant to display behind usernames rather than as square icons. The `UserBanner` component in `UserIcon.tsx` handles these:
+
+- Probes whether the icon exists locally (hidden `<img>` load test)
+- If the icon is NOT local and remote icons are enabled, fetches from hlwiki.com and renders the banner behind the username row at native size with 80% opacity
+- The "Show Banners" preference controls banner display — when off, remote icons still load but get clipped to normal icon size
+
+**Preferences** (in `preferencesStore.ts`, persisted under the `hotline-preferences` localStorage key):
+
+| Setting | Default | What it does |
+|---------|---------|--------------|
+| `useRemoteIcons` | `true` | Load missing icons from hlwiki.com |
+| `showRemoteBanners` | `true` | Show wide banner icons at full size behind usernames |
+
+Both toggles are in Settings → General.
+
+**Adding bundled icons:** Drop a PNG named `{id}.png` into `public/icons/classic/`. Local icons always take priority over the remote fallback.
+
 ### Roadmap
 - [ ] Account management and permissions
 - [ ] Bonjour/mDNS server discovery
