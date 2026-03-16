@@ -166,6 +166,7 @@ Both toggles are in Settings → General.
 **Adding bundled icons:** Drop a PNG named `{id}.png` into `public/icons/classic/`. Local icons always take priority over the remote fallback.
 
 ### Roadmap
+- [ ] HOPE secure login — re-enable the probe with a reconnect delay (probe-disconnect-reconnect is the intended detection flow per the spec author; INVERSE MAC is the bare minimum for authenticated login without transport encryption)
 - [ ] Account management and permissions
 - [ ] Bonjour/mDNS server discovery
 - [ ] Auto-reconnect on disconnect
