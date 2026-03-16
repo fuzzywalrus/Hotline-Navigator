@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../../stores/appStore';
 import { usePreferencesStore } from '../../stores/preferencesStore';
@@ -283,6 +283,24 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
     }
   };
 
+  const handleRefreshAllTrackers = useCallback(() => {
+    const trackerBookmarks = bookmarks.filter(b => b.type === 'tracker');
+    trackerBookmarks.forEach(tracker => {
+      // Only refresh trackers that are already expanded
+      if (expandedTrackers.has(tracker.id)) {
+        fetchTrackerServers(tracker.id);
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookmarks, expandedTrackers]);
+
+  // Listen for master refresh event from TrackerWindow
+  useEffect(() => {
+    const handler = () => handleRefreshAllTrackers();
+    window.addEventListener('refresh-all-trackers', handler);
+    return () => window.removeEventListener('refresh-all-trackers', handler);
+  }, [handleRefreshAllTrackers]);
+
   const handleConnectToTrackerServer = async (trackerId: string, server: ServerBookmark) => {
     // Create a bookmark from the tracker server and connect
     // Make sure it's explicitly marked as a server (not tracker)
@@ -521,13 +539,9 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
                       className="text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 flex-shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       title="Refresh tracker servers"
                     >
-                      {isLoading ? (
-                        <div className="w-4 h-4 border-2 border-gray-300 dark:border-gray-600 border-t-blue-600 dark:border-t-blue-400 rounded-full animate-spin"></div>
-                      ) : (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                      )}
+                      <svg className={`w-4 h-4 transition-transform duration-700 ease-in-out ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
                     </button>
                     
                     {/* Edit/Delete buttons on hover */}
