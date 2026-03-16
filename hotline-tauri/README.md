@@ -42,6 +42,7 @@ This project complements the [original Swift client](https://github.com/mierau/h
 - ✅ **Dark Mode**: Full dark mode support
 - ✅ **Transfer List**: Track active and completed file transfers
 - ✅ **IPv6**: Connect to servers and trackers via IPv6 literals (e.g. `[::1]:5493`) and hostnames that resolve to AAAA
+- ✅ **Large File Support**: 64-bit file sizes for transfers >4 GB via [capability negotiation](https://github.com/fogWraith/Hotline/blob/main/Docs/Protocol/Capabilities-Large-File.md), backward compatible with legacy servers
 
 ### TLS (Encrypted Connections)
 
@@ -62,6 +63,35 @@ To implement auto-detect TLS in your own client:
 3. **SNI with IP addresses.** Go's `crypto/tls` server rejects the TLS IP Address SNI extension (`ServerName::IpAddress`). When connecting by IP rather than hostname, either omit the SNI extension entirely or send a dummy DNS hostname (we use `"hotline"`). Since Hotline servers use self-signed certificates, the SNI value only affects certificate selection, not validation — any value (or none) works.
 4. **Certificate verification.** Hotline servers use self-signed certificates, so TLS clients must either skip verification or implement a trust-on-first-use model. We skip verification entirely (`InsecureSkipVerify` equivalent).
 5. **Per-bookmark persistence.** Store whether a bookmark uses TLS so users don't pay the auto-detect timeout cost on every connection. Auto-detect is best suited for tracker listings where TLS capability isn't known in advance.
+
+### File Transfers (HTXF)
+
+Hotline file transfers happen on a separate TCP connection from the main chat/command connection. Here's how it works:
+
+**The basics:** When you download or upload a file, the client first asks the server on the main connection ("I'd like to download X"). The server replies with a **reference number** — a temporary token that identifies this specific transfer. The client then opens a *second* TCP connection to the server's transfer port (main port + 1, so typically 5501) and sends a 16-byte handshake:
+
+```
+Bytes 0–3:   "HTXF"              ← The file-transfer protocol ID (4 ASCII bytes)
+Bytes 4–7:   Reference number    ← The token the server gave us
+Bytes 8–11:  Transfer size       ← For uploads: total bytes we're sending. For downloads: 0
+Bytes 12–15: Flags               ← Usually 0 for legacy transfers
+```
+
+After the handshake, file data flows as a **FILP** (Flattened File) stream. A FILP wraps one or more "forks" — the DATA fork is the actual file content, and there may also be an INFO fork (metadata) or MACR fork (classic Mac resource fork). Each fork has a 16-byte header describing its type and size, followed by the raw fork data.
+
+For TLS-enabled servers, the transfer connection is also wrapped in TLS, using the same approach as the main connection.
+
+**Large file support (>4 GB):** The original Hotline protocol used 32-bit integers for file sizes, capping transfers at ~4.3 GB. Hotline Navigator implements the [Large File extension](https://github.com/fogWraith/Hotline/blob/main/Docs/Protocol/Capabilities-Large-File.md) drafted by [fogWraith/HLServer](https://github.com/fogWraith/HLServer), which adds 64-bit file size support through a capability negotiation mechanism:
+
+1. **Negotiation:** During login, the client sends a `DATA_CAPABILITIES` field (ID `0x01F0`) with bit 0 set, advertising large file support. If the server understands and supports it, it echoes the capability back in its reply. If the server doesn't recognize the field, it simply ignores it — no harm done.
+
+2. **64-bit fields:** When large file mode is active, the server sends additional 64-bit companion fields alongside the legacy 32-bit ones: `FileSize64` (`0x01F1`), `TransferSize64` (`0x01F3`), etc. The client reads the 64-bit value when present and falls back to the 32-bit value for legacy servers.
+
+3. **Extended HTXF handshake:** The flags field (bytes 12–15) gains two bits: `HTXF_FLAG_LARGE_FILE` (0x01) signals large file mode is active, and `HTXF_FLAG_SIZE64` (0x02) means an additional 8 bytes follow the standard 16-byte header, carrying the full 64-bit transfer length.
+
+4. **Fork header reinterpretation:** In large file mode, the 16-byte fork header layout changes — bytes 4–7 become the *high* 32 bits of the fork size and bytes 12–15 become the *low* 32 bits, combining into a full 64-bit length.
+
+This is fully backward compatible: legacy servers that don't understand the capabilities field ignore it, and Navigator operates in standard 32-bit mode. The extension only activates when both client and server agree.
 
 ### Icon System
 

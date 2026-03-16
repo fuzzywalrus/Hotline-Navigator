@@ -8,6 +8,7 @@ mod users;
 use super::constants::{
     FieldType, TransactionType, PROTOCOL_ID, PROTOCOL_SUBVERSION,
     PROTOCOL_VERSION, SUBPROTOCOL_ID, TRANSACTION_HEADER_SIZE,
+    CAPABILITY_LARGE_FILES,
 };
 use super::transaction::{Transaction, TransactionField};
 use super::types::{Bookmark, ConnectionStatus, ServerInfo};
@@ -91,7 +92,7 @@ pub enum HotlineEvent {
 #[derive(Debug, Clone)]
 pub struct FileInfo {
     pub name: String,
-    pub size: u32,
+    pub size: u64,
     pub is_folder: bool,
     pub file_type: String,
     pub creator: String,
@@ -123,6 +124,9 @@ pub struct HotlineClient {
     // User access permissions (from login reply)
     user_access: Arc<Mutex<u64>>,
 
+    // Large file support (negotiated during login)
+    pub(crate) large_file_support: Arc<AtomicBool>,
+
     // Background tasks
     receive_task: Arc<Mutex<Option<JoinHandle<()>>>>,
     keepalive_task: Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -143,6 +147,7 @@ impl HotlineClient {
             file_list_paths: Arc::new(RwLock::new(HashMap::new())),
             server_info: Arc::new(Mutex::new(None)),
             user_access: Arc::new(Mutex::new(0)), // Default to no permissions
+            large_file_support: Arc::new(AtomicBool::new(false)),
             running: Arc::new(AtomicBool::new(false)),
             event_tx,
             event_rx: Arc::new(Mutex::new(Some(event_rx))),
@@ -332,6 +337,9 @@ impl HotlineClient {
         ));
         transaction.add_field(TransactionField::from_u32(FieldType::VersionNumber, 255));
 
+        // Advertise large file capability
+        transaction.add_field(TransactionField::from_u16(FieldType::Capabilities, CAPABILITY_LARGE_FILES));
+
         // Send transaction
         let encoded = transaction.encode();
         println!("Login transaction: {} bytes, fields={}", encoded.len(), transaction.fields.len());
@@ -457,6 +465,16 @@ impl HotlineClient {
         }
         
         println!("User access permissions: 0x{:016X}", user_access);
+
+        // Check if server confirmed large file support
+        let server_capabilities = reply
+            .get_field(FieldType::Capabilities)
+            .and_then(|f| f.to_u16().ok())
+            .unwrap_or(0);
+
+        let large_files = (server_capabilities & CAPABILITY_LARGE_FILES) != 0;
+        self.large_file_support.store(large_files, Ordering::SeqCst);
+        println!("Server capabilities: 0x{:04X} (large files: {})", server_capabilities, large_files);
 
         // Store server info
         {

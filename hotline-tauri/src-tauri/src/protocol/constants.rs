@@ -15,6 +15,13 @@ pub const DEFAULT_SERVER_PORT: u16 = 5500;
 pub const DEFAULT_TLS_PORT: u16 = 5600;
 pub const DEFAULT_TRACKER_PORT: u16 = 5498;
 
+// Capability flags (DATA_CAPABILITIES bitmask)
+pub const CAPABILITY_LARGE_FILES: u16 = 0x0001;
+
+// HTXF transfer flags
+pub const HTXF_FLAG_LARGE_FILE: u32 = 0x00000001;
+pub const HTXF_FLAG_SIZE64: u32 = 0x00000002;
+
 // Transaction types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u16)]
@@ -205,6 +212,12 @@ pub enum FieldType {
     NewsArticleParentArticle = 335,
     NewsArticleFirstChildArticle = 336,
     NewsArticleRecursiveDelete = 337,
+    // Large file extension fields
+    Capabilities = 496,       // 0x01F0
+    FileSize64 = 497,         // 0x01F1
+    Offset64 = 498,           // 0x01F2
+    TransferSize64 = 499,     // 0x01F3
+    FolderItemCount64 = 500,  // 0x01F4
 }
 
 impl From<u16> for FieldType {
@@ -269,6 +282,11 @@ impl From<u16> for FieldType {
             335 => Self::NewsArticleParentArticle,
             336 => Self::NewsArticleFirstChildArticle,
             337 => Self::NewsArticleRecursiveDelete,
+            496 => Self::Capabilities,
+            497 => Self::FileSize64,
+            498 => Self::Offset64,
+            499 => Self::TransferSize64,
+            500 => Self::FolderItemCount64,
             _ => Self::ErrorText, // Default fallback
         }
     }

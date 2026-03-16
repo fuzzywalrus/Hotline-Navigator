@@ -1,8 +1,12 @@
 // File management functionality for Hotline client
 
 use super::{BoxedRead, BoxedWrite, FileInfo, HotlineClient};
-use crate::protocol::constants::{FieldType, TransactionType, FILE_TRANSFER_ID};
+use crate::protocol::constants::{
+    FieldType, TransactionType, FILE_TRANSFER_ID,
+    HTXF_FLAG_LARGE_FILE, HTXF_FLAG_SIZE64,
+};
 use crate::protocol::transaction::{Transaction, TransactionField};
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -117,7 +121,7 @@ impl HotlineClient {
         Ok(())
     }
 
-    pub async fn download_file(&self, path: Vec<String>, file_name: String) -> Result<(u32, Option<u32>), String> {
+    pub async fn download_file(&self, path: Vec<String>, file_name: String) -> Result<(u32, Option<u64>), String> {
         println!("Requesting download for file: {:?} / {}", path, file_name);
 
         let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::DownloadFile);
@@ -205,20 +209,26 @@ impl HotlineClient {
 
         println!("Download reference number: {}", reference_number);
 
-        // Get transfer size if available
-        let transfer_size = reply.get_field(FieldType::TransferSize)
+        // Get transfer size — prefer 64-bit field if available
+        let transfer_size_64 = reply.get_field(FieldType::TransferSize64)
+            .and_then(|f| f.to_u64().ok());
+        let transfer_size_32 = reply.get_field(FieldType::TransferSize)
             .and_then(|f| f.to_u32().ok());
+        let transfer_size = transfer_size_64.or(transfer_size_32.map(|v| v as u64));
 
         if let Some(size) = transfer_size {
             println!("Transfer size from server: {} bytes", size);
         }
 
-        // Get file size if available
-        let file_size = reply.get_field(FieldType::FileSize)
+        // Get file size — prefer 64-bit field if available
+        let file_size_64 = reply.get_field(FieldType::FileSize64)
+            .and_then(|f| f.to_u64().ok());
+        let file_size_32 = reply.get_field(FieldType::FileSize)
             .and_then(|f| f.to_u32().ok());
+        let file_size = file_size_64.or(file_size_32.map(|v| v as u64));
 
         if let Some(size) = file_size {
-            println!("File size from server: {} bytes", size);
+            println!("File size from server: {} bytes ({:.2} MB)", size, size as f64 / 1_000_000.0);
         }
 
         // Check for file transfer options
@@ -230,11 +240,12 @@ impl HotlineClient {
         Ok((reference_number, file_size))
     }
 
-    pub async fn perform_file_transfer<F>(&self, reference_number: u32, expected_size: u32, mut progress_callback: F) -> Result<Vec<u8>, String>
+    pub async fn perform_file_transfer<F>(&self, reference_number: u32, expected_size: u64, mut progress_callback: F) -> Result<Vec<u8>, String>
     where
-        F: FnMut(u32, u32) + Send,
+        F: FnMut(u64, u64) + Send,
     {
-        println!("Starting file transfer with reference number: {}", reference_number);
+        let large_file_mode = self.large_file_support.load(Ordering::SeqCst);
+        println!("Starting file transfer with reference number: {} (large file mode: {})", reference_number, large_file_mode);
 
         // Open a new connection (TCP or TLS) to the server for file transfer
         let (mut transfer_read, mut transfer_write) = self.create_transfer_stream().await?;
@@ -242,12 +253,18 @@ impl HotlineClient {
         println!("File transfer connection established");
 
         // Send file transfer handshake
-        // Format: HTXF (4) + reference_number (4) + 0 (4) + 0 (4) = 16 bytes
-        let mut handshake = Vec::with_capacity(16);
+        // Standard: HTXF (4) + reference_number (4) + size (4) + flags (4) = 16 bytes
+        // Large file: + optional 8-byte 64-bit length = 24 bytes (when SIZE64 flag set)
+        let mut handshake = Vec::with_capacity(if large_file_mode { 24 } else { 16 });
         handshake.extend_from_slice(FILE_TRANSFER_ID); // "HTXF"
         handshake.extend_from_slice(&reference_number.to_be_bytes());
-        handshake.extend_from_slice(&0u32.to_be_bytes());
-        handshake.extend_from_slice(&0u32.to_be_bytes());
+        handshake.extend_from_slice(&0u32.to_be_bytes()); // legacy size (0 for download)
+        if large_file_mode {
+            let flags = HTXF_FLAG_LARGE_FILE;
+            handshake.extend_from_slice(&flags.to_be_bytes());
+        } else {
+            handshake.extend_from_slice(&0u32.to_be_bytes()); // no flags
+        }
 
         println!("Sending file transfer handshake ({} bytes): {:02X?}", handshake.len(), &handshake);
         transfer_write
@@ -318,11 +335,16 @@ impl HotlineClient {
         let mut file_data = Vec::new();
 
         for fork_idx in 0..fork_count {
-            // Fork header format:
+            // Fork header format (16 bytes):
             // Fork type (4 bytes) - "DATA" or "MACR" (resource fork) or "INFO"
-            // Compression type (4 bytes)
-            // Reserved (4 bytes)
-            // Data size (4 bytes)
+            // In legacy mode:
+            //   Compression type (4 bytes)
+            //   Reserved (4 bytes)
+            //   Data size (4 bytes)
+            // In large file mode:
+            //   High 32 bits of fork length (4 bytes)
+            //   Compression type (4 bytes)
+            //   Low 32 bits of fork length (4 bytes)
             let mut fork_header = [0u8; 16];
             transfer_read
                 .read_exact(&mut fork_header)
@@ -332,40 +354,43 @@ impl HotlineClient {
             println!("Fork {} header bytes: {:02X?}", fork_idx, &fork_header);
 
             let fork_type = String::from_utf8_lossy(&fork_header[0..4]).to_string();
-            let compression = u32::from_be_bytes([fork_header[4], fork_header[5], fork_header[6], fork_header[7]]);
-            let data_size = u32::from_be_bytes([fork_header[12], fork_header[13], fork_header[14], fork_header[15]]);
 
-            println!("Fork {}: type='{}', compression={}, size={} bytes", fork_idx, fork_type.trim(), compression, data_size);
+            let data_size: u64 = if large_file_mode {
+                // Large file mode: bytes 4-7 = high 32 bits, bytes 12-15 = low 32 bits
+                let high = u32::from_be_bytes([fork_header[4], fork_header[5], fork_header[6], fork_header[7]]) as u64;
+                let low = u32::from_be_bytes([fork_header[12], fork_header[13], fork_header[14], fork_header[15]]) as u64;
+                let size = (high << 32) | low;
+                let compression = u32::from_be_bytes([fork_header[8], fork_header[9], fork_header[10], fork_header[11]]);
+                println!("Fork {} (large file): type='{}', compression={}, size={} bytes ({:.2} MB)",
+                    fork_idx, fork_type.trim(), compression, size, size as f64 / 1_000_000.0);
+                size
+            } else {
+                // Legacy mode: bytes 4-7 = compression, bytes 12-15 = size
+                let compression = u32::from_be_bytes([fork_header[4], fork_header[5], fork_header[6], fork_header[7]]);
+                let size = u32::from_be_bytes([fork_header[12], fork_header[13], fork_header[14], fork_header[15]]) as u64;
+                println!("Fork {}: type='{}', compression={}, size={} bytes", fork_idx, fork_type.trim(), compression, size);
+                size
+            };
 
             // Determine actual size to read
-            // If fork header shows 0 size but this is a DATA fork, use expected_size
-            // Note: The Hotline protocol uses u32 for file sizes, which limits files to ~4.3GB (u32::MAX)
-            // We allow files up to this limit. To support larger files (like 25GB), the protocol would need
-            // to be extended to use u64, which is a significant change.
             let (actual_size, read_until_eof) = if data_size == 0 && fork_type.trim() == "DATA" && expected_size > 0 {
-                // Check for suspicious round numbers that might indicate corruption (like exactly 2GB)
-                // These specific values often indicate encoding/parsing issues with unicode filenames
-                if expected_size == 2_147_483_648 || expected_size == 2_161_946_800 {
-                    return Err(format!(
-                        "File size from file list ({}) appears to be corrupted (suspicious round number). Fork header shows size=0. This may be due to a unicode encoding issue in the filename. Please try refreshing the file list or contact the server administrator.",
-                        expected_size
-                    ));
-                }
-                
-                // Check for suspiciously large file sizes (> 2GB) when fork header shows 0
-                // This often indicates file list corruption, especially with unicode filenames
-                // Instead of rejecting, we'll try to read until EOF as a workaround
-                const SUSPICIOUS_FILE_SIZE_THRESHOLD: u32 = 2_000_000_000; // 2GB
-                let is_suspicious = expected_size > SUSPICIOUS_FILE_SIZE_THRESHOLD;
-                
-                if is_suspicious {
-                    println!("WARNING: File size from file list ({:.2} GB) is suspiciously large and fork header shows size=0. This likely indicates file list corruption, possibly due to unicode encoding issues in the filename. Attempting to read until EOF as a workaround...", expected_size as f64 / 1_000_000_000.0);
+                // With large file support, we trust the expected_size more
+                if large_file_mode {
+                    println!("Fork header shows 0 size in large file mode, using expected size: {} bytes ({:.2} MB)",
+                        expected_size, expected_size as f64 / 1_000_000.0);
+                    (expected_size, false)
                 } else {
-                    println!("Fork header shows 0 size, using expected size from file list: {} bytes ({:.2} MB)", expected_size, expected_size as f64 / 1_000_000.0);
+                    // Legacy heuristics for corrupted sizes
+                    let is_suspicious = expected_size > 2_000_000_000;
+                    if is_suspicious {
+                        println!("WARNING: File size ({:.2} GB) is suspiciously large and fork header shows size=0. Attempting to read until EOF...",
+                            expected_size as f64 / 1_000_000_000.0);
+                    } else {
+                        println!("Fork header shows 0 size, using expected size: {} bytes ({:.2} MB)",
+                            expected_size, expected_size as f64 / 1_000_000.0);
+                    }
+                    (expected_size, is_suspicious)
                 }
-                
-                // If suspicious, we'll read until EOF instead of expecting the full size
-                (expected_size, is_suspicious)
             } else {
                 if fork_type.trim() == "DATA" && data_size != expected_size && expected_size > 0 {
                     println!("Note: DATA fork header size ({}) differs from file list size ({})", data_size, expected_size);
@@ -378,49 +403,36 @@ impl HotlineClient {
                 let is_data_fork = fork_type.trim() == "DATA";
 
                 if is_data_fork {
-                    // For DATA fork, read in chunks and report progress
-                    // For very large files, we need to be careful about memory
-                    let chunk_size = 65536; // 64KB chunks
-                    // Don't pre-allocate the entire vector for huge files - let it grow naturally
-                    // but reserve a reasonable amount to avoid too many reallocations
-                    // For files > 100MB, use a smaller initial capacity to avoid memory issues
+                    let chunk_size: usize = 65536; // 64KB chunks
                     let initial_capacity = if read_until_eof {
-                        1024 * 1024 // 1MB default for read-until-EOF mode
+                        1024 * 1024
                     } else if actual_size > 100_000_000 {
-                        std::cmp::min(actual_size as usize / 100, 10 * 1024 * 1024) // Max 10MB initial for huge files
+                        std::cmp::min((actual_size / 100) as usize, 10 * 1024 * 1024)
                     } else {
-                        std::cmp::min(actual_size as usize, 10 * 1024 * 1024) // Max 10MB initial
+                        std::cmp::min(actual_size as usize, 10 * 1024 * 1024)
                     };
                     let mut fork_data = Vec::with_capacity(initial_capacity);
-                    let mut bytes_read = 0u32;
-                    let mut last_reported_progress = 0u32;
+                    let mut bytes_read: u64 = 0;
+                    let mut last_reported_progress: u64 = 0;
 
                     if read_until_eof {
-                        // Read until EOF as a workaround for corrupted file sizes
                         println!("Reading file until EOF (file list size may be corrupted)...");
                         loop {
                             let mut chunk = vec![0u8; chunk_size];
-                            
                             match transfer_read.read(&mut chunk).await {
                                 Ok(0) => {
-                                    // EOF reached
                                     println!("EOF reached after reading {} bytes", bytes_read);
                                     break;
                                 }
                                 Ok(n) => {
                                     chunk.truncate(n);
-                                    bytes_read += n as u32;
+                                    bytes_read += n as u64;
                                     fork_data.extend_from_slice(&chunk);
-                                    
-                                    // Report progress using bytes_read as both current and total (since we don't know the total)
-                                    // This will show progress but percentage will be approximate
                                     if bytes_read % (1024 * 1024) == 0 || bytes_read < 1024 * 1024 {
-                                        // Report every MB or for small files
                                         progress_callback(bytes_read, bytes_read.max(1));
                                     }
                                 }
                                 Err(e) => {
-                                    // If we've read some data, treat EOF as success
                                     if bytes_read > 0 && e.kind() == std::io::ErrorKind::UnexpectedEof {
                                         println!("EOF reached after reading {} bytes (unexpected EOF)", bytes_read);
                                         break;
@@ -431,30 +443,25 @@ impl HotlineClient {
                         }
                         println!("Received DATA fork: {} bytes (read until EOF)", fork_data.len());
                     } else {
-                        // Normal read with known size
                         while bytes_read < actual_size {
                             let remaining = actual_size - bytes_read;
-                            let to_read = std::cmp::min(remaining, chunk_size as u32) as usize;
+                            let to_read = std::cmp::min(remaining, chunk_size as u64) as usize;
                             let mut chunk = vec![0u8; to_read];
 
-                            // Use read_exact with better error handling for large files
                             match transfer_read.read_exact(&mut chunk).await {
                                 Ok(_) => {
-                                    bytes_read += to_read as u32;
+                                    bytes_read += to_read as u64;
                                     fork_data.extend_from_slice(&chunk);
 
-                                    // Only emit progress every 2% or on completion to avoid UI stuttering
-                                    let current_progress = (bytes_read as f64 / actual_size as f64 * 100.0) as u32;
+                                    let current_progress = (bytes_read as f64 / actual_size as f64 * 100.0) as u64;
                                     if current_progress >= last_reported_progress + 2 || bytes_read == actual_size {
                                         progress_callback(bytes_read, actual_size);
                                         last_reported_progress = current_progress;
                                     }
                                 }
                                 Err(e) => {
-                                    // If we get an error, check if it's EOF and we've read some data
                                     if bytes_read > 0 && e.kind() == std::io::ErrorKind::UnexpectedEof {
                                         println!("Warning: Early EOF after reading {} of {} bytes. File may be incomplete.", bytes_read, actual_size);
-                                        // Continue with what we have
                                         break;
                                     }
                                     return Err(format!("Failed to read fork {} data at offset {}: {}", fork_idx, bytes_read, e));
@@ -462,11 +469,11 @@ impl HotlineClient {
                             }
                         }
                         println!("Received DATA fork: {} bytes (expected: {} bytes)", fork_data.len(), actual_size);
-                        if fork_data.len() as u32 != actual_size {
+                        if fork_data.len() as u64 != actual_size {
                             println!("Warning: Received {} bytes but expected {} bytes. File may be incomplete.", fork_data.len(), actual_size);
                         }
                     }
-                    
+
                     file_data = fork_data;
                 } else {
                     // For INFO/MACR forks, read all at once
@@ -506,7 +513,7 @@ impl HotlineClient {
 
         let file_type = String::from_utf8_lossy(&data[0..4]).to_string();
         let creator = String::from_utf8_lossy(&data[4..8]).to_string();
-        let size = u32::from_be_bytes([data[8], data[9], data[10], data[11]]);
+        let size = u32::from_be_bytes([data[8], data[9], data[10], data[11]]) as u64;
         // Skip bytes 12-15 (unknown/reserved)
         // Skip bytes 16-17 (unknown/flags)
         let name_len = u16::from_be_bytes([data[18], data[19]]) as usize;
@@ -663,7 +670,7 @@ impl HotlineClient {
         mut progress_callback: F,
     ) -> Result<(), String>
     where
-        F: FnMut(u32, u32),
+        F: FnMut(u64, u64),
     {
         println!("Requesting file upload: {} to path {:?}", file_name, path);
 
@@ -816,9 +823,10 @@ impl HotlineClient {
         progress_callback: &mut F,
     ) -> Result<(), String>
     where
-        F: FnMut(u32, u32),
+        F: FnMut(u64, u64),
     {
-        println!("Starting file upload transfer: {} ({} bytes)", file_name, file_data.len());
+        let large_file_mode = self.large_file_support.load(Ordering::SeqCst);
+        println!("Starting file upload transfer: {} ({} bytes, large file mode: {})", file_name, file_data.len(), large_file_mode);
 
         // Open a new connection (TCP or TLS) for file transfer
         let (_transfer_read, mut transfer_write) = self.create_transfer_stream().await?;
@@ -826,18 +834,32 @@ impl HotlineClient {
         println!("Upload transfer connection established");
 
         // Calculate total transfer size
-        // FILP header (24) + INFO fork header (16) + INFO fork data (minimal) + DATA fork header (16) + DATA fork data
-        let info_fork_size = 0u32; // Minimal INFO fork for now
-        let data_fork_size = file_data.len() as u32;
-        let total_size = 24 + 16 + info_fork_size + 16 + data_fork_size;
+        // FILP header (24) + INFO fork header (16) + INFO fork data (0) + DATA fork header (16) + DATA fork data
+        let info_fork_size: u64 = 0;
+        let data_fork_size = file_data.len() as u64;
+        let total_size: u64 = 24 + 16 + info_fork_size + 16 + data_fork_size;
 
         // Send file transfer handshake
-        // Format: HTXF (4) + reference_number (4) + total_size (4) + 0 (4) = 16 bytes
-        let mut handshake = Vec::with_capacity(16);
+        let mut handshake = Vec::with_capacity(if large_file_mode { 24 } else { 16 });
         handshake.extend_from_slice(FILE_TRANSFER_ID); // "HTXF"
         handshake.extend_from_slice(&reference_number.to_be_bytes());
-        handshake.extend_from_slice(&total_size.to_be_bytes());
-        handshake.extend_from_slice(&0u32.to_be_bytes());
+
+        if large_file_mode && total_size > u32::MAX as u64 {
+            // Large file: legacy field = 0, set SIZE64 flag, append 8-byte length
+            handshake.extend_from_slice(&0u32.to_be_bytes());
+            let flags = HTXF_FLAG_LARGE_FILE | HTXF_FLAG_SIZE64;
+            handshake.extend_from_slice(&flags.to_be_bytes());
+            handshake.extend_from_slice(&total_size.to_be_bytes());
+        } else if large_file_mode {
+            // Large file mode but fits in 32 bits
+            handshake.extend_from_slice(&(total_size as u32).to_be_bytes());
+            let flags = HTXF_FLAG_LARGE_FILE;
+            handshake.extend_from_slice(&flags.to_be_bytes());
+        } else {
+            // Legacy mode
+            handshake.extend_from_slice(&(total_size as u32).to_be_bytes());
+            handshake.extend_from_slice(&0u32.to_be_bytes());
+        }
 
         println!("Sending upload handshake ({} bytes): {:02X?}", handshake.len(), &handshake);
         transfer_write
@@ -853,50 +875,53 @@ impl HotlineClient {
         println!("Upload handshake sent");
 
         // Send FILP header
-        // Format: FILP (4) + version (2) + reserved (16) + fork count (2) = 24 bytes
         let mut filp_header = Vec::with_capacity(24);
-        filp_header.extend_from_slice(b"FILP"); // Format
-        filp_header.extend_from_slice(&1u16.to_be_bytes()); // Version
-        filp_header.extend_from_slice(&[0u8; 16]); // Reserved
-        filp_header.extend_from_slice(&2u16.to_be_bytes()); // Fork count (INFO + DATA)
+        filp_header.extend_from_slice(b"FILP");
+        filp_header.extend_from_slice(&1u16.to_be_bytes());
+        filp_header.extend_from_slice(&[0u8; 16]);
+        filp_header.extend_from_slice(&2u16.to_be_bytes()); // INFO + DATA
 
         transfer_write
             .write_all(&filp_header)
             .await
             .map_err(|e| format!("Failed to send FILP header: {}", e))?;
 
-        // Send INFO fork header
-        // Format: Fork type (4) + compression (4) + reserved (4) + data size (4) = 16 bytes
-        let mut info_fork_header = Vec::with_capacity(16);
-        info_fork_header.extend_from_slice(b"INFO"); // Fork type
-        info_fork_header.extend_from_slice(&0u32.to_be_bytes()); // Compression
-        info_fork_header.extend_from_slice(&0u32.to_be_bytes()); // Reserved
-        info_fork_header.extend_from_slice(&info_fork_size.to_be_bytes()); // Data size
+        // Build fork headers based on mode
+        // Large file mode: type (4) + high32 (4) + compression (4) + low32 (4)
+        // Legacy mode:     type (4) + compression (4) + reserved (4) + size (4)
+        let build_fork_header = |fork_type: &[u8; 4], size: u64| -> Vec<u8> {
+            let mut hdr = Vec::with_capacity(16);
+            hdr.extend_from_slice(fork_type);
+            if large_file_mode {
+                hdr.extend_from_slice(&((size >> 32) as u32).to_be_bytes()); // high 32
+                hdr.extend_from_slice(&0u32.to_be_bytes()); // compression
+                hdr.extend_from_slice(&(size as u32).to_be_bytes()); // low 32
+            } else {
+                hdr.extend_from_slice(&0u32.to_be_bytes()); // compression
+                hdr.extend_from_slice(&0u32.to_be_bytes()); // reserved
+                hdr.extend_from_slice(&(size as u32).to_be_bytes()); // size
+            }
+            hdr
+        };
 
+        // INFO fork header (empty)
+        let info_fork_header = build_fork_header(b"INFO", info_fork_size);
         transfer_write
             .write_all(&info_fork_header)
             .await
             .map_err(|e| format!("Failed to send INFO fork header: {}", e))?;
 
-        // INFO fork data is empty for now
-        // (In a full implementation, this would contain file metadata)
-
-        // Send DATA fork header
-        let mut data_fork_header = Vec::with_capacity(16);
-        data_fork_header.extend_from_slice(b"DATA"); // Fork type
-        data_fork_header.extend_from_slice(&0u32.to_be_bytes()); // Compression
-        data_fork_header.extend_from_slice(&0u32.to_be_bytes()); // Reserved
-        data_fork_header.extend_from_slice(&data_fork_size.to_be_bytes()); // Data size
-
+        // DATA fork header
+        let data_fork_header = build_fork_header(b"DATA", data_fork_size);
         transfer_write
             .write_all(&data_fork_header)
             .await
             .map_err(|e| format!("Failed to send DATA fork header: {}", e))?;
 
         // Send DATA fork (the actual file data) in chunks with progress tracking
-        let chunk_size = 65536; // 64KB chunks
-        let mut bytes_sent = 0u32;
-        let mut last_reported_progress = 0u32;
+        let chunk_size: u64 = 65536;
+        let mut bytes_sent: u64 = 0;
+        let mut last_reported_progress: u64 = 0;
 
         while bytes_sent < data_fork_size {
             let remaining = data_fork_size - bytes_sent;
@@ -908,10 +933,9 @@ impl HotlineClient {
                 .await
                 .map_err(|e| format!("Failed to send file data: {}", e))?;
 
-            bytes_sent += to_send as u32;
+            bytes_sent += to_send as u64;
 
-            // Report progress every 2% or on completion
-            let current_progress = (bytes_sent as f64 / data_fork_size as f64 * 100.0) as u32;
+            let current_progress = (bytes_sent as f64 / data_fork_size as f64 * 100.0) as u64;
             if current_progress >= last_reported_progress + 2 || bytes_sent == data_fork_size {
                 progress_callback(bytes_sent, data_fork_size);
                 last_reported_progress = current_progress;

@@ -162,7 +162,7 @@ pub async fn download_file(
     server_id: String,
     path: Vec<String>,
     file_name: String,
-    file_size: u32,
+    file_size: u64,
     download_folder: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<String, String> {

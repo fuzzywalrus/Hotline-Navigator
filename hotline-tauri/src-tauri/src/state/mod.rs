@@ -541,7 +541,7 @@ impl AppState {
         }
     }
 
-    pub async fn download_file(&self, server_id: &str, path: Vec<String>, file_name: String, file_size: u32, download_folder: Option<String>) -> Result<String, String> {
+    pub async fn download_file(&self, server_id: &str, path: Vec<String>, file_name: String, file_size: u64, download_folder: Option<String>) -> Result<String, String> {
         let clients = self.clients.read().await;
 
         if let Some(client) = clients.get(server_id) {
@@ -877,7 +877,7 @@ impl AppState {
             let app_handle = self.app_handle.clone();
             let server_id_clone = server_id.to_string();
             let file_name_clone = file_name.clone();
-            let total_bytes = file_data.len() as u32;
+            let _total_bytes = file_data.len() as u64;
 
             client.upload_file(
                 path,
