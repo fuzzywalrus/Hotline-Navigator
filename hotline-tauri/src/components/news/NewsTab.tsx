@@ -241,15 +241,30 @@ export default function NewsTab({
             </div>
           ) : (
             <div className="divide-y divide-gray-200 dark:divide-gray-700">
-              {newsArticles.map((article) => (
+              {(() => {
+                // Build depth map for indentation
+                const depthMap = new Map<number, number>();
+                for (const article of newsArticles) {
+                  if (article.parent_id === 0) {
+                    depthMap.set(article.id, 0);
+                  } else {
+                    const parentDepth = depthMap.get(article.parent_id) ?? 0;
+                    depthMap.set(article.id, parentDepth + 1);
+                  }
+                }
+                return newsArticles.map((article) => {
+                  const depth = depthMap.get(article.id) ?? 0;
+                  return (
                 <div key={article.id} className="flex items-center group hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                   <button
                     onClick={() => onSelectArticle(article)}
-                    className={`flex-1 px-4 py-3 text-left ${
+                    className={`flex-1 py-3 pr-4 text-left ${
                       selectedArticle?.id === article.id ? 'bg-blue-50 dark:bg-blue-900/20' : ''
                     }`}
+                    style={{ paddingLeft: `${1 + depth * 1.25}rem` }}
                   >
                     <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                      {depth > 0 && <span className="text-gray-400 dark:text-gray-500 mr-1">↳</span>}
                       {article.title}
                     </div>
                     <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
@@ -258,9 +273,6 @@ export default function NewsTab({
                         <span className="ml-2 text-gray-500 dark:text-gray-500">
                           • {article.date}
                         </span>
-                      )}
-                      {article.parent_id > 0 && (
-                        <span className="ml-2 text-blue-600 dark:text-blue-400">↳ Reply</span>
                       )}
                     </div>
                   </button>
@@ -281,7 +293,9 @@ export default function NewsTab({
                     </button>
                   )}
                 </div>
-              ))}
+                  );
+                });
+              })()}
             </div>
           )}
         </div>
