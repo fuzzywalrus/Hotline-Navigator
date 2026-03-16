@@ -12,6 +12,10 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 
+// Note: File transfers (HTXF) use their own separate TCP connections (port+1)
+// and are NOT encrypted by HOPE. Only the control-plane transactions go through
+// the HOPE-encrypted main connection via send_transaction().
+
 /// Encode a UTF-8 folder name to bytes suitable for the Hotline FilePath field.
 /// Tries MacRoman encoding first (which is what the protocol uses natively).
 /// Falls back to raw UTF-8 bytes if MacRoman can't represent the characters.
@@ -98,23 +102,8 @@ impl HotlineClient {
             });
         }
 
-        let encoded = transaction.encode();
-
         println!("Sending GetFileNameList transaction...");
-        let mut write_guard = self.write_half.lock().await;
-        let write_stream = write_guard
-            .as_mut()
-            .ok_or("Not connected".to_string())?;
-
-        write_stream
-            .write_all(&encoded)
-            .await
-            .map_err(|e| format!("Failed to send GetFileNameList: {}", e))?;
-
-        write_stream
-            .flush()
-            .await
-            .map_err(|e| format!("Failed to flush stream: {}", e))?;
+        self.send_transaction(&transaction).await?;
 
         println!("GetFileNameList request sent");
 
@@ -137,7 +126,6 @@ impl HotlineClient {
             });
         }
 
-        let encoded = transaction.encode();
         let transaction_id = transaction.id;
 
         // Create channel to receive reply
@@ -149,22 +137,7 @@ impl HotlineClient {
 
         // Send transaction
         println!("Sending DownloadFile transaction...");
-        let mut write_guard = self.write_half.lock().await;
-        let write_stream = write_guard
-            .as_mut()
-            .ok_or("Not connected".to_string())?;
-
-        write_stream
-            .write_all(&encoded)
-            .await
-            .map_err(|e| format!("Failed to send DownloadFile: {}", e))?;
-
-        write_stream
-            .flush()
-            .await
-            .map_err(|e| format!("Failed to flush stream: {}", e))?;
-
-        drop(write_guard);
+        self.send_transaction(&transaction).await?;
 
         // Wait for reply
         println!("Waiting for DownloadFile reply...");
@@ -540,7 +513,6 @@ impl HotlineClient {
         println!("Requesting banner download...");
 
         let transaction = Transaction::new(self.next_transaction_id(), TransactionType::DownloadBanner);
-        let encoded = transaction.encode();
         let transaction_id = transaction.id;
 
         // Create channel to receive reply
@@ -552,22 +524,7 @@ impl HotlineClient {
 
         // Send transaction
         println!("Sending DownloadBanner transaction...");
-        let mut write_guard = self.write_half.lock().await;
-        let write_stream = write_guard
-            .as_mut()
-            .ok_or("Not connected".to_string())?;
-
-        write_stream
-            .write_all(&encoded)
-            .await
-            .map_err(|e| format!("Failed to send DownloadBanner: {}", e))?;
-
-        write_stream
-            .flush()
-            .await
-            .map_err(|e| format!("Failed to flush: {}", e))?;
-
-        drop(write_guard);
+        self.send_transaction(&transaction).await?;
 
         // Wait for reply
         println!("Waiting for DownloadBanner reply...");
@@ -691,8 +648,6 @@ impl HotlineClient {
             });
         }
 
-        let encoded = transaction.encode();
-
         // Create channel to receive reply
         let (tx, mut rx) = mpsc::channel(1);
         {
@@ -702,22 +657,7 @@ impl HotlineClient {
 
         // Send transaction
         println!("Sending UploadFile transaction...");
-        let mut write_guard = self.write_half.lock().await;
-        let write_stream = write_guard
-            .as_mut()
-            .ok_or("Not connected".to_string())?;
-
-        write_stream
-            .write_all(&encoded)
-            .await
-            .map_err(|e| format!("Failed to send UploadFile: {}", e))?;
-
-        write_stream
-            .flush()
-            .await
-            .map_err(|e| format!("Failed to flush: {}", e))?;
-
-        drop(write_guard);
+        self.send_transaction(&transaction).await?;
 
         // Wait for reply
         println!("Waiting for UploadFile reply...");
@@ -771,30 +711,13 @@ impl HotlineClient {
             });
         }
 
-        let encoded = transaction.encode();
-
         let (tx, mut rx) = mpsc::channel(1);
         {
             let mut pending = self.pending_transactions.write().await;
             pending.insert(transaction_id, tx);
         }
 
-        let mut write_guard = self.write_half.lock().await;
-        let write_stream = write_guard
-            .as_mut()
-            .ok_or("Not connected".to_string())?;
-
-        write_stream
-            .write_all(&encoded)
-            .await
-            .map_err(|e| format!("Failed to send NewFolder: {}", e))?;
-
-        write_stream
-            .flush()
-            .await
-            .map_err(|e| format!("Failed to flush: {}", e))?;
-
-        drop(write_guard);
+        self.send_transaction(&transaction).await?;
 
         let reply = tokio::time::timeout(Duration::from_secs(10), rx.recv())
             .await

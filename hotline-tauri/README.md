@@ -93,6 +93,41 @@ For TLS-enabled servers, the transfer connection is also wrapped in TLS, using t
 
 This is fully backward compatible: legacy servers that don't understand the capabilities field ignore it, and Navigator operates in standard 32-bit mode. The extension only activates when both client and server agree.
 
+### HOPE (Secure Login & Transport Encryption)
+
+HOPE (Hotline One-time Password Extension) is a protocol extension that replaces Hotline's weak XOR-0xFF password obfuscation with proper MAC-based authentication and optional transport encryption (RC4). The spec lives at [fogWraith/Hotline HOPE-Secure-Login.md](https://github.com/fogWraith/Hotline/blob/main/Docs/Protocol/HOPE-Secure-Login.md).
+
+**Current status: implemented but disabled.** The full HOPE implementation is in place — MAC authentication (HMAC-SHA1, SHA1, HMAC-MD5, MD5), RC4 transport encryption with key rotation, and the 3-step login handshake. However, auto-negotiation is turned off because there is no safe way to detect whether a server supports HOPE before trying it.
+
+**The problem:** HOPE login starts by sending a Login transaction with `UserLogin` set to a single `0x00` byte. Servers that understand HOPE recognize this as a negotiation request and reply with a session key. Servers that don't understand HOPE treat it as a real login attempt with an invalid username — they reject it, close the connection, and may temporarily block the client's IP. Reconnecting after a failed probe is unreliable (TLS servers refuse the handshake; non-TLS servers reset the connection). This makes the "try HOPE first, fall back to legacy" approach unsuitable for general use.
+
+**What needs to happen to enable HOPE:**
+
+1. **Server-side detection** — A way to know a server supports HOPE *before* sending the probe. Possible approaches:
+   - A per-bookmark "Use HOPE" toggle (user opts in when they know the server supports it)
+   - Server version or capability advertisement in the handshake response (would require a protocol addition)
+   - Tracker metadata indicating HOPE support
+   - A separate lightweight probe that doesn't poison the connection
+
+2. **Enabling the probe** — Once detection is solved, un-comment `try_hope_probe()` in the login flow (`client/mod.rs`). The rest of the implementation (crypto, key derivation, encryption activation, transport wrappers) is ready to go.
+
+**How HOPE works (the 3-step login):**
+
+1. **Client sends identification** — A Login transaction with `UserLogin = 0x00`, a list of supported MAC algorithms (strongest first), the app ID (`HTLN`), and optionally supported ciphers (currently `RC4`).
+
+2. **Server replies** — If it supports HOPE, it sends back a 64-byte session key, its chosen MAC algorithm, and chosen ciphers. If it doesn't, the login fails (see "the problem" above).
+
+3. **Client sends authenticated login** — The password is MAC'd with the session key instead of XOR'd. After a successful login, if both sides agreed on a cipher (e.g. RC4), transport encryption is activated for all subsequent transactions on the main connection. File transfers on port+1 remain unencrypted — they use their own separate connections.
+
+**Transport encryption details:**
+
+- RC4 stream cipher encrypts each transaction (header + body) as it goes over the wire
+- Key rotation provides forward secrecy: after each packet, `new_key = MAC(current_key, session_key)`, and RC4 is re-initialized
+- The rotation count is embedded in the top byte of the encrypted transaction's type field
+- Encryption is packet-aware — the reader/writer know transaction boundaries, which is why this uses custom `HopeReader`/`HopeWriter` wrappers rather than a byte-stream encryption layer
+
+See [HOPE_IMPLEMENTATION.md](HOPE_IMPLEMENTATION.md) for a map of all HOPE-related code locations.
+
 ### Icon System
 
 Hotline servers assign each user a numeric icon ID displayed next to their name in chat and the user list.

@@ -218,6 +218,21 @@ pub enum FieldType {
     Offset64 = 498,           // 0x01F2
     TransferSize64 = 499,     // 0x01F3
     FolderItemCount64 = 500,  // 0x01F4
+    // HOPE (Hotline One-time Password Extension) fields
+    HopeAppId = 3585,              // 0x0E01
+    HopeAppString = 3586,          // 0x0E02
+    HopeSessionKey = 3587,         // 0x0E03
+    HopeMacAlgorithm = 3588,       // 0x0E04
+    HopeServerCipher = 3777,       // 0x0EC1
+    HopeClientCipher = 3778,       // 0x0EC2
+    HopeServerCipherMode = 3779,   // 0x0EC3
+    HopeClientCipherMode = 3780,   // 0x0EC4
+    HopeServerIV = 3781,           // 0x0EC5
+    HopeClientIV = 3782,           // 0x0EC6
+    HopeServerChecksum = 3783,     // 0x0EC7
+    HopeClientChecksum = 3784,     // 0x0EC8
+    HopeServerCompression = 3785,  // 0x0EC9
+    HopeClientCompression = 3786,  // 0x0ECA
 }
 
 impl From<u16> for FieldType {
@@ -287,6 +302,20 @@ impl From<u16> for FieldType {
             498 => Self::Offset64,
             499 => Self::TransferSize64,
             500 => Self::FolderItemCount64,
+            3585 => Self::HopeAppId,
+            3586 => Self::HopeAppString,
+            3587 => Self::HopeSessionKey,
+            3588 => Self::HopeMacAlgorithm,
+            3777 => Self::HopeServerCipher,
+            3778 => Self::HopeClientCipher,
+            3779 => Self::HopeServerCipherMode,
+            3780 => Self::HopeClientCipherMode,
+            3781 => Self::HopeServerIV,
+            3782 => Self::HopeClientIV,
+            3783 => Self::HopeServerChecksum,
+            3784 => Self::HopeClientChecksum,
+            3785 => Self::HopeServerCompression,
+            3786 => Self::HopeClientCompression,
             _ => Self::ErrorText, // Default fallback
         }
     }

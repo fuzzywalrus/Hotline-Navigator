@@ -2,6 +2,8 @@
 
 mod chat;
 mod files;
+pub(crate) mod hope;
+mod hope_stream;
 mod news;
 mod users;
 
@@ -17,10 +19,12 @@ use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::task::JoinHandle;
+
+use hope_stream::{HopeReader, HopeWriter};
 
 // TLS support
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
@@ -103,8 +107,8 @@ pub struct HotlineClient {
     username: Arc<Mutex<String>>,
     user_icon_id: Arc<Mutex<u16>>,
     status: Arc<Mutex<ConnectionStatus>>,
-    read_half: Arc<Mutex<Option<BoxedRead>>>,
-    write_half: Arc<Mutex<Option<BoxedWrite>>>,
+    hope_reader: Arc<Mutex<Option<HopeReader>>>,
+    hope_writer: Arc<Mutex<Option<HopeWriter>>>,
     transaction_counter: Arc<AtomicU32>,
     running: Arc<AtomicBool>,
 
@@ -120,7 +124,7 @@ pub struct HotlineClient {
 
     // Server info (extracted from login reply)
     server_info: Arc<Mutex<Option<ServerInfo>>>,
-    
+
     // User access permissions (from login reply)
     user_access: Arc<Mutex<u64>>,
 
@@ -141,12 +145,12 @@ impl HotlineClient {
             username: Arc::new(Mutex::new("guest".to_string())),
             user_icon_id: Arc::new(Mutex::new(191)),
             status: Arc::new(Mutex::new(ConnectionStatus::Disconnected)),
-            read_half: Arc::new(Mutex::new(None)),
-            write_half: Arc::new(Mutex::new(None)),
+            hope_reader: Arc::new(Mutex::new(None)),
+            hope_writer: Arc::new(Mutex::new(None)),
             transaction_counter: Arc::new(AtomicU32::new(1)),
             file_list_paths: Arc::new(RwLock::new(HashMap::new())),
             server_info: Arc::new(Mutex::new(None)),
-            user_access: Arc::new(Mutex::new(0)), // Default to no permissions
+            user_access: Arc::new(Mutex::new(0)),
             large_file_support: Arc::new(AtomicBool::new(false)),
             running: Arc::new(AtomicBool::new(false)),
             event_tx,
@@ -166,6 +170,29 @@ impl HotlineClient {
         self.transaction_counter.fetch_add(1, Ordering::SeqCst)
     }
 
+    /// Establish TCP (or TLS) connection and perform Hotline handshake.
+    /// Called by connect() and also by login() to reconnect after HOPE probe failure.
+    async fn establish_connection(&self) -> Result<(), String> {
+        let addr = crate::protocol::socket_addr_string(&self.bookmark.address, self.bookmark.port);
+        let stream = TcpStream::connect(&addr)
+            .await
+            .map_err(|e| format!("Failed to connect: {}", e))?;
+
+        if self.bookmark.tls {
+            let tls_stream = Self::wrap_tls(stream, &self.bookmark.address).await?;
+            let (read_half, write_half) = tokio::io::split(tls_stream);
+            *self.hope_reader.lock().await = Some(HopeReader::new(Box::new(read_half)));
+            *self.hope_writer.lock().await = Some(HopeWriter::new(Box::new(write_half)));
+        } else {
+            let (read_half, write_half) = stream.into_split();
+            *self.hope_reader.lock().await = Some(HopeReader::new(Box::new(read_half)));
+            *self.hope_writer.lock().await = Some(HopeWriter::new(Box::new(write_half)));
+        }
+
+        self.handshake().await?;
+        Ok(())
+    }
+
     pub async fn connect(&self) -> Result<(), String> {
         let tls_label = if self.bookmark.tls { " (TLS)" } else { "" };
         println!("Connecting to {}:{}{tls_label}...", self.bookmark.address, self.bookmark.port);
@@ -177,23 +204,7 @@ impl HotlineClient {
             let _ = self.event_tx.send(HotlineEvent::StatusChanged(ConnectionStatus::Connecting));
         }
 
-        // Connect TCP (IPv6 literals use [addr]:port format)
-        let addr = crate::protocol::socket_addr_string(&self.bookmark.address, self.bookmark.port);
-        let stream = TcpStream::connect(&addr)
-            .await
-            .map_err(|e| format!("Failed to connect: {}", e))?;
-
-        // Split into read/write halves, optionally wrapping with TLS
-        if self.bookmark.tls {
-            let tls_stream = Self::wrap_tls(stream, &self.bookmark.address).await?;
-            let (read_half, write_half) = tokio::io::split(tls_stream);
-            *self.read_half.lock().await = Some(Box::new(read_half));
-            *self.write_half.lock().await = Some(Box::new(write_half));
-        } else {
-            let (read_half, write_half) = stream.into_split();
-            *self.read_half.lock().await = Some(Box::new(read_half));
-            *self.write_half.lock().await = Some(Box::new(write_half));
-        }
+        self.establish_connection().await?;
 
         // Update status
         {
@@ -201,9 +212,6 @@ impl HotlineClient {
             *status = ConnectionStatus::Connected;
             let _ = self.event_tx.send(HotlineEvent::StatusChanged(ConnectionStatus::Connected));
         }
-
-        // Perform handshake
-        self.handshake().await?;
 
         // Perform login
         self.login().await?;
@@ -262,14 +270,14 @@ impl HotlineClient {
         handshake.extend_from_slice(&PROTOCOL_VERSION.to_be_bytes()); // 0x0001
         handshake.extend_from_slice(&PROTOCOL_SUBVERSION.to_be_bytes()); // 0x0002
 
-        // Send handshake
+        // Send handshake (raw — before any encryption)
         {
-            let mut write_guard = self.write_half.lock().await;
-            let write_stream = write_guard
+            let mut write_guard = self.hope_writer.lock().await;
+            let writer = write_guard
                 .as_mut()
                 .ok_or("Not connected".to_string())?;
-            write_stream
-                .write_all(&handshake)
+            writer
+                .write_raw(&handshake)
                 .await
                 .map_err(|e| format!("Failed to send handshake: {}", e))?;
         }
@@ -277,12 +285,12 @@ impl HotlineClient {
         // Read response (8 bytes)
         let mut response = [0u8; 8];
         {
-            let mut read_guard = self.read_half.lock().await;
-            let read_stream = read_guard
+            let mut read_guard = self.hope_reader.lock().await;
+            let reader = read_guard
                 .as_mut()
                 .ok_or("Not connected".to_string())?;
-            read_stream
-                .read_exact(&mut response)
+            reader
+                .read_raw(&mut response)
                 .await
                 .map_err(|e| format!("Failed to read handshake response: {}", e))?;
         }
@@ -302,6 +310,143 @@ impl HotlineClient {
         Ok(())
     }
 
+    /// Read a single transaction from the connection (raw, pre-encryption).
+    /// Used during login before the receive loop starts.
+    async fn read_transaction_raw(&self) -> Result<Transaction, String> {
+        let mut read_guard = self.hope_reader.lock().await;
+        let reader = read_guard.as_mut().ok_or("Not connected")?;
+
+        // Read header
+        let mut header = [0u8; TRANSACTION_HEADER_SIZE];
+        reader.read_raw(&mut header).await
+            .map_err(|e| format!("Failed to read transaction header: {}", e))?;
+
+        let data_size = u32::from_be_bytes([header[16], header[17], header[18], header[19]]);
+        let mut full_data = header.to_vec();
+
+        if data_size > 0 {
+            let mut body = vec![0u8; data_size as usize];
+            reader.read_raw(&mut body).await
+                .map_err(|e| format!("Failed to read transaction body: {}", e))?;
+            full_data.extend(body);
+        }
+
+        Transaction::decode(&full_data)
+    }
+
+    /// Send a transaction via the writer (raw, pre-encryption).
+    /// Used during login before encryption is activated.
+    async fn send_transaction_raw(&self, transaction: &Transaction) -> Result<(), String> {
+        let encoded = transaction.encode();
+        let mut write_guard = self.hope_writer.lock().await;
+        let writer = write_guard.as_mut().ok_or("Not connected")?;
+        writer.write_raw(&encoded).await
+            .map_err(|e| format!("Failed to send transaction: {}", e))
+    }
+
+    /// Attempt HOPE identification (step 1+2). Returns the negotiation result
+    /// if the server supports HOPE, or None if it doesn't. Any error (including
+    /// the server closing the connection) is treated as "not supported".
+    async fn try_hope_probe(&self) -> Option<hope::HopeNegotiation> {
+        let mut hope_tx = Transaction::new(self.next_transaction_id(), TransactionType::Login);
+
+        // Single null byte signals HOPE identification
+        hope_tx.add_field(TransactionField::new(FieldType::UserLogin, vec![0x00]));
+
+        // Our supported MAC algorithms (strongest first)
+        hope_tx.add_field(TransactionField::new(
+            FieldType::HopeMacAlgorithm,
+            hope::encode_algorithm_list(hope::PREFERRED_MAC_ALGORITHMS),
+        ));
+
+        // App identification
+        hope_tx.add_field(TransactionField::from_string(
+            FieldType::HopeAppId,
+            "HTLN",
+        ));
+        hope_tx.add_field(TransactionField::from_string(
+            FieldType::HopeAppString,
+            &format!("Hotline Navigator {}", env!("CARGO_PKG_VERSION")),
+        ));
+
+        // Request RC4 transport encryption
+        hope_tx.add_field(TransactionField::new(
+            FieldType::HopeClientCipher,
+            hope::encode_cipher_list(hope::SUPPORTED_CIPHERS),
+        ));
+        hope_tx.add_field(TransactionField::new(
+            FieldType::HopeServerCipher,
+            hope::encode_cipher_list(hope::SUPPORTED_CIPHERS),
+        ));
+
+        println!("Sending HOPE identification...");
+        if let Err(e) = self.send_transaction_raw(&hope_tx).await {
+            println!("HOPE probe send failed: {}", e);
+            return None;
+        }
+
+        // Read server reply — if this fails, server doesn't support HOPE
+        let reply = match self.read_transaction_raw().await {
+            Ok(r) => r,
+            Err(e) => {
+                println!("HOPE probe read failed: {}", e);
+                return None;
+            }
+        };
+
+        // Check for HOPE session key in the reply
+        let session_key_field = reply.get_field(FieldType::HopeSessionKey)?;
+        if session_key_field.data.len() != 64 {
+            println!("HOPE session key wrong size ({}), not supported", session_key_field.data.len());
+            return None;
+        }
+
+        let mut session_key = [0u8; 64];
+        session_key.copy_from_slice(&session_key_field.data);
+
+        // Parse server's chosen MAC algorithm
+        let mac_algorithm = reply.get_field(FieldType::HopeMacAlgorithm)?;
+        let selected_mac = hope::decode_algorithm_selection(&mac_algorithm.data).ok()?;
+
+        // Check if server wants login to be MAC'd (non-empty login field)
+        let mac_login = reply
+            .get_field(FieldType::UserLogin)
+            .map(|f| !f.data.is_empty())
+            .unwrap_or(false);
+
+        // Parse cipher selections
+        let server_cipher = reply
+            .get_field(FieldType::HopeServerCipher)
+            .and_then(|f| hope::decode_cipher_selection(&f.data).ok())
+            .unwrap_or_else(|| "NONE".to_string());
+        let client_cipher = reply
+            .get_field(FieldType::HopeClientCipher)
+            .and_then(|f| hope::decode_cipher_selection(&f.data).ok())
+            .unwrap_or_else(|| "NONE".to_string());
+
+        let server_compression = reply
+            .get_field(FieldType::HopeServerCompression)
+            .and_then(|f| hope::decode_cipher_selection(&f.data).ok())
+            .unwrap_or_else(|| "NONE".to_string());
+        let client_compression = reply
+            .get_field(FieldType::HopeClientCompression)
+            .and_then(|f| hope::decode_cipher_selection(&f.data).ok())
+            .unwrap_or_else(|| "NONE".to_string());
+
+        println!("HOPE negotiation: MAC={:?}, mac_login={}, server_cipher={}, client_cipher={}",
+            selected_mac, mac_login, server_cipher, client_cipher);
+
+        Some(hope::HopeNegotiation {
+            session_key,
+            mac_algorithm: selected_mac,
+            mac_login,
+            server_cipher,
+            client_cipher,
+            server_compression,
+            client_compression,
+        })
+    }
+
     async fn login(&self) -> Result<(), String> {
         println!("Logging in as {}...", self.bookmark.login);
 
@@ -312,116 +457,98 @@ impl HotlineClient {
             let _ = self.event_tx.send(HotlineEvent::StatusChanged(ConnectionStatus::LoggingIn));
         }
 
-        // Build login transaction
-        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::Login);
-
-        // Add fields
-        transaction.add_field(TransactionField::from_encoded_string(
-            FieldType::UserLogin,
-            &self.bookmark.login,
-        ));
-        transaction.add_field(TransactionField::from_encoded_string(
-            FieldType::UserPassword,
-            self.bookmark.password.as_deref().unwrap_or(""),
-        ));
+        let password = self.bookmark.password.as_deref().unwrap_or("");
         let user_icon_id = *self.user_icon_id.lock().await;
         let username = self.username.lock().await.clone();
-        
-        transaction.add_field(TransactionField::from_u16(
-            FieldType::UserIconId,
-            user_icon_id,
-        ));
-        transaction.add_field(TransactionField::from_string(
-            FieldType::UserName,
-            &username,
-        ));
-        transaction.add_field(TransactionField::from_u32(FieldType::VersionNumber, 255));
 
-        // Advertise large file capability
-        transaction.add_field(TransactionField::from_u16(FieldType::Capabilities, CAPABILITY_LARGE_FILES));
+        // HOPE (Hotline One-time Password Extension) probe is disabled for now.
+        // The HOPE identification (login=0x00) poisons the connection on non-HOPE
+        // servers — they treat it as a failed login and close/block the connection,
+        // making reconnect unreliable. Since there's no way to detect HOPE support
+        // before the probe, we default to legacy login. HOPE will be activated when
+        // we can detect server support (e.g. from server version or a bookmark flag).
+        //
+        // The full HOPE implementation is ready in hope.rs / hope_stream.rs and can
+        // be enabled by calling try_hope_probe() here when appropriate.
+        let hope_negotiation: Option<hope::HopeNegotiation> = None;
 
-        // Send transaction
-        let encoded = transaction.encode();
-        println!("Login transaction: {} bytes, fields={}", encoded.len(), transaction.fields.len());
-        println!("Transaction data: {:02X?}", &encoded[..std::cmp::min(40, encoded.len())]);
+        // ─── Send login ───
+        let login_reply = if let Some(ref negotiation) = hope_negotiation {
+            // HOPE authenticated login (step 3)
+            let mut auth_tx = Transaction::new(self.next_transaction_id(), TransactionType::Login);
 
-        {
-            let mut write_guard = self.write_half.lock().await;
-            let write_stream = write_guard
-                .as_mut()
-                .ok_or("Not connected".to_string())?;
-            write_stream
-                .write_all(&encoded)
-                .await
-                .map_err(|e| format!("Failed to send login: {}", e))?;
-        }
+            let login_bytes = self.bookmark.login.as_bytes();
+            if negotiation.mac_login {
+                let login_mac = hope::compute_mac(
+                    negotiation.mac_algorithm,
+                    login_bytes,
+                    &negotiation.session_key,
+                );
+                auth_tx.add_field(TransactionField::new(FieldType::UserLogin, login_mac));
+            } else {
+                let inverted: Vec<u8> = login_bytes.iter().map(|b| !b).collect();
+                auth_tx.add_field(TransactionField::new(FieldType::UserLogin, inverted));
+            }
 
-        println!("Login transaction sent, waiting for reply...");
+            let password_mac = hope::compute_mac(
+                negotiation.mac_algorithm,
+                password.as_bytes(),
+                &negotiation.session_key,
+            );
+            auth_tx.add_field(TransactionField::new(FieldType::UserPassword, password_mac));
 
-        // Read reply header
-        let mut header = [0u8; TRANSACTION_HEADER_SIZE];
-        println!("Reading login reply header...");
-        {
-            let mut read_guard = self.read_half.lock().await;
-            let read_stream = read_guard
-                .as_mut()
-                .ok_or("Not connected".to_string())?;
-            read_stream
-                .read_exact(&mut header)
-                .await
-                .map_err(|e| format!("Failed to read login reply: {}", e))?;
-        }
+            auth_tx.add_field(TransactionField::from_u16(FieldType::UserIconId, user_icon_id));
+            auth_tx.add_field(TransactionField::from_string(FieldType::UserName, &username));
+            auth_tx.add_field(TransactionField::from_u32(FieldType::VersionNumber, 255));
+            auth_tx.add_field(TransactionField::from_u16(FieldType::Capabilities, CAPABILITY_LARGE_FILES));
 
-        println!("Login reply header received: {:02X?}", &header);
+            println!("Sending HOPE authenticated login...");
+            self.send_transaction_raw(&auth_tx).await?;
+            self.read_transaction_raw().await?
+        } else {
+            // Standard legacy login (XOR-encoded credentials)
+            let mut login_tx = Transaction::new(self.next_transaction_id(), TransactionType::Login);
+            login_tx.add_field(TransactionField::from_encoded_string(
+                FieldType::UserLogin,
+                &self.bookmark.login,
+            ));
+            login_tx.add_field(TransactionField::from_encoded_string(
+                FieldType::UserPassword,
+                password,
+            ));
+            login_tx.add_field(TransactionField::from_u16(FieldType::UserIconId, user_icon_id));
+            login_tx.add_field(TransactionField::from_string(FieldType::UserName, &username));
+            login_tx.add_field(TransactionField::from_u32(FieldType::VersionNumber, 255));
+            login_tx.add_field(TransactionField::from_u16(FieldType::Capabilities, CAPABILITY_LARGE_FILES));
 
-        // Check data size to see if we need to read more
-        let data_size = u32::from_be_bytes([header[16], header[17], header[18], header[19]]);
-        let mut full_data = header.to_vec();
+            println!("Sending login...");
+            self.send_transaction_raw(&login_tx).await?;
+            self.read_transaction_raw().await?
+        };
 
-        // Read additional data if present
-        if data_size > 0 {
-            let mut additional_data = vec![0u8; data_size as usize];
-            let mut read_guard = self.read_half.lock().await;
-            let read_stream = read_guard
-                .as_mut()
-                .ok_or("Not connected".to_string())?;
-            read_stream
-                .read_exact(&mut additional_data)
-                .await
-                .map_err(|e| format!("Failed to read login reply data: {}", e))?;
-            full_data.extend(additional_data);
-        }
-
-        // Decode full transaction
-        let reply = Transaction::decode(&full_data).map_err(|e| format!("Failed to decode reply: {}", e))?;
-
-        println!("Login reply: error_code={}, fields={}", reply.error_code, reply.fields.len());
+        println!("Login reply: error_code={}, fields={}", login_reply.error_code, login_reply.fields.len());
 
         // Check for error
-        if reply.error_code != 0 {
-            // Try to get error text from various possible fields
-            let error_msg = reply
+        if login_reply.error_code != 0 {
+            let error_msg = login_reply
                 .get_field(FieldType::ErrorText)
                 .and_then(|f| f.to_string().ok())
                 .or_else(|| {
-                    // Some servers put error text in Data field
-                    reply.get_field(FieldType::Data)
+                    login_reply.get_field(FieldType::Data)
                         .and_then(|f| f.to_string().ok())
                 })
                 .unwrap_or_else(|| {
-                    // Map common error codes to messages
-                    match reply.error_code {
+                    match login_reply.error_code {
                         1 => "Invalid login credentials or server rejected login".to_string(),
                         2 => "Server is full".to_string(),
                         3 => "Banned from server".to_string(),
-                        _ => format!("Error code: {}", reply.error_code),
+                        _ => format!("Error code: {}", login_reply.error_code),
                     }
                 });
 
-            // Log all fields for debugging
-            println!("Login failed with error_code={}, fields={}", reply.error_code, reply.fields.len());
-            for (i, field) in reply.fields.iter().enumerate() {
-                println!("  Field {}: type={:?} ({}), size={} bytes", 
+            println!("Login failed with error_code={}, fields={}", login_reply.error_code, login_reply.fields.len());
+            for (i, field) in login_reply.fields.iter().enumerate() {
+                println!("  Field {}: type={:?} ({}), size={} bytes",
                     i, field.field_type, field.field_type as u16, field.data.len());
                 if let Ok(text) = field.to_string() {
                     if text.len() < 200 {
@@ -433,41 +560,89 @@ impl HotlineClient {
             return Err(format!("Login failed: {}", error_msg));
         }
 
-        // Extract server info from login reply
-        let server_name = reply
+        // ─── Activate transport encryption if negotiated ───
+        if let Some(ref negotiation) = hope_negotiation {
+            if negotiation.mac_algorithm.supports_transport()
+                && (negotiation.server_cipher == "RC4" || negotiation.client_cipher == "RC4")
+            {
+                let password_mac = hope::compute_mac(
+                    negotiation.mac_algorithm,
+                    password.as_bytes(),
+                    &negotiation.session_key,
+                );
+
+                // Key derivation per spec
+                let encode_key = hope::compute_mac(
+                    negotiation.mac_algorithm,
+                    password.as_bytes(),
+                    &password_mac,
+                );
+                let decode_key = hope::compute_mac(
+                    negotiation.mac_algorithm,
+                    password.as_bytes(),
+                    &encode_key,
+                );
+
+                // Client reads with server's encode_key, writes with server's decode_key
+                // (reversed from server perspective)
+                {
+                    let mut reader_guard = self.hope_reader.lock().await;
+                    if let Some(reader) = reader_guard.as_mut() {
+                        reader.activate_encryption(
+                            encode_key.clone(),
+                            negotiation.session_key,
+                            negotiation.mac_algorithm,
+                        );
+                    }
+                }
+                {
+                    let mut writer_guard = self.hope_writer.lock().await;
+                    if let Some(writer) = writer_guard.as_mut() {
+                        writer.activate_encryption(
+                            decode_key,
+                            negotiation.session_key,
+                            negotiation.mac_algorithm,
+                        );
+                    }
+                }
+
+                println!("HOPE transport encryption activated (RC4)");
+            } else {
+                println!("HOPE auth only (no transport encryption)");
+            }
+        }
+
+        // ─── Process login reply (same as before) ───
+        let server_name = login_reply
             .get_field(FieldType::ServerName)
             .and_then(|f| f.to_string().ok())
             .unwrap_or_else(|| self.bookmark.name.clone());
-        
-        let server_version = reply
+
+        let server_version = login_reply
             .get_field(FieldType::VersionNumber)
             .and_then(|f| f.to_u16().ok())
             .map(|v| v.to_string())
             .unwrap_or_else(|| "Unknown".to_string());
-        
-        // Server description may be in Data field or not present
-        let server_description = reply
+
+        let server_description = login_reply
             .get_field(FieldType::Data)
             .and_then(|f| f.to_string().ok())
             .filter(|s| !s.is_empty() && s != &server_name)
             .unwrap_or_else(|| String::new());
 
-        // Parse and store user access permissions (if present)
-        // This is optional - some servers may not send it, which is fine
-        let user_access = reply
+        let user_access = login_reply
             .get_field(FieldType::UserAccess)
             .and_then(|f| f.to_u64().ok())
             .unwrap_or(0);
-        
+
         {
             let mut access_guard = self.user_access.lock().await;
             *access_guard = user_access;
         }
-        
+
         println!("User access permissions: 0x{:016X}", user_access);
 
-        // Check if server confirmed large file support
-        let server_capabilities = reply
+        let server_capabilities = login_reply
             .get_field(FieldType::Capabilities)
             .and_then(|f| f.to_u16().ok())
             .unwrap_or(0);
@@ -476,18 +651,16 @@ impl HotlineClient {
         self.large_file_support.store(large_files, Ordering::SeqCst);
         println!("Server capabilities: 0x{:04X} (large files: {})", server_capabilities, large_files);
 
-        // Store server info
         {
             let mut server_info = self.server_info.lock().await;
             *server_info = Some(ServerInfo {
                 name: server_name,
                 description: server_description,
                 version: server_version,
-                agreement: None, // Agreement is handled separately
+                agreement: None,
             });
         }
 
-        // Update status
         {
             let mut status = self.status.lock().await;
             *status = ConnectionStatus::LoggedIn;
@@ -515,15 +688,15 @@ impl HotlineClient {
 
         // Close both halves of the stream
         {
-            let mut read_guard = self.read_half.lock().await;
-            if let Some(read_half) = read_guard.take() {
-                drop(read_half);
+            let mut read_guard = self.hope_reader.lock().await;
+            if let Some(reader) = read_guard.take() {
+                drop(reader);
             }
         }
         {
-            let mut write_guard = self.write_half.lock().await;
-            if let Some(write_half) = write_guard.take() {
-                drop(write_half);
+            let mut write_guard = self.hope_writer.lock().await;
+            if let Some(writer) = write_guard.take() {
+                drop(writer);
             }
         }
 
@@ -550,14 +723,27 @@ impl HotlineClient {
         self.status.lock().await.clone()
     }
 
+    /// Send a transaction through the HOPE writer (handles encryption if active).
+    /// This is the primary method all sub-modules should use to send data.
+    pub(crate) async fn send_transaction(&self, transaction: &Transaction) -> Result<(), String> {
+        let mut write_guard = self.hope_writer.lock().await;
+        let writer = write_guard
+            .as_mut()
+            .ok_or("Not connected".to_string())?;
+        writer
+            .write_transaction(transaction)
+            .await
+            .map_err(|e| format!("Failed to send transaction: {}", e))
+    }
+
     // Start background task to receive messages from server
     async fn start_receive_loop(&self) {
         println!("Starting receive loop...");
 
         self.running.store(true, Ordering::SeqCst);
 
-        let read_half = self.read_half.clone();
-        let write_half = self.write_half.clone();
+        let hope_reader = self.hope_reader.clone();
+        let hope_writer = self.hope_writer.clone();
         let running = self.running.clone();
         let status = self.status.clone();
         let event_tx = self.event_tx.clone();
@@ -566,90 +752,39 @@ impl HotlineClient {
 
         let task = tokio::spawn(async move {
             while running.load(Ordering::SeqCst) {
-                // Read transaction header
-                let mut header = [0u8; TRANSACTION_HEADER_SIZE];
-
-                let mut read_guard = read_half.lock().await;
-                let read_stream = match read_guard.as_mut() {
-                    Some(s) => s,
-                    None => break,
-                };
-
-                let read_result = read_stream.read_exact(&mut header).await;
-                drop(read_guard);
-
-                if read_result.is_err() {
-                    println!("Receive loop: connection closed");
-                    // Clear both halves to prevent further writes
-                    {
-                        let mut read_guard = read_half.lock().await;
-                        read_guard.take();
-                    }
-                    {
-                        let mut write_guard = write_half.lock().await;
-                        write_guard.take();
-                    }
-                    // Update status
-                    {
-                        let mut status_guard = status.lock().await;
-                        *status_guard = ConnectionStatus::Disconnected;
-                    }
-                    let _ = event_tx.send(HotlineEvent::StatusChanged(ConnectionStatus::Disconnected));
-                    break;
-                }
-
-                // Decode transaction
-                let transaction = match Transaction::decode(&header) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        eprintln!("Failed to decode transaction: {}", e);
-                        continue;
-                    }
-                };
-
-                // Read additional data if needed
-                let data_size = u32::from_be_bytes([header[16], header[17], header[18], header[19]]);
-                let mut full_data = header.to_vec();
-
-                if data_size > 0 {
-                    let mut additional_data = vec![0u8; data_size as usize];
-                    let mut read_guard = read_half.lock().await;
-                    let read_stream = match read_guard.as_mut() {
-                        Some(s) => s,
+                // Read a complete transaction (handles decryption if active)
+                let transaction = {
+                    let mut read_guard = hope_reader.lock().await;
+                    let reader = match read_guard.as_mut() {
+                        Some(r) => r,
                         None => break,
                     };
+                    reader.read_transaction().await
+                };
 
-                    let read_result = read_stream.read_exact(&mut additional_data).await;
-                    drop(read_guard);
-                    
-                    if read_result.is_err() {
-                        println!("Receive loop: connection closed while reading data");
-                        // Clear both halves to prevent further writes
-                        {
-                            let mut read_guard = read_half.lock().await;
-                            read_guard.take();
-                        }
-                        {
-                            let mut write_guard = write_half.lock().await;
-                            write_guard.take();
-                        }
-                        // Update status
-                        {
-                            let mut status_guard = status.lock().await;
-                            *status_guard = ConnectionStatus::Disconnected;
-                        }
-                        let _ = event_tx.send(HotlineEvent::StatusChanged(ConnectionStatus::Disconnected));
-                        break;
-                    }
-
-                    full_data.extend(additional_data);
-                }
-
-                // Re-decode with full data
-                let transaction = match Transaction::decode(&full_data) {
+                let transaction = match transaction {
                     Ok(t) => t,
                     Err(e) => {
-                        eprintln!("Failed to decode full transaction: {}", e);
+                        if e.contains("Failed to read") {
+                            println!("Receive loop: connection closed");
+                            // Clear both halves to prevent further writes
+                            {
+                                let mut read_guard = hope_reader.lock().await;
+                                read_guard.take();
+                            }
+                            {
+                                let mut write_guard = hope_writer.lock().await;
+                                write_guard.take();
+                            }
+                            // Update status
+                            {
+                                let mut status_guard = status.lock().await;
+                                *status_guard = ConnectionStatus::Disconnected;
+                            }
+                            let _ = event_tx.send(HotlineEvent::StatusChanged(ConnectionStatus::Disconnected));
+                            break;
+                        }
+                        eprintln!("Failed to decode transaction: {}", e);
                         continue;
                     }
                 };
@@ -886,7 +1021,7 @@ impl HotlineClient {
     async fn start_keepalive(&self) {
         println!("Starting keep-alive...");
 
-        let write_half = self.write_half.clone();
+        let hope_writer = self.hope_writer.clone();
         let running = self.running.clone();
         let transaction_counter = self.transaction_counter.clone();
 
@@ -899,17 +1034,14 @@ impl HotlineClient {
                 }
 
                 // Send GetUserNameList as keep-alive (works for all server versions)
-                // Swift client uses ConnectionKeepAlive for servers >= 185, but falls back to GetUserNameList
-                // Since we don't have ConnectionKeepAlive in our protocol, we'll use GetUserNameList
                 let transaction = Transaction::new(
                     transaction_counter.fetch_add(1, Ordering::SeqCst),
                     TransactionType::GetUserNameList,
                 );
-                let encoded = transaction.encode();
 
-                let mut write_guard = write_half.lock().await;
-                if let Some(write_stream) = write_guard.as_mut() {
-                    if write_stream.write_all(&encoded).await.is_err() {
+                let mut write_guard = hope_writer.lock().await;
+                if let Some(writer) = write_guard.as_mut() {
+                    if writer.write_transaction(&transaction).await.is_err() {
                         println!("Keep-alive failed, connection lost");
                         break;
                     }
