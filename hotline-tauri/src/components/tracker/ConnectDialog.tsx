@@ -187,7 +187,7 @@ export default function ConnectDialog({ onClose }: ConnectDialogProps) {
         </div>
 
         <div
-          className="overflow-hidden transition-[height] duration-300 ease-in-out"
+          className="overflow-auto transition-[height] duration-300 ease-in-out"
           style={{ height: typeof contentHeight === 'number' ? contentHeight : 'auto' }}
         >
           <form ref={contentRef} onSubmit={handleSubmit} className="px-6 py-4 space-y-4">

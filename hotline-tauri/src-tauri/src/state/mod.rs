@@ -63,7 +63,7 @@ impl AppState {
         // Define default servers: (id, name, address, port, tls)
         let default_servers = vec![
             ("default-server-system7", "System7 Today", "hotline.system7today.com", DEFAULT_SERVER_PORT, false),
-            ("default-server-bobkiwi", "Bob Kiwi's House", "69.250.126.86", DEFAULT_SERVER_PORT, false),
+            ("default-server-macdomain", "MacDomain", "62.116.228.143", DEFAULT_SERVER_PORT, false),
             ("default-server-applearchive", "Apple Media Archive & Hotline Navigator", "hotline.semihosted.xyz", DEFAULT_TLS_PORT, true),
         ];
         
@@ -758,7 +758,7 @@ impl AppState {
         // Define default servers: (id, name, address, port, tls)
         let default_servers = vec![
             ("default-server-system7", "System7 Today", "hotline.system7today.com", DEFAULT_SERVER_PORT, false),
-            ("default-server-bobkiwi", "Bob Kiwi's House", "69.250.126.86", DEFAULT_SERVER_PORT, false),
+            ("default-server-macdomain", "MacDomain", "62.116.228.143", DEFAULT_SERVER_PORT, false),
             ("default-server-applearchive", "Apple Media Archive & Hotline Navigator", "hotline.semihosted.xyz", DEFAULT_TLS_PORT, true),
         ];
 

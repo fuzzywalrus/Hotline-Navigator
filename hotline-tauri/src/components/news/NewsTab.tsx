@@ -301,10 +301,14 @@ export default function NewsTab({
         </div>
 
         {/* Post button */}
-        <div className="border-t border-gray-200 dark:border-gray-700 p-4 pb-6">
+        <div className="border-t border-gray-200 dark:border-gray-700 p-4">
           <button
             onClick={onToggleComposer}
-            className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium"
+            className={`w-full px-4 py-2 text-white rounded-md font-medium ${
+              showComposer
+                ? 'bg-red-600 hover:bg-red-700'
+                : 'bg-blue-600 hover:bg-blue-700'
+            }`}
           >
             {showComposer ? 'Cancel' : selectedArticle ? 'Reply to Article' : 'Post Article'}
           </button>
@@ -315,8 +319,8 @@ export default function NewsTab({
       <div className={`md:w-1/2 flex flex-col h-full overflow-hidden ${showMobileDetail ? 'flex' : 'hidden md:flex'}`}>
         {showComposer ? (
           /* Composer */
-          <form onSubmit={onPostNews} className="flex-1 flex flex-col p-4">
-            <div className="flex items-center gap-2 mb-4">
+          <form onSubmit={onPostNews} className="flex-1 flex flex-col p-4 min-h-0">
+            <div className="flex items-center gap-2 mb-4 flex-shrink-0">
               <button
                 type="button"
                 onClick={() => { onToggleComposer(); }}
@@ -333,19 +337,18 @@ export default function NewsTab({
               value={composerTitle}
               onChange={(e) => onComposerTitleChange(e.target.value)}
               placeholder="Article title..."
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+              className="flex-shrink-0 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
             />
             <textarea
               value={composerBody}
               onChange={(e) => onComposerBodyChange(e.target.value)}
               placeholder="Article content..."
-              rows={20}
-              className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none mb-4"
+              className="flex-1 min-h-[120px] px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none mb-4"
             />
             <button
               type="submit"
               disabled={!composerTitle.trim() || !composerBody.trim() || postingNews}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-md font-medium disabled:cursor-not-allowed"
+              className="flex-shrink-0 w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-md font-medium disabled:cursor-not-allowed"
             >
               {postingNews ? 'Posting...' : 'Post'}
             </button>
