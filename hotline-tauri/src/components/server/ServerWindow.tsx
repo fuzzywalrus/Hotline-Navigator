@@ -467,6 +467,13 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
           setUserInfoDialogUser(user);
         },
       },
+      { divider: true, label: '', action: () => {} },
+      {
+        label: `Missing icon: #${user.iconId}`,
+        icon: '',
+        action: () => {},
+        disabled: true,
+      },
     ];
 
     // Add Disconnect option if user has permission

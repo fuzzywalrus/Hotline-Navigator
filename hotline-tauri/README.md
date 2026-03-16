@@ -20,6 +20,10 @@ While the original Swift version provides a native macOS experience, this Tauri-
 
 This project complements the [original Swift client](https://github.com/mierau/hotline). It does not include server software; for hosting your own Hotline server, see [Mobius](https://github.com/jhalter/mobius).
 
+### Protocol Reference
+
+For Hotline protocol documentation, see [fogWraith/Hotline Docs/Protocol](https://github.com/fogWraith/Hotline/tree/main/Docs/Protocol).
+
 ## Features
 
 ### Currently Implemented

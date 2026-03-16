@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../../stores/appStore';
 import { usePreferencesStore } from '../../stores/preferencesStore';
+import { classifyError } from '../../utils/errorClassifier';
 import type { Bookmark } from '../../types';
 
 interface ConnectDialogProps {
@@ -152,16 +153,11 @@ export default function ConnectDialog({ onClose }: ConnectDialogProps) {
       handleClose();
     } catch (err) {
       console.error('Failed to connect:', err);
-      const errorMessage = String(err);
-      if (errorMessage.includes('nodename nor servname provided') || errorMessage.includes('not known')) {
-        setError('Unable to resolve server address.');
-      } else if (errorMessage.includes('Connection refused')) {
-        setError('Connection refused. The server may be offline.');
-      } else if (errorMessage.includes('timeout')) {
-        setError('Connection timed out.');
-      } else {
-        setError(errorMessage);
-      }
+      const classified = classifyError(String(err));
+      const msg = classified.suggestion
+        ? `${classified.message} ${classified.suggestion}`
+        : classified.message;
+      setError(msg);
     } finally {
       setConnecting(false);
     }

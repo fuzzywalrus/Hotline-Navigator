@@ -1,4 +1,5 @@
 import UserIcon, { UserBanner } from './UserIcon';
+import { isIconBlocked } from '../../utils/iconBlocklist';
 
 interface User {
   userId: number;
@@ -38,10 +39,15 @@ export default function UserList({ users, unreadCounts, onUserClick, onUserRight
             }`}
             title={`Click to message${user.isAdmin ? ' (Admin)' : ''}${user.isIdle ? ' (Idle)' : ''} | Right-click for menu`}
           >
-            <UserBanner iconId={user.iconId} />
+            {!isIconBlocked(user.iconId) && <UserBanner iconId={user.iconId} />}
             <UserIcon iconId={user.iconId} size={16} />
             <span className={`truncate flex-1 ${user.isIdle ? 'italic' : ''}`}>
               {user.userName}
+              {isIconBlocked(user.iconId) && (
+                <span className="ml-1 text-xs text-red-500 dark:text-red-400" title="This user's icon has been blocked for containing hateful imagery">
+                  (blocked icon)
+                </span>
+              )}
             </span>
             {user.isAdmin && (
               <div className="bg-yellow-500 text-white text-xs font-bold rounded px-1" title="Admin">

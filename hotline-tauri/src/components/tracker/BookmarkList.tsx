@@ -6,6 +6,8 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import type { Bookmark, ServerBookmark } from '../../types';
 import EditBookmarkDialog from './EditBookmarkDialog';
 import BookmarkInfoDialog from './BookmarkInfoDialog';
+import ErrorModal from './ErrorModal';
+import { classifyError, type ClassifiedError } from '../../utils/errorClassifier';
 import { useContextMenu, ContextMenuRenderer, type ContextMenuItem } from '../common/ContextMenu';
 import {
   DndContext,
@@ -72,7 +74,8 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [infoBookmark, setInfoBookmark] = useState<Bookmark | null>(null);
   const [connectingId, setConnectingId] = useState<string | null>(null);
-  const [connectionErrors, setConnectionErrors] = useState<Map<string, string>>(new Map());
+  const [connectionErrors, setConnectionErrors] = useState<Map<string, ClassifiedError>>(new Map());
+  const [errorDetailId, setErrorDetailId] = useState<string | null>(null);
   const [expandedTrackers, setExpandedTrackers] = useState<Set<string>>(new Set());
   const [trackerServers, setTrackerServers] = useState<Map<string, ServerBookmark[]>>(new Map());
   const [loadingTrackers, setLoadingTrackers] = useState<Set<string>>(new Set());
@@ -163,42 +166,23 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
         unreadCount: 0,
       });
     } catch (error) {
-      const errorMessage = String(error);
+      const classified = classifyError(String(error));
 
       // Silently ignore cancellation — the user clicked a different server
-      if (errorMessage.includes('cancelled')) {
+      if (classified.category === 'cancelled') {
         return;
       }
 
       console.error('Failed to connect:', error);
 
-      // Format error message for display
-      let userFriendlyMessage = 'Failed to connect to server.';
-
-      if (errorMessage.includes('Cannot connect to tracker') || errorMessage.includes('tracker')) {
-        userFriendlyMessage = 'Trackers cannot be connected to directly. Click on the tracker to expand it and browse servers.';
-      } else if (errorMessage.includes('nodename nor servname provided') || errorMessage.includes('not known')) {
-        userFriendlyMessage = 'Unable to resolve server address. Please check the server address and try again.';
-      } else if (errorMessage.includes('Connection refused')) {
-        userFriendlyMessage = 'Connection refused. The server may be offline or the port may be incorrect.';
-      } else if (errorMessage.includes('timeout')) {
-        userFriendlyMessage = 'Connection timed out. The server may be unreachable.';
-      } else if (errorMessage.includes('early eof') || errorMessage.includes('handshake')) {
-        userFriendlyMessage = 'Connection failed: Server did not respond correctly. This may be a tracker - click to expand instead of connecting.';
-      } else if (errorMessage.includes('Failed to connect')) {
-        // Extract the actual error from the message
-        const match = errorMessage.match(/Failed to connect: (.+)/);
-        if (match && match[1]) {
-          userFriendlyMessage = `Connection failed: ${match[1]}`;
-        }
-      }
-      
-      // Store error message for this bookmark
       setConnectionErrors((prev) => {
         const next = new Map(prev);
-        next.set(bookmark.id, userFriendlyMessage);
+        next.set(bookmark.id, classified);
         return next;
       });
+
+      // Show the error modal immediately
+      setErrorDetailId(bookmark.id);
     } finally {
       // Only clear if we're still the active connection attempt
       setConnectingId((prev) => (prev === bookmark.id ? null : prev));
@@ -251,7 +235,7 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
       console.error('Failed to fetch tracker servers:', error);
       setConnectionErrors((prev) => {
         const next = new Map(prev);
-        next.set(trackerId, `Failed to fetch servers: ${error}`);
+        next.set(trackerId, classifyError(`Failed to fetch servers: ${error}`));
         return next;
       });
     } finally {
@@ -891,21 +875,29 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
                       : 'bg-red-100 dark:bg-red-900/30'
                   }`}>
                     <p className="text-xs text-red-800 dark:text-red-200 font-medium flex-1">
-                      {connectionErrors.get(bookmark.id)}
+                      {connectionErrors.get(bookmark.id)?.title}
                     </p>
-                    <button
-                      onClick={() => {
-                        setConnectionErrors((prev) => {
-                          const next = new Map(prev);
-                          next.delete(bookmark.id);
-                          return next;
-                        });
-                      }}
-                      className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-200 text-xs font-medium"
-                      aria-label="Dismiss error"
-                    >
-                      ✕
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setErrorDetailId(bookmark.id)}
+                        className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-200 text-xs font-medium"
+                      >
+                        Details
+                      </button>
+                      <button
+                        onClick={() => {
+                          setConnectionErrors((prev) => {
+                            const next = new Map(prev);
+                            next.delete(bookmark.id);
+                            return next;
+                          });
+                        }}
+                        className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-200 text-xs font-medium"
+                        aria-label="Dismiss error"
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </div>
                 )}
                 </>
@@ -942,6 +934,28 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
           onClose={() => setAddingBookmark(null)}
         />
       )}
+
+      {/* Error detail modal */}
+      {errorDetailId && connectionErrors.has(errorDetailId) && (() => {
+        const err = connectionErrors.get(errorDetailId)!;
+        const bm = bookmarks.find(b => b.id === errorDetailId);
+        return (
+          <ErrorModal
+            error={err}
+            serverName={bm?.name || bm?.address || 'Unknown server'}
+            onClose={() => setErrorDetailId(null)}
+            onRetry={bm ? () => {
+              setConnectionErrors((prev) => {
+                const next = new Map(prev);
+                next.delete(errorDetailId);
+                return next;
+              });
+              setErrorDetailId(null);
+              handleConnect(bm);
+            } : undefined}
+          />
+        );
+      })()}
 
       {/* Context menu */}
       <ContextMenuRenderer
