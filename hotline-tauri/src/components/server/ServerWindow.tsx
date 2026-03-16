@@ -469,7 +469,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
       },
       { divider: true, label: '', action: () => {} },
       {
-        label: `Missing icon: #${user.iconId}`,
+        label: `Custom icon: #${user.iconId}`,
         icon: '',
         action: () => {},
         disabled: true,

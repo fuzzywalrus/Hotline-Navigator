@@ -477,7 +477,39 @@ impl HotlineClient {
             let article_id = u32::from_be_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]]);
             offset += 4;
 
-            // Skip date (8 bytes)
+            // Parse date (8 bytes): 2-byte year, 2-byte ms, 4-byte seconds since midnight Jan 1 of that year
+            let date_str = if offset + 8 <= data.len() {
+                let year = u16::from_be_bytes([data[offset], data[offset + 1]]);
+                let _ms = u16::from_be_bytes([data[offset + 2], data[offset + 3]]);
+                let secs = u32::from_be_bytes([data[offset + 4], data[offset + 5], data[offset + 6], data[offset + 7]]);
+                if year > 0 && secs > 0 {
+                    // Convert seconds-from-year-start to month/day/hour/minute
+                    let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+                    let days_in_months: [u32; 12] = [31, if is_leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+                    let total_days = secs / 86400;
+                    let day_secs = secs % 86400;
+                    let hour = day_secs / 3600;
+                    let minute = (day_secs % 3600) / 60;
+                    let mut remaining = total_days;
+                    let mut month = 0u32;
+                    for (i, &dim) in days_in_months.iter().enumerate() {
+                        if remaining < dim {
+                            month = i as u32 + 1;
+                            break;
+                        }
+                        remaining -= dim;
+                    }
+                    if month == 0 { month = 12; }
+                    let day = remaining + 1;
+                    let ampm = if hour < 12 { "AM" } else { "PM" };
+                    let h12 = if hour == 0 { 12 } else if hour > 12 { hour - 12 } else { hour };
+                    Some(format!("{}/{}/{} {}:{:02} {}", month, day, year, h12, minute, ampm))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
             offset += 8;
 
             let parent_id = u32::from_be_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]]);
@@ -539,7 +571,7 @@ impl HotlineClient {
                 flags,
                 title,
                 poster,
-                date: None,
+                date: date_str,
                 path: parent_path.to_vec(),
             });
         }
