@@ -119,8 +119,14 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
       return;
     }
 
-    // Don't start a new connection if one is already in progress
-    if (connectingId) return;
+    // If another connection is in progress, cancel it and start the new one
+    if (connectingId) {
+      try {
+        await invoke('cancel_connection');
+      } catch {
+        // Ignore cancel errors
+      }
+    }
 
     setConnectingId(bookmark.id);
     // Clear any previous error for this bookmark
@@ -157,12 +163,18 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
         unreadCount: 0,
       });
     } catch (error) {
-      console.error('Failed to connect:', error);
-      
-      // Format error message for display
       const errorMessage = String(error);
+
+      // Silently ignore cancellation — the user clicked a different server
+      if (errorMessage.includes('cancelled')) {
+        return;
+      }
+
+      console.error('Failed to connect:', error);
+
+      // Format error message for display
       let userFriendlyMessage = 'Failed to connect to server.';
-      
+
       if (errorMessage.includes('Cannot connect to tracker') || errorMessage.includes('tracker')) {
         userFriendlyMessage = 'Trackers cannot be connected to directly. Click on the tracker to expand it and browse servers.';
       } else if (errorMessage.includes('nodename nor servname provided') || errorMessage.includes('not known')) {
@@ -188,7 +200,8 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
         return next;
       });
     } finally {
-      setConnectingId(null);
+      // Only clear if we're still the active connection attempt
+      setConnectingId((prev) => (prev === bookmark.id ? null : prev));
     }
   };
 

@@ -174,9 +174,13 @@ impl HotlineClient {
     /// Called by connect() and also by login() to reconnect after HOPE probe failure.
     async fn establish_connection(&self) -> Result<(), String> {
         let addr = crate::protocol::socket_addr_string(&self.bookmark.address, self.bookmark.port);
-        let stream = TcpStream::connect(&addr)
-            .await
-            .map_err(|e| format!("Failed to connect: {}", e))?;
+        let stream = tokio::time::timeout(
+            Duration::from_secs(10),
+            TcpStream::connect(&addr),
+        )
+        .await
+        .map_err(|_| format!("Connection timed out after 10 seconds"))?
+        .map_err(|e| format!("Failed to connect: {}", e))?;
 
         if self.bookmark.tls {
             let tls_stream = Self::wrap_tls(stream, &self.bookmark.address).await?;

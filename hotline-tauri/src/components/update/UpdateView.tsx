@@ -27,7 +27,7 @@ export default function UpdateView({ onClose }: UpdateViewProps) {
 
   useEffect(() => {
     getVersion().then(setCurrentVersion).catch(() => {
-      setCurrentVersion('0.1.7');
+      setCurrentVersion('0.1.8');
     });
   }, []);
 

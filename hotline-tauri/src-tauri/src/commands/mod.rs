@@ -55,6 +55,15 @@ pub async fn connect_to_server(
 }
 
 #[tauri::command]
+pub fn cancel_connection(
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    println!("Command: cancel_connection");
+    state.cancel_connecting();
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn disconnect_from_server(
     server_id: String,
     state: State<'_, AppState>,

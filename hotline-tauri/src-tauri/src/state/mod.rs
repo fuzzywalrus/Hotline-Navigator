@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::RwLock;
 
@@ -14,6 +15,10 @@ pub struct AppState {
     bookmarks_path: PathBuf,
     app_handle: AppHandle,
     pending_agreements: Arc<RwLock<HashMap<String, String>>>, // server_id -> agreement_text
+    /// Generation counter for connection attempts. Each new connect_server() call
+    /// increments this. An in-flight connection checks if its generation still matches;
+    /// if not, another connection was started and this one should abort.
+    connect_generation: Arc<AtomicU64>,
 }
 
 impl AppState {
@@ -34,6 +39,7 @@ impl AppState {
             bookmarks_path,
             app_handle,
             pending_agreements: Arc::new(RwLock::new(HashMap::new())),
+            connect_generation: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -160,14 +166,34 @@ impl AppState {
         Ok(())
     }
 
+    /// Bump the connection generation, causing any in-flight connection to detect
+    /// it's been superseded and abort.
+    pub fn cancel_connecting(&self) {
+        let gen = self.connect_generation.fetch_add(1, Ordering::SeqCst);
+        println!("Cancelling in-flight connection (was generation {})", gen);
+    }
+
     pub async fn connect_server(&self, bookmark: Bookmark, username: String, user_icon_id: u16, auto_detect_tls: bool) -> Result<crate::commands::ConnectResult, String> {
         // Don't allow connecting to trackers - they use a different protocol
         if matches!(bookmark.bookmark_type, Some(crate::protocol::types::BookmarkType::Tracker)) {
             return Err("Cannot connect to tracker. Trackers are used to browse servers, not to connect directly.".to_string());
         }
 
+        // Claim a new generation — any older in-flight connection will see the mismatch
+        let my_generation = self.connect_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let generation_ref = Arc::clone(&self.connect_generation);
+
         let bookmark = bookmark;
         let server_id = bookmark.id.clone();
+
+        // Helper to check if this connection attempt has been superseded
+        let check_cancelled = || -> Result<(), String> {
+            if generation_ref.load(Ordering::SeqCst) != my_generation {
+                Err("Connection cancelled".to_string())
+            } else {
+                Ok(())
+            }
+        };
 
         // Auto-detect TLS: when enabled and the bookmark isn't already TLS, try
         // connecting directly on port+100 (the Mobius TLS convention). If TLS fails
@@ -190,20 +216,25 @@ impl AppState {
                 tls_client.connect(),
             ).await {
                 Ok(Ok(())) => {
+                    check_cancelled()?;
                     println!("Auto-detect TLS: connected via TLS on port {}", tls_port);
                     (tls_client, true, tls_port)
                 }
                 Ok(Err(e)) => {
+                    check_cancelled()?;
                     println!("Auto-detect TLS: TLS failed ({}), falling back to plain on port {}", e, bookmark.port);
                     let client = HotlineClient::new(bookmark.clone());
                     client.set_user_info(username, user_icon_id).await;
+                    check_cancelled()?;
                     client.connect().await?;
                     (client, false, bookmark.port)
                 }
                 Err(_) => {
+                    check_cancelled()?;
                     println!("Auto-detect TLS: timed out, falling back to plain on port {}", bookmark.port);
                     let client = HotlineClient::new(bookmark.clone());
                     client.set_user_info(username, user_icon_id).await;
+                    check_cancelled()?;
                     client.connect().await?;
                     (client, false, bookmark.port)
                 }
@@ -211,9 +242,12 @@ impl AppState {
         } else {
             let client = HotlineClient::new(bookmark.clone());
             client.set_user_info(username, user_icon_id).await;
+            check_cancelled()?;
             client.connect().await?;
             (client, bookmark.tls, bookmark.port)
         };
+
+        check_cancelled()?;
 
         // Get the event receiver from the client BEFORE storing it
         // (once stored, we can't move it)

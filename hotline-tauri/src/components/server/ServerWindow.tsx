@@ -761,7 +761,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
               <button
                 onClick={() => {
                   setAgreementDismissing(true);
-                  setTimeout(() => { handleDeclineAgreement(); setAgreementDismissing(false); }, 300);
+                  setTimeout(() => { setAgreementText(null); setAgreementDismissing(false); handleDeclineAgreement(); }, 300);
                 }}
                 className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm font-medium"
               >
@@ -770,7 +770,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
               <button
                 onClick={() => {
                   setAgreementDismissing(true);
-                  setTimeout(() => { handleAcceptAgreement(); setAgreementDismissing(false); }, 300);
+                  setTimeout(() => { setAgreementText(null); setAgreementDismissing(false); handleAcceptAgreement(); }, 300);
                 }}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors text-sm font-medium"
               >
