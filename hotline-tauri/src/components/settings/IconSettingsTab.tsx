@@ -127,13 +127,13 @@ export default function IconSettingsTab() {
   }, []);
 
   return (
-    <div className="p-6">
-      <div className="mb-4">
+    <div className="p-6 flex flex-col overflow-hidden h-full">
+      <div className="mb-4 flex-shrink-0">
         <p className="text-sm text-gray-600 dark:text-gray-400">
           Select an icon to represent you on servers. Click an icon to select it.
         </p>
       </div>
-      <div className="border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800 p-4 max-h-[450px] overflow-y-auto">
+      <div className="border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800 p-4 overflow-y-auto flex-1 min-h-0">
         <div className="grid grid-cols-7 gap-2">
           {CLASSIC_ICON_SET.map((iconId) => {
             const isSelected = iconId === userIconId;

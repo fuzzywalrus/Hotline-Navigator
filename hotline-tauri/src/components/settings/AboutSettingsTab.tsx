@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import AboutStarfield from './AboutStarfield';
 
 export default function AboutSettingsTab() {
   const [version, setVersion] = useState<string>('0.1.1');
@@ -12,105 +13,103 @@ export default function AboutSettingsTab() {
   }, []);
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Logo/Icon */}
-      <div className="flex justify-center">
-        <img
-          src="/app-icon.png"
-          alt="Hotline Navigator"
-          className="w-20 h-20 rounded-lg object-contain"
-          onError={(e) => {
-            // Fallback to placeholder if image fails to load
-            console.error('Failed to load app icon:', e);
-            const target = e.target as HTMLImageElement;
-            target.style.display = 'none';
-            if (target.nextElementSibling) {
-              (target.nextElementSibling as HTMLElement).style.display = 'flex';
-            }
-          }}
-          onLoad={() => {
-            console.log('App icon loaded successfully');
-          }}
-        />
-        <div className="w-20 h-20 hidden items-center justify-center bg-blue-600 rounded-lg">
-          <span className="text-3xl font-bold text-white">H</span>
-        </div>
-      </div>
+    <div className="relative h-full overflow-hidden bg-black">
+      <AboutStarfield />
+      <div className="absolute inset-0 overflow-auto z-10">
+        <div className="p-6 space-y-6">
+          {/* Hero graphic */}
+          <div className="flex justify-center">
+            <img
+              src="/hotline-hero.webp"
+              alt="Hotline Navigator"
+              className="w-48 h-auto drop-shadow-[0_0_30px_rgba(200,60,40,0.3)]"
+            />
+          </div>
 
-      {/* App Name */}
-      <div className="text-center">
-        <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
-          Hotline Navigator
-        </h3>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Version {version}
-        </p>
-      </div>
-
-      {/* Description */}
-      <div className="text-center text-gray-600 dark:text-gray-400 text-sm">
-        <p>
-          A multi-platform port of Hotline, using Tauri, designed for a single pane interface.
-        </p>
-      </div>
-
-      {/* Credits */}
-      <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-          Credits
-        </h4>
-        <div className="text-xs text-gray-600 dark:text-gray-400 space-y-2">
-          <p>
-            <strong>Author:</strong>{' '}
-            <a
-              href="https://greggant.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => { e.preventDefault(); openUrl('https://greggant.com'); }}
-              className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
-            >
-              Greg Gant
-            </a>
-          </p>
-          <p>
-            Built with <span className="font-mono">Tauri</span>, <span className="font-mono">React</span>, and <span className="font-mono">TypeScript</span>
-          </p>
-          <p>
-            Protocol implementation based on the Hotline protocol specification
-          </p>
-          <div className="pt-2 space-y-1">
-            <p>
-              <a
-                href="https://github.com/fuzzywalrus/hotline"
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => { e.preventDefault(); openUrl('https://github.com/fuzzywalrus/hotline'); }}
-                className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
-              >
-                GitHub: fuzzywalrus/hotline
-              </a>
+          {/* App Name */}
+          <div className="text-center">
+            <h3 className="text-2xl font-bold text-white">
+              Hotline Navigator
+            </h3>
+            <p className="text-sm text-gray-300 mt-1">
+              Version {version}
             </p>
-            <p className="text-gray-500 dark:text-gray-500">
-              Forked from{' '}
+          </div>
+
+          {/* Description */}
+          <div className="text-center text-gray-300 text-sm">
+            <p>
+              A multi-platform port of Hotline, using Tauri, designed for a single pane interface.{' '}
               <a
-                href="https://github.com/mierau/hotline"
+                href="https://hotline.greggant.com/"
                 target="_blank"
                 rel="noopener noreferrer"
-                onClick={(e) => { e.preventDefault(); openUrl('https://github.com/mierau/hotline'); }}
-                className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                onClick={(e) => { e.preventDefault(); openUrl('https://hotline.greggant.com/'); }}
+                className="text-blue-300 hover:text-blue-200 hover:underline cursor-pointer"
               >
-                mierau/hotline
+                Hotline Navigator Website
               </a>
             </p>
           </div>
-        </div>
-      </div>
 
-      {/* Copyright */}
-      <div className="text-center text-xs text-gray-500 dark:text-gray-500 pt-2 border-t border-gray-200 dark:border-gray-700">
-        <p>© 2026 Greg Gant</p>
+          {/* Credits */}
+          <div className="border-t border-white/10 pt-4">
+            <h4 className="text-sm font-semibold text-white mb-2">
+              Credits
+            </h4>
+            <div className="text-xs text-gray-300 space-y-2">
+              <p>
+                <strong className="text-white">Author:</strong>{' '}
+                <a
+                  href="https://greggant.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => { e.preventDefault(); openUrl('https://greggant.com'); }}
+                  className="text-blue-300 hover:text-blue-200 hover:underline cursor-pointer"
+                >
+                  Greg Gant
+                </a>
+              </p>
+              <p>
+                Built with <span className="font-mono text-white">Tauri</span>, <span className="font-mono text-white">React</span>, and <span className="font-mono text-white">TypeScript</span>
+              </p>
+              <p>
+                Protocol implementation based on the Hotline protocol specification
+              </p>
+              <div className="pt-2 space-y-1">
+                <p>
+                  <a
+                    href="https://github.com/fuzzywalrus/hotline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => { e.preventDefault(); openUrl('https://github.com/fuzzywalrus/hotline'); }}
+                    className="text-blue-300 hover:text-blue-200 hover:underline cursor-pointer"
+                  >
+                    GitHub: fuzzywalrus/hotline
+                  </a>
+                </p>
+                <p className="text-gray-400">
+                  Forked from{' '}
+                  <a
+                    href="https://github.com/mierau/hotline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => { e.preventDefault(); openUrl('https://github.com/mierau/hotline'); }}
+                    className="text-blue-300 hover:text-blue-200 hover:underline cursor-pointer"
+                  >
+                    mierau/hotline
+                  </a>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Copyright */}
+          <div className="text-center text-xs text-gray-400 pt-2 border-t border-white/10">
+            <p>&copy; 2026 Greg Gant</p>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
-
