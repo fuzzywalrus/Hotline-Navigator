@@ -20,6 +20,8 @@ interface PreferencesState {
   // Link preferences
   clickableLinks: boolean;
   setClickableLinks: (enabled: boolean) => void;
+  showInlineImages: boolean;
+  setShowInlineImages: (enabled: boolean) => void;
 
   // Mention preferences
   mentionPopup: boolean;
@@ -89,6 +91,8 @@ export const usePreferencesStore = create<PreferencesState>()(
       // Link preferences
       clickableLinks: true,
       setClickableLinks: (clickableLinks) => set({ clickableLinks }),
+      showInlineImages: false,
+      setShowInlineImages: (showInlineImages) => set({ showInlineImages }),
 
       // Mention preferences
       mentionPopup: true,

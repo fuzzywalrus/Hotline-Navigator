@@ -7,7 +7,7 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import type { Bookmark } from '../../types';
 
 export default function GeneralSettingsTab() {
-  const { username, setUsername, enablePrivateMessaging, setEnablePrivateMessaging, darkMode, setDarkMode, downloadFolder, setDownloadFolder, showServerBanner, setShowServerBanner, clickableLinks, setClickableLinks, useRemoteIcons, setUseRemoteIcons, showRemoteBanners, setShowRemoteBanners, autoDetectTls, setAutoDetectTls, mentionPopup, setMentionPopup, mutedUsers, addMutedUser, removeMutedUser, watchWords, addWatchWord, removeWatchWord } = usePreferencesStore();
+  const { username, setUsername, enablePrivateMessaging, setEnablePrivateMessaging, darkMode, setDarkMode, downloadFolder, setDownloadFolder, showServerBanner, setShowServerBanner, clickableLinks, setClickableLinks, showInlineImages, setShowInlineImages, useRemoteIcons, setUseRemoteIcons, showRemoteBanners, setShowRemoteBanners, autoDetectTls, setAutoDetectTls, mentionPopup, setMentionPopup, mutedUsers, addMutedUser, removeMutedUser, watchWords, addWatchWord, removeWatchWord } = usePreferencesStore();
   const { setBookmarks } = useAppStore();
   const isMobile = useIsMobile();
   const [localUsername, setLocalUsername] = useState(username);
@@ -137,6 +137,24 @@ export default function GeneralSettingsTab() {
             className="ml-4 toggle toggle-primary"
           />
         </div>
+        {clickableLinks && (
+          <div className="flex items-center justify-between mt-3 ml-4 pl-4 border-l-2 border-gray-200 dark:border-gray-700">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Inline Image Previews
+              </label>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Show previews of linked images in chat and messages. Images are loaded from external URLs.
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={showInlineImages}
+              onChange={(e) => setShowInlineImages(e.target.checked)}
+              className="ml-4 toggle toggle-primary"
+            />
+          </div>
+        )}
       </div>
 
       <div>
