@@ -43,7 +43,7 @@ This is a **Tauri-based Hotline client** that provides a modern, cross-platform 
 - **Full Protocol Support**: Chat, file sharing, news, message boards, and more
 - **Native Performance**: Tauri's lightweight architecture for fast, efficient apps
 
-**Note:** This project does not include server software. This is a client for connecting to and participating on Hotline servers. If you would like to host your own Hotline server (and you should!), please check out the very capable [Mobius project](https://github.com/jhalter/mobius).
+**Note:** This project does not include server software. This is a client for connecting to and participating on Hotline servers. If you would like to host your own Hotline server (and you should!), please check out the very capable [Mobius project](https://github.com/jhalter/mobius) or my port of [Mobius with a GUI and Swift UI](https://github.com/fuzzywalrus/mobius-macOS-GUI/tree/master).
 
 For more details about the Tauri client implementation, see the [`hotline-tauri/README.md`](hotline-tauri/README.md).
 
