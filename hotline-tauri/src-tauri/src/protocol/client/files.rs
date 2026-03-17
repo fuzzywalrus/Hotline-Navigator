@@ -4,6 +4,7 @@ use super::{BoxedRead, BoxedWrite, FileInfo, HotlineClient};
 use crate::protocol::constants::{
     FieldType, TransactionType, FILE_TRANSFER_ID,
     HTXF_FLAG_LARGE_FILE, HTXF_FLAG_SIZE64,
+    resolve_error_message,
 };
 use crate::protocol::transaction::{Transaction, TransactionField};
 use std::sync::atomic::Ordering;
@@ -67,9 +68,13 @@ impl HotlineClient {
         let addr = crate::protocol::socket_addr_string(&self.bookmark.address, transfer_port);
         println!("Connecting to file transfer port: {}", transfer_port);
 
-        let tcp_stream = TcpStream::connect(&addr)
-            .await
-            .map_err(|e| format!("Failed to connect for file transfer: {}", e))?;
+        let tcp_stream = tokio::time::timeout(
+            Duration::from_secs(10),
+            TcpStream::connect(&addr),
+        )
+        .await
+        .map_err(|_| format!("File transfer connection timed out after 10 seconds"))?
+        .map_err(|e| format!("Failed to connect for file transfer: {}", e))?;
 
         if self.bookmark.tls {
             let tls_stream = Self::wrap_tls(tcp_stream, &self.bookmark.address).await?;
@@ -167,10 +172,10 @@ impl HotlineClient {
         }
 
         if reply.error_code != 0 {
-            let error_msg = reply
+            let server_text = reply
                 .get_field(FieldType::ErrorText)
-                .and_then(|f| f.to_string().ok())
-                .unwrap_or_else(|| format!("Error code: {}", reply.error_code));
+                .and_then(|f| f.to_string().ok());
+            let error_msg = resolve_error_message(reply.error_code, server_text);
             return Err(format!("Download failed: {}", error_msg));
         }
 
@@ -536,10 +541,10 @@ impl HotlineClient {
         println!("DownloadBanner reply received: error_code={}", reply.error_code);
 
         if reply.error_code != 0 {
-            let error_msg = reply
+            let server_text = reply
                 .get_field(FieldType::ErrorText)
-                .and_then(|f| f.to_string().ok())
-                .unwrap_or_else(|| format!("Error code: {}", reply.error_code));
+                .and_then(|f| f.to_string().ok());
+            let error_msg = resolve_error_message(reply.error_code, server_text);
             return Err(format!("Banner download failed: {}", error_msg));
         }
 
@@ -669,10 +674,10 @@ impl HotlineClient {
         println!("UploadFile reply received: error_code={}", reply.error_code);
 
         if reply.error_code != 0 {
-            let error_msg = reply
+            let server_text = reply
                 .get_field(FieldType::ErrorText)
-                .and_then(|f| f.to_string().ok())
-                .unwrap_or_else(|| format!("Error code: {}", reply.error_code));
+                .and_then(|f| f.to_string().ok());
+            let error_msg = resolve_error_message(reply.error_code, server_text);
             return Err(format!("Upload failed: {}", error_msg));
         }
 
@@ -725,10 +730,10 @@ impl HotlineClient {
             .ok_or("Channel closed".to_string())?;
 
         if reply.error_code != 0 {
-            let error_msg = reply
+            let server_text = reply
                 .get_field(FieldType::ErrorText)
-                .and_then(|f| f.to_string().ok())
-                .unwrap_or_else(|| format!("Error code: {}", reply.error_code));
+                .and_then(|f| f.to_string().ok());
+            let error_msg = resolve_error_message(reply.error_code, server_text);
             return Err(format!("Create folder failed: {}", error_msg));
         }
 

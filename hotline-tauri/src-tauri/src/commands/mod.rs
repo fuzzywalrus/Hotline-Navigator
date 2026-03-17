@@ -519,8 +519,27 @@ fn guess_mime(path: &str, data: Option<&[u8]>) -> &'static str {
 
 /// Read a downloaded file into a data payload for safe previewing (avoids asset:// CORS issues)
 #[tauri::command]
-pub async fn read_preview_file(path: String) -> Result<PreviewData, String> {
+pub async fn read_preview_file(path: String, app: tauri::AppHandle) -> Result<PreviewData, String> {
     use std::fs;
+
+    // Validate the path is within allowed directories (downloads, app data)
+    let canonical = fs::canonicalize(&path)
+        .map_err(|e| format!("Invalid path: {}", e))?;
+
+    let allowed_dirs: Vec<std::path::PathBuf> = [
+        app.path().download_dir().ok(),
+        app.path().app_data_dir().ok(),
+        app.path().home_dir().ok().map(|h| h.join("Downloads")),
+        app.path().document_dir().ok(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+
+    let is_allowed = allowed_dirs.iter().any(|dir| canonical.starts_with(dir));
+    if !is_allowed {
+        return Err("Access denied: path is outside allowed directories".to_string());
+    }
 
     // Read file bytes first for content-based MIME detection
     let bytes = fs::read(&path).map_err(|e| format!("Failed to read file: {}", e))?;
@@ -650,17 +669,30 @@ pub async fn check_for_updates() -> Result<Option<UpdateRelease>, String> {
     // Parse the latest release
     let latest = &releases[0];
     
-    // Find macOS asset (look for .dmg, .app, or universal)
-    let macos_asset = latest.assets.iter()
+    // Find platform-specific asset
+    let platform_asset = latest.assets.iter()
         .find(|asset| {
             let name = asset.name.to_lowercase();
-            name.contains(".dmg") || 
-            name.contains("macos") || 
-            name.contains("universal") ||
-            name.contains("darwin")
+
+            #[cfg(target_os = "macos")]
+            { name.contains(".dmg") || name.contains("macos") || name.contains("universal") || name.contains("darwin") }
+
+            #[cfg(target_os = "windows")]
+            { name.contains(".msi") || name.contains(".exe") || name.contains("windows") || name.contains("win64") }
+
+            #[cfg(target_os = "linux")]
+            { name.contains(".deb") || name.contains(".appimage") || name.contains("linux") }
+
+            #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+            { false }
         });
-    
-    let asset = macos_asset.ok_or("No macOS release asset found")?;
+
+    let platform_name = if cfg!(target_os = "macos") { "macOS" }
+        else if cfg!(target_os = "windows") { "Windows" }
+        else if cfg!(target_os = "linux") { "Linux" }
+        else { "this platform" };
+
+    let asset = platform_asset.ok_or(format!("No {} release asset found", platform_name))?;
     
     // Parse version from tag_name (e.g., "v0.1.0" or "0.1.0")
     let tag_name = latest.tag_name.trim_start_matches('v');

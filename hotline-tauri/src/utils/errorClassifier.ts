@@ -90,7 +90,7 @@ export function classifyError(rawError: string): ClassifiedError {
     };
   }
 
-  if (e.includes('Banned')) {
+  if (e.includes('Banned') || e.includes('banned from')) {
     return {
       category: 'auth',
       title: 'Banned',
@@ -100,12 +100,32 @@ export function classifyError(rawError: string): ClassifiedError {
     };
   }
 
-  if (e.includes('Server is full')) {
+  if (e.includes('Server is full') || e.includes('maximum user limit')) {
     return {
       category: 'auth',
       title: 'Server Full',
       message: 'The server has no available slots.',
       suggestion: 'Try again later.',
+      rawError: e,
+    };
+  }
+
+  if (e.includes('Already logged in')) {
+    return {
+      category: 'auth',
+      title: 'Already Connected',
+      message: 'You are already connected to this server.',
+      suggestion: 'Disconnect your other session first, or try a different account.',
+      rawError: e,
+    };
+  }
+
+  if (e.includes('Access denied') || e.includes('lack the required permissions')) {
+    return {
+      category: 'auth',
+      title: 'Access Denied',
+      message: 'You do not have permission to perform this action.',
+      suggestion: 'Contact the server administrator to request access.',
       rawError: e,
     };
   }
@@ -120,7 +140,57 @@ export function classifyError(rawError: string): ClassifiedError {
     };
   }
 
-  if (e.includes('Download failed') || e.includes('Upload failed')) {
+  if (e.includes('File or folder not found') || e.includes('FileNotFound')) {
+    return {
+      category: 'transfer',
+      title: 'File Not Found',
+      message: 'The requested file or folder does not exist on the server.',
+      suggestion: 'The file may have been moved or deleted. Refresh the file list.',
+      rawError: e,
+    };
+  }
+
+  if (e.includes('File is in use')) {
+    return {
+      category: 'transfer',
+      title: 'File In Use',
+      message: 'The file is currently being accessed by another user.',
+      suggestion: 'Wait a moment and try again.',
+      rawError: e,
+    };
+  }
+
+  if (e.includes('Disk is full') || e.includes('disk is full')) {
+    return {
+      category: 'transfer',
+      title: 'Disk Full',
+      message: 'The server has run out of disk space.',
+      suggestion: 'Contact the server administrator.',
+      rawError: e,
+    };
+  }
+
+  if (e.includes('refused private messages') || e.includes('MsgRefused')) {
+    return {
+      category: 'auth',
+      title: 'Message Refused',
+      message: 'The recipient has refused private messages.',
+      suggestion: 'This user has private messages disabled.',
+      rawError: e,
+    };
+  }
+
+  if (e.includes('News database is full') || e.includes('NewsFull')) {
+    return {
+      category: 'protocol',
+      title: 'News Full',
+      message: 'The server news database cannot accept more posts.',
+      suggestion: 'Contact the server administrator.',
+      rawError: e,
+    };
+  }
+
+  if (e.includes('Download failed') || e.includes('Upload failed') || e.includes('File transfer failed')) {
     return {
       category: 'transfer',
       title: 'Transfer Failed',

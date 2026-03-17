@@ -132,6 +132,38 @@ HOPE (Hotline One-time Password Extension) is a protocol extension that replaces
 
 See [HOPE_IMPLEMENTATION.md](HOPE_IMPLEMENTATION.md) for a map of all HOPE-related code locations.
 
+### Error Handling
+
+Hotline Navigator uses a two-tier error handling system to give users clear, actionable feedback when something goes wrong.
+
+**Tier 1 — Backend error resolution (`resolve_error_message`):** When the Rust protocol client receives a non-zero error code from the server, it first checks for a server-provided `ErrorText` field (FieldType 100), which many servers include with a human-readable description. If no `ErrorText` is present, it falls back to the [HL Error Codes](https://hlwiki.com/index.php/HL_ErrorCodes) spec — a set of well-known error codes defined in `HotlineErrorCode` (`src-tauri/src/protocol/constants.rs`):
+
+| Code | Name | Fallback Message |
+|------|------|-----------------|
+| 0 | None | No error |
+| -1 | Generic | A non-specific error occurred |
+| 1 | NotConnected | The connection is no longer active |
+| 2 | Socket | A network socket error occurred |
+| 1000 | LoginFailed | Invalid login credentials |
+| 1001 | AlreadyLoggedIn | Already logged in to this server |
+| 1002 | AccessDenied | Access denied |
+| 1003 | UserBanned | Banned from this server |
+| 1004 | ServerFull | Server is full |
+| 2000 | FileNotFound | File or folder not found |
+| 2001 | FileInUse | File is in use by another process |
+| 2002 | DiskFull | Server disk is full |
+| 2003 | TransferFailed | File transfer failed |
+| 3000 | NewsFull | News database is full |
+| 3001 | MsgRefused | Recipient has refused private messages |
+
+For unrecognized codes, it displays "Unknown error (code N)". Server-provided text always takes priority — the table above is only used when the server doesn't send an `ErrorText` field.
+
+**Tier 2 — Frontend error classification (`classifyError`):** Error strings from the backend are passed to the frontend classifier (`src/utils/errorClassifier.ts`), which categorizes them by keyword matching into categories like `dns`, `timeout`, `refused`, `tls`, `protocol`, `auth`, `transfer`, and `cancelled`. Each category maps to a user-friendly title, message, and recovery suggestion.
+
+**Display paths:**
+- **Connection errors** (login, handshake, server full, banned) → `classifyError()` → **ErrorModal** with icon, explanation, and retry button
+- **Operational errors** (file transfers, news, chat) → **toast notifications** with the resolved error message
+
 ### Icon System
 
 Hotline servers assign each user a numeric icon ID displayed next to their name in chat and the user list.

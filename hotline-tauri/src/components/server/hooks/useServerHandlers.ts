@@ -324,7 +324,7 @@ export function useServerHandlers({
     } catch (error) {
       console.error('Failed to post news:', error);
       const errorMsg = String(error);
-      if (errorMsg.includes('Error code: 1') || errorMsg.toLowerCase().includes('permission')) {
+      if (errorMsg.includes('Access denied') || errorMsg.toLowerCase().includes('permission')) {
         showNotification.error(
           `Unable to post news article: ${error}\n\nYou may not have posting privileges on this server. Contact the server administrator to request access.`,
           'Permission Denied',

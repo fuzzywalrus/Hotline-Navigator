@@ -11,6 +11,22 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_stronghold::Builder::new(|password| {
+            // Use argon2 key derivation with app-specific salt
+            use argon2::{hash_raw, Config, Variant, Version};
+            let config = Config {
+                lanes: 4,
+                mem_cost: 10_000,
+                time_cost: 10,
+                variant: Variant::Argon2id,
+                version: Version::Version13,
+                ..Default::default()
+            };
+            let salt = b"hotline-navigator-stronghold-salt";
+            let key = hash_raw(password.as_ref(), salt, &config)
+                .expect("Failed to derive key");
+            key.to_vec()
+        }).build())
         .setup(|app| {
             // Get app data directory
             let app_data_dir = app

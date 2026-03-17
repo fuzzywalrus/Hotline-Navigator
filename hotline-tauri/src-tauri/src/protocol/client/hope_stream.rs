@@ -195,6 +195,13 @@ impl HopeReader {
         let data_size =
             u32::from_be_bytes([header[16], header[17], header[18], header[19]]) as usize;
 
+        if data_size > crate::protocol::constants::MAX_TRANSACTION_BODY_SIZE as usize {
+            return Err(format!(
+                "Transaction body too large: {} bytes (max {})",
+                data_size, crate::protocol::constants::MAX_TRANSACTION_BODY_SIZE
+            ));
+        }
+
         let mut full_data = header.to_vec();
 
         if data_size > 0 {

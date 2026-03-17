@@ -34,9 +34,13 @@ impl TrackerClient {
         
         println!("TrackerClient: Connecting to tracker {}:{}", address, tracker_port);
         
-        let mut stream = TcpStream::connect(&addr)
-            .await
-            .map_err(|e| format!("Failed to connect to tracker: {}", e))?;
+        let mut stream = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            TcpStream::connect(&addr),
+        )
+        .await
+        .map_err(|_| format!("Connection to tracker timed out after 10 seconds"))?
+        .map_err(|e| format!("Failed to connect to tracker: {}", e))?;
         
         println!("TrackerClient: Connected to tracker");
         
@@ -74,12 +78,25 @@ impl TrackerClient {
         let version = u16::from_be_bytes([magic_response[4], magic_response[5]]);
         println!("TrackerClient: Received magic response, version: {}", version);
         
-        // Read server listings (may span multiple batches)
+        // Read server listings (may span multiple batches) with overall timeout
+        let servers = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            Self::read_server_batches(&mut stream),
+        )
+        .await
+        .map_err(|_| "Tracker response timed out after 30 seconds".to_string())??;
+
+        println!("TrackerClient: Completed - {} servers", servers.len());
+
+        Ok(servers)
+    }
+
+    async fn read_server_batches(stream: &mut TcpStream) -> Result<Vec<TrackerServer>, String> {
         let mut servers = Vec::new();
         let mut total_entries_parsed = 0;
         let mut total_expected_entries = 0;
         let mut batch_count = 0;
-        
+
         loop {
             batch_count += 1;
             
@@ -218,9 +235,9 @@ impl TrackerClient {
             }
         }
         
-        println!("TrackerClient: Completed - parsed {}/{} entries, {} servers", 
+        println!("TrackerClient: Batch loop complete - parsed {}/{} entries, {} servers",
             total_entries_parsed, total_expected_entries, servers.len());
-        
+
         Ok(servers)
     }
 }

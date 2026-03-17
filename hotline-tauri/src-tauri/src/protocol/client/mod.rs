@@ -10,7 +10,7 @@ mod users;
 use super::constants::{
     FieldType, TransactionType, PROTOCOL_ID, PROTOCOL_SUBVERSION,
     PROTOCOL_VERSION, SUBPROTOCOL_ID, TRANSACTION_HEADER_SIZE,
-    CAPABILITY_LARGE_FILES,
+    CAPABILITY_LARGE_FILES, resolve_error_message,
 };
 use super::transaction::{Transaction, TransactionField};
 use super::types::{Bookmark, ConnectionStatus, ServerInfo};
@@ -326,6 +326,14 @@ impl HotlineClient {
             .map_err(|e| format!("Failed to read transaction header: {}", e))?;
 
         let data_size = u32::from_be_bytes([header[16], header[17], header[18], header[19]]);
+
+        if data_size > crate::protocol::constants::MAX_TRANSACTION_BODY_SIZE {
+            return Err(format!(
+                "Transaction body too large: {} bytes (max {})",
+                data_size, crate::protocol::constants::MAX_TRANSACTION_BODY_SIZE
+            ));
+        }
+
         let mut full_data = header.to_vec();
 
         if data_size > 0 {
@@ -534,21 +542,14 @@ impl HotlineClient {
 
         // Check for error
         if login_reply.error_code != 0 {
-            let error_msg = login_reply
+            let server_text = login_reply
                 .get_field(FieldType::ErrorText)
                 .and_then(|f| f.to_string().ok())
                 .or_else(|| {
                     login_reply.get_field(FieldType::Data)
                         .and_then(|f| f.to_string().ok())
-                })
-                .unwrap_or_else(|| {
-                    match login_reply.error_code {
-                        1 => "Invalid login credentials or server rejected login".to_string(),
-                        2 => "Server is full".to_string(),
-                        3 => "Banned from server".to_string(),
-                        _ => format!("Error code: {}", login_reply.error_code),
-                    }
                 });
+            let error_msg = resolve_error_message(login_reply.error_code, server_text);
 
             println!("Login failed with error_code={}, fields={}", login_reply.error_code, login_reply.fields.len());
             for (i, field) in login_reply.fields.iter().enumerate() {

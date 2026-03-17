@@ -18,9 +18,9 @@
       }
     ],
     "security": {
-      "csp": null,
+      "csp": "default-src 'self'; img-src 'self' data: blob: asset:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://api.github.com",
       "assetProtocol": {
-        "scope": ["**"]
+        "scope": ["$APPDATA/**", "$DOWNLOAD/**", "$HOME/Downloads/**"]
       }
     }
   },

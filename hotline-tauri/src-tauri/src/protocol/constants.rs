@@ -1,4 +1,91 @@
 // Hotline protocol constants
+// Error code reference: https://hlwiki.com/index.php/HL_ErrorCodes
+
+/// Hotline protocol error codes.
+/// Servers may also send arbitrary error codes; these are the well-known ones.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum HotlineErrorCode {
+    // General
+    None = 0,
+    Generic = -1,
+    NotConnected = 1,
+    Socket = 2,
+    // Login & Access (1000-1004)
+    LoginFailed = 1000,
+    AlreadyLoggedIn = 1001,
+    AccessDenied = 1002,
+    UserBanned = 1003,
+    ServerFull = 1004,
+    // File & Transfer (2000-2003)
+    FileNotFound = 2000,
+    FileInUse = 2001,
+    DiskFull = 2002,
+    TransferFailed = 2003,
+    // News & Messaging (3000-3001)
+    NewsFull = 3000,
+    MsgRefused = 3001,
+}
+
+impl HotlineErrorCode {
+    /// Try to match a raw error code to a known variant.
+    pub fn from_code(code: u32) -> Option<Self> {
+        // error_code is u32 in the transaction header but some codes are negative in the spec
+        match code as i32 {
+            0 => Some(Self::None),
+            -1 => Some(Self::Generic),
+            1 => Some(Self::NotConnected),
+            2 => Some(Self::Socket),
+            1000 => Some(Self::LoginFailed),
+            1001 => Some(Self::AlreadyLoggedIn),
+            1002 => Some(Self::AccessDenied),
+            1003 => Some(Self::UserBanned),
+            1004 => Some(Self::ServerFull),
+            2000 => Some(Self::FileNotFound),
+            2001 => Some(Self::FileInUse),
+            2002 => Some(Self::DiskFull),
+            2003 => Some(Self::TransferFailed),
+            3000 => Some(Self::NewsFull),
+            3001 => Some(Self::MsgRefused),
+            _ => None,
+        }
+    }
+
+    /// Human-readable fallback message for when the server doesn't send ErrorText.
+    pub fn default_message(&self) -> &'static str {
+        match self {
+            Self::None => "No error",
+            Self::Generic => "A non-specific error occurred",
+            Self::NotConnected => "The connection is no longer active",
+            Self::Socket => "A network socket error occurred",
+            Self::LoginFailed => "Invalid login credentials",
+            Self::AlreadyLoggedIn => "Already logged in to this server",
+            Self::AccessDenied => "Access denied — you lack the required permissions",
+            Self::UserBanned => "Banned from this server",
+            Self::ServerFull => "Server is full",
+            Self::FileNotFound => "File or folder not found",
+            Self::FileInUse => "File is in use by another process",
+            Self::DiskFull => "Server disk is full",
+            Self::TransferFailed => "File transfer failed",
+            Self::NewsFull => "News database is full",
+            Self::MsgRefused => "Recipient has refused private messages",
+        }
+    }
+}
+
+/// Resolve a transaction error code to a human-readable message.
+/// Prefers the server-provided ErrorText; falls back to known error code descriptions.
+pub fn resolve_error_message(error_code: u32, server_error_text: Option<String>) -> String {
+    if let Some(text) = server_error_text {
+        if !text.is_empty() {
+            return text;
+        }
+    }
+    match HotlineErrorCode::from_code(error_code) {
+        Some(known) => known.default_message().to_string(),
+        None => format!("Unknown error (code {})", error_code),
+    }
+}
 
 // Protocol identifiers
 pub const PROTOCOL_ID: &[u8; 4] = b"TRTP";
@@ -9,6 +96,11 @@ pub const PROTOCOL_SUBVERSION: u16 = 0x0002;
 
 // Transaction header size
 pub const TRANSACTION_HEADER_SIZE: usize = 20;
+
+/// Maximum allowed transaction body size (10 MB).
+/// Hotline protocol transactions (chat, user lists, news, file listings) are
+/// never legitimately this large. File data uses separate HTXF transfers.
+pub const MAX_TRANSACTION_BODY_SIZE: u32 = 10 * 1024 * 1024;
 
 // Default ports
 pub const DEFAULT_SERVER_PORT: u16 = 5500;

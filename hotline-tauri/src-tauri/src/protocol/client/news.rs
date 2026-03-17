@@ -1,7 +1,7 @@
 // News and message board functionality for Hotline client
 
 use super::HotlineClient;
-use crate::protocol::constants::{FieldType, TransactionType};
+use crate::protocol::constants::{FieldType, TransactionType, resolve_error_message};
 use crate::protocol::transaction::{Transaction, TransactionField};
 use crate::protocol::types::{NewsArticle, NewsCategory};
 use std::time::Duration;
@@ -30,10 +30,10 @@ impl HotlineClient {
             .ok_or("Channel closed".to_string())?;
 
         if reply.error_code != 0 {
-            let error_msg = reply
+            let server_text = reply
                 .get_field(FieldType::ErrorText)
-                .and_then(|f| f.to_string().ok())
-                .unwrap_or_else(|| format!("Error code: {}", reply.error_code));
+                .and_then(|f| f.to_string().ok());
+            let error_msg = resolve_error_message(reply.error_code, server_text);
             return Err(format!("Get message board failed: {}", error_msg));
         }
 
@@ -97,10 +97,10 @@ impl HotlineClient {
         };
 
         if reply.error_code != 0 {
-            let error_msg = reply
+            let server_text = reply
                 .get_field(FieldType::ErrorText)
-                .and_then(|f| f.to_string().ok())
-                .unwrap_or_else(|| format!("Error code: {}", reply.error_code));
+                .and_then(|f| f.to_string().ok());
+            let error_msg = resolve_error_message(reply.error_code, server_text);
             if reply.error_code == 1 || error_msg.to_lowercase().contains("not supported") {
                 return Err("News is not supported on this server".to_string());
             }
@@ -154,10 +154,10 @@ impl HotlineClient {
         };
 
         if reply.error_code != 0 {
-            let error_msg = reply
+            let server_text = reply
                 .get_field(FieldType::ErrorText)
-                .and_then(|f| f.to_string().ok())
-                .unwrap_or_else(|| format!("Error code: {}", reply.error_code));
+                .and_then(|f| f.to_string().ok());
+            let error_msg = resolve_error_message(reply.error_code, server_text);
             if reply.error_code == 1 || error_msg.to_lowercase().contains("not supported") {
                 return Err("News is not supported on this server".to_string());
             }
@@ -208,10 +208,10 @@ impl HotlineClient {
         };
 
         if reply.error_code != 0 {
-            let error_msg = reply
+            let server_text = reply
                 .get_field(FieldType::ErrorText)
-                .and_then(|f| f.to_string().ok())
-                .unwrap_or_else(|| format!("Error code: {}", reply.error_code));
+                .and_then(|f| f.to_string().ok());
+            let error_msg = resolve_error_message(reply.error_code, server_text);
             return Err(format!("Get news article data failed: {}", error_msg));
         }
 
@@ -261,10 +261,10 @@ impl HotlineClient {
         };
 
         if reply.error_code != 0 {
-            let error_msg = reply
+            let server_text = reply
                 .get_field(FieldType::ErrorText)
-                .and_then(|f| f.to_string().ok())
-                .unwrap_or_else(|| format!("Error code: {}", reply.error_code));
+                .and_then(|f| f.to_string().ok());
+            let error_msg = resolve_error_message(reply.error_code, server_text);
             println!("Post news article error: code={}, message={}", reply.error_code, error_msg);
             return Err(format!("Post news article failed: {}", error_msg));
         }
@@ -299,7 +299,7 @@ impl HotlineClient {
         };
 
         if reply.error_code != 0 {
-            let msg = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok()).unwrap_or_else(|| format!("Error code: {}", reply.error_code));
+            let msg = resolve_error_message(reply.error_code, reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok()));
             return Err(format!("Create news category failed: {}", msg));
         }
         println!("News category '{}' created", name);
@@ -331,7 +331,7 @@ impl HotlineClient {
         };
 
         if reply.error_code != 0 {
-            let msg = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok()).unwrap_or_else(|| format!("Error code: {}", reply.error_code));
+            let msg = resolve_error_message(reply.error_code, reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok()));
             return Err(format!("Create news folder failed: {}", msg));
         }
         println!("News folder '{}' created", name);
@@ -360,7 +360,7 @@ impl HotlineClient {
         };
 
         if reply.error_code != 0 {
-            let msg = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok()).unwrap_or_else(|| format!("Error code: {}", reply.error_code));
+            let msg = resolve_error_message(reply.error_code, reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok()));
             return Err(format!("Delete news item failed: {}", msg));
         }
         println!("News item deleted at path: {:?}", path);
@@ -391,7 +391,7 @@ impl HotlineClient {
         };
 
         if reply.error_code != 0 {
-            let msg = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok()).unwrap_or_else(|| format!("Error code: {}", reply.error_code));
+            let msg = resolve_error_message(reply.error_code, reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok()));
             return Err(format!("Delete news article failed: {}", msg));
         }
         println!("News article {} deleted", article_id);
