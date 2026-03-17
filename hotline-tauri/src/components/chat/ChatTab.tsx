@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
-import Linkify from '../common/Linkify';
+import MarkdownText from '../common/MarkdownText';
 import { usePreferencesStore } from '../../stores/preferencesStore';
 
 interface ChatMessage {
@@ -159,7 +159,7 @@ export default function ChatTab({
                   {msg.userName}:
                 </span>{' '}
                 <span className="text-gray-900 dark:text-gray-100">
-                  {clickableLinks ? <Linkify text={msg.message} /> : msg.message}
+                  {clickableLinks ? <MarkdownText text={msg.message} /> : msg.message}
                 </span>
               </div>
             );

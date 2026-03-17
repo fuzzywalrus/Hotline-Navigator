@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import MarkdownText from '../common/MarkdownText';
 
 interface Message {
   text: string;
@@ -127,9 +128,9 @@ export default function MessageDialog({ userId, userName, messages, onSendMessag
                       : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'
                   }`}
                 >
-                  <pre className="text-sm font-sans whitespace-pre-wrap break-words">
-                    {msg.text}
-                  </pre>
+                  <div className="text-sm font-sans whitespace-pre-wrap break-words">
+                    <MarkdownText text={msg.text} />
+                  </div>
                 </div>
               </div>
               );

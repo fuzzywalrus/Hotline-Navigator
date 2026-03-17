@@ -3,7 +3,7 @@
 use crate::protocol::types::Bookmark;
 use crate::protocol::tracker::TrackerClient;
 use crate::state::AppState;
-use tauri::State;
+use tauri::{Manager, State};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use serde::{Deserialize, Serialize};

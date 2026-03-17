@@ -1,4 +1,4 @@
-import Linkify from '../common/Linkify';
+import MarkdownText from '../common/MarkdownText';
 
 interface BoardTabProps {
   boardPosts: string[];
@@ -40,9 +40,9 @@ export default function BoardTab({
                 key={uniqueKey}
                 className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700"
               >
-                <pre className="text-sm text-gray-900 dark:text-gray-100 font-mono whitespace-pre-wrap break-words m-0">
-                  <Linkify text={post} />
-                </pre>
+                <div className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words m-0">
+                  <MarkdownText text={post} />
+                </div>
               </div>
               );
             })}

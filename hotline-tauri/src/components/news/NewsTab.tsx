@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import Linkify from '../common/Linkify';
+import MarkdownText from '../common/MarkdownText';
 
 interface NewsCategory {
   type: number;
@@ -397,9 +397,9 @@ export default function NewsTab({
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-4">
-              <pre className="text-sm text-gray-900 dark:text-gray-100 font-mono whitespace-pre-wrap break-words">
-                <Linkify text={articleContent} />
-              </pre>
+              <div className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words">
+                <MarkdownText text={articleContent} />
+              </div>
             </div>
           </div>
         ) : (

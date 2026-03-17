@@ -23,6 +23,10 @@ interface PreferencesState {
   showInlineImages: boolean;
   setShowInlineImages: (enabled: boolean) => void;
 
+  // Markdown preferences
+  renderMarkdown: boolean;
+  setRenderMarkdown: (enabled: boolean) => void;
+
   // Mention preferences
   mentionPopup: boolean;
   setMentionPopup: (enabled: boolean) => void;
@@ -93,6 +97,10 @@ export const usePreferencesStore = create<PreferencesState>()(
       setClickableLinks: (clickableLinks) => set({ clickableLinks }),
       showInlineImages: false,
       setShowInlineImages: (showInlineImages) => set({ showInlineImages }),
+
+      // Markdown preferences
+      renderMarkdown: true,
+      setRenderMarkdown: (renderMarkdown) => set({ renderMarkdown }),
 
       // Mention preferences
       mentionPopup: true,
