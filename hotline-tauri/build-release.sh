@@ -120,17 +120,16 @@ else
     echo "   Install with: brew install create-dmg"
 fi
 
-# Notarization (optional - uncomment to enable)
-# echo "📝 Notarizing app..."
-# xcrun notarytool submit "$DIST_DIR/$PRODUCT_NAME.app" \
-#     --apple-id "$APPLE_ID" \
-#     --password "$APP_PASSWORD" \
-#     --team-id "$TEAM_ID" \
-#     --wait
+# Notarization
+echo "📝 Notarizing app..."
+xcrun notarytool submit "$ZIP_FILE" \
+    --apple-id "$APPLE_ID" \
+    --password "$APP_PASSWORD" \
+    --team-id "$TEAM_ID" \
+    --wait
 
-# Staple notarization ticket (if notarized)
-# echo "📎 Stapling notarization ticket..."
-# xcrun stapler staple "$DIST_DIR/$PRODUCT_NAME.app"
+echo "📎 Stapling notarization ticket..."
+xcrun stapler staple "$DIST_DIR/$PRODUCT_NAME.app"
 
 echo ""
 echo "✅ Release build complete!"
