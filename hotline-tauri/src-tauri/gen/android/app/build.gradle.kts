@@ -60,6 +60,14 @@ android {
     buildFeatures {
         buildConfig = true
     }
+    applicationVariants.all {
+        val variant = this
+        outputs.all {
+            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            val versionName = variant.versionName ?: "0.0.0"
+            output.outputFileName = "Hotline.Navigator_${versionName}.apk"
+        }
+    }
 }
 
 rust {
