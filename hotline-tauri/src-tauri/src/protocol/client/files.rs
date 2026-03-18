@@ -879,4 +879,213 @@ impl HotlineClient {
 
         Ok(())
     }
+
+    /// Delete a file or folder on the server
+    pub async fn delete_file(&self, path: Vec<String>, file_name: String) -> Result<(), String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::DeleteFile);
+        transaction.add_field(TransactionField::from_string(FieldType::FileName, &file_name));
+
+        if !path.is_empty() {
+            if let Some(path_data) = encode_file_path(&path) {
+                transaction.add_field(TransactionField::new(FieldType::FilePath, path_data));
+            }
+        }
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        self.send_transaction(&transaction).await?;
+
+        match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(reply)) => {
+                if reply.error_code != 0 {
+                    let server_text = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok());
+                    let error_msg = resolve_error_message(reply.error_code, server_text);
+                    return Err(format!("Delete failed: {}", error_msg));
+                }
+                Ok(())
+            }
+            Ok(None) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Channel closed while waiting for delete reply".to_string())
+            }
+            Err(_) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Timeout waiting for delete reply".to_string())
+            }
+        }
+    }
+
+    /// Move a file or folder to a new location on the server
+    pub async fn move_file(&self, path: Vec<String>, file_name: String, new_path: Vec<String>) -> Result<(), String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::MoveFile);
+        transaction.add_field(TransactionField::from_string(FieldType::FileName, &file_name));
+
+        if !path.is_empty() {
+            if let Some(path_data) = encode_file_path(&path) {
+                transaction.add_field(TransactionField::new(FieldType::FilePath, path_data));
+            }
+        }
+
+        if let Some(new_path_data) = encode_file_path(&new_path) {
+            transaction.add_field(TransactionField::new(FieldType::FileNewPath, new_path_data));
+        }
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        self.send_transaction(&transaction).await?;
+
+        match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(reply)) => {
+                if reply.error_code != 0 {
+                    let server_text = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok());
+                    let error_msg = resolve_error_message(reply.error_code, server_text);
+                    return Err(format!("Move failed: {}", error_msg));
+                }
+                Ok(())
+            }
+            Ok(None) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Channel closed while waiting for move reply".to_string())
+            }
+            Err(_) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Timeout waiting for move reply".to_string())
+            }
+        }
+    }
+
+    /// Get file info from the server
+    pub async fn get_file_info(&self, path: Vec<String>, file_name: String) -> Result<FileInfoDetails, String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::GetFileInfo);
+        transaction.add_field(TransactionField::from_string(FieldType::FileName, &file_name));
+
+        if !path.is_empty() {
+            if let Some(path_data) = encode_file_path(&path) {
+                transaction.add_field(TransactionField::new(FieldType::FilePath, path_data));
+            }
+        }
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        self.send_transaction(&transaction).await?;
+
+        let reply = match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(reply)) => reply,
+            Ok(None) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                return Err("Channel closed while waiting for file info reply".to_string());
+            }
+            Err(_) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                return Err("Timeout waiting for file info reply".to_string());
+            }
+        };
+
+        if reply.error_code != 0 {
+            let server_text = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok());
+            let error_msg = resolve_error_message(reply.error_code, server_text);
+            return Err(format!("Get file info failed: {}", error_msg));
+        }
+
+        let file_name = reply.get_field(FieldType::FileName).and_then(|f| f.to_string().ok()).unwrap_or_default();
+        let file_type = reply.get_field(FieldType::FileTypeString).and_then(|f| f.to_string().ok()).unwrap_or_default();
+        let creator = reply.get_field(FieldType::FileCreatorString).and_then(|f| f.to_string().ok()).unwrap_or_default();
+        let file_size = reply.get_field(FieldType::FileSize).and_then(|f| f.to_u32().ok()).unwrap_or(0) as u64;
+        let comment = reply.get_field(FieldType::FileComment).and_then(|f| f.to_string().ok()).unwrap_or_default();
+        let create_date = reply.get_field(FieldType::FileCreateDate).and_then(|f| f.to_u32().ok()).unwrap_or(0);
+        let modify_date = reply.get_field(FieldType::FileModifyDate).and_then(|f| f.to_u32().ok()).unwrap_or(0);
+
+        Ok(FileInfoDetails {
+            file_name,
+            file_type,
+            creator,
+            file_size,
+            comment,
+            create_date,
+            modify_date,
+        })
+    }
+
+    /// Set file info (rename or update comment)
+    pub async fn set_file_info(&self, path: Vec<String>, file_name: String, new_name: Option<String>, comment: Option<String>) -> Result<(), String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::SetFileInfo);
+        transaction.add_field(TransactionField::from_string(FieldType::FileName, &file_name));
+
+        if !path.is_empty() {
+            if let Some(path_data) = encode_file_path(&path) {
+                transaction.add_field(TransactionField::new(FieldType::FilePath, path_data));
+            }
+        }
+
+        if let Some(name) = new_name {
+            transaction.add_field(TransactionField::from_string(FieldType::FileNewName, &name));
+        }
+
+        if let Some(cmt) = comment {
+            transaction.add_field(TransactionField::from_string(FieldType::FileComment, &cmt));
+        }
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        self.send_transaction(&transaction).await?;
+
+        match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(reply)) => {
+                if reply.error_code != 0 {
+                    let server_text = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok());
+                    let error_msg = resolve_error_message(reply.error_code, server_text);
+                    return Err(format!("Set file info failed: {}", error_msg));
+                }
+                Ok(())
+            }
+            Ok(None) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Channel closed while waiting for set file info reply".to_string())
+            }
+            Err(_) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Timeout waiting for set file info reply".to_string())
+            }
+        }
+    }
+}
+
+/// Detailed file info returned by GetFileInfo
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct FileInfoDetails {
+    pub file_name: String,
+    pub file_type: String,
+    pub creator: String,
+    pub file_size: u64,
+    pub comment: String,
+    pub create_date: u32,
+    pub modify_date: u32,
 }

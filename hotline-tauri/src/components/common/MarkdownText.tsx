@@ -99,6 +99,13 @@ export default function MarkdownText({ text, className, linkify = true }: Markdo
             </code>
           );
         },
+        // Headings — slightly larger to indicate headlines
+        h1: ({ children }) => <p className="text-lg font-bold my-1">{children}</p>,
+        h2: ({ children }) => <p className="text-lg font-bold my-1">{children}</p>,
+        h3: ({ children }) => <p className="text-lg font-bold my-1">{children}</p>,
+        h4: ({ children }) => <p className="text-lg font-bold my-1">{children}</p>,
+        h5: ({ children }) => <p className="text-lg font-bold my-1">{children}</p>,
+        h6: ({ children }) => <p className="text-lg font-bold my-1">{children}</p>,
         // Keep paragraphs tight for chat context
         p: ({ children }) => <p className="my-1">{children}</p>,
         // Blockquotes

@@ -30,6 +30,8 @@ interface FilesTabProps {
   onCancelNavigation?: () => void;
   canCreateFolder?: boolean;
   onCreateFolder?: (name: string) => Promise<void>;
+  canDeleteFiles?: boolean;
+  canRenameFiles?: boolean;
 }
 
 export default function FilesTab({
@@ -48,6 +50,8 @@ export default function FilesTab({
   onCancelNavigation,
   canCreateFolder = false,
   onCreateFolder,
+  canDeleteFiles = false,
+  canRenameFiles = false,
 }: FilesTabProps) {
   const isMobile = useIsMobile();
   const [searchQuery, setSearchQuery] = useState('');
@@ -57,6 +61,11 @@ export default function FilesTab({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
   const [fileInfoTarget, setFileInfoTarget] = useState<{ file: FileItem; path: string[] } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ file: FileItem; path: string[] } | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<{ file: FileItem; path: string[] } | null>(null);
+  const [renameValue, setRenameValue] = useState('');
   const previewableExtensions = [
     // Images
     '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tif', '.tiff', '.webp', '.svg',
@@ -537,6 +546,32 @@ export default function FilesTab({
                         disabled: !canPreview(file),
                       },
                     ];
+                    if (canRenameFiles) {
+                      items.push({ divider: true, label: '', action: () => {} });
+                      items.push({
+                        label: 'Rename',
+                        icon: '✏️',
+                        action: () => {
+                          const filePath = 'path' in item ? (item as { path: string[] }).path : currentPath;
+                          setRenameTarget({ file, path: filePath });
+                          setRenameValue(file.name);
+                        },
+                      });
+                    }
+                    if (canDeleteFiles) {
+                      if (!canRenameFiles) {
+                        items.push({ divider: true, label: '', action: () => {} });
+                      }
+                      items.push({
+                        label: 'Delete',
+                        icon: '🗑️',
+                        action: () => {
+                          const filePath = 'path' in item ? (item as { path: string[] }).path : currentPath;
+                          setDeleteTarget({ file, path: filePath });
+                          setDeleteConfirmText('');
+                        },
+                      });
+                    }
                     showContextMenu(e, items);
                   }}
                 >
@@ -713,6 +748,135 @@ export default function FilesTab({
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md mx-6 flex flex-col">
+            <div className="px-6 pt-6 pb-2">
+              <h2 className="text-base font-semibold text-red-600 dark:text-red-400">Delete {deleteTarget.file.isFolder ? 'Folder' : 'File'}</h2>
+            </div>
+            <div className="px-6 pb-4 space-y-3">
+              <p className="text-sm text-gray-800 dark:text-gray-200">
+                Are you sure you want to delete <span className="font-semibold">"{deleteTarget.file.name}"</span>? This cannot be undone.
+              </p>
+              <div>
+                <label className="text-xs text-gray-500 dark:text-gray-400">
+                  Type "Yes" or "Y" to confirm
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                  placeholder='Type "Yes" to confirm'
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && ['yes', 'y'].includes(deleteConfirmText.trim().toLowerCase())) {
+                      handleDeleteConfirm();
+                    } else if (e.key === 'Escape') {
+                      setDeleteTarget(null);
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                disabled={!['yes', 'y'].includes(deleteConfirmText.trim().toLowerCase()) || deleting}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md transition-colors text-sm font-medium"
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rename Dialog */}
+      {renameTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md mx-6 flex flex-col">
+            <div className="px-6 pt-6 pb-2">
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Rename</h2>
+            </div>
+            <div className="px-6 pb-4">
+              <input
+                type="text"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && renameValue.trim() && renameValue !== renameTarget.file.name) {
+                    handleRenameConfirm();
+                  } else if (e.key === 'Escape') {
+                    setRenameTarget(null);
+                  }
+                }}
+              />
+            </div>
+            <div className="flex gap-3 justify-end px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => setRenameTarget(null)}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRenameConfirm}
+                disabled={!renameValue.trim() || renameValue === renameTarget.file.name}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md transition-colors text-sm font-medium"
+              >
+                Rename
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+
+  async function handleDeleteConfirm() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await invoke('delete_file', {
+        serverId,
+        path: deleteTarget.path,
+        fileName: deleteTarget.file.name,
+      });
+      setDeleteTarget(null);
+      setDeleteConfirmText('');
+      onRefresh?.();
+    } catch (error) {
+      console.error('Delete failed:', error);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function handleRenameConfirm() {
+    if (!renameTarget || !renameValue.trim()) return;
+    try {
+      await invoke('set_file_info', {
+        serverId,
+        path: renameTarget.path,
+        fileName: renameTarget.file.name,
+        newName: renameValue.trim(),
+        comment: null,
+      });
+      setRenameTarget(null);
+      onRefresh?.();
+    } catch (error) {
+      console.error('Rename failed:', error);
+    }
+  }
 }

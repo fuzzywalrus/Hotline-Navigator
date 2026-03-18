@@ -36,7 +36,7 @@ export default function SettingsView({ onClose }: SettingsViewProps) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-2xl min-h-[400px] h-[70vh] max-h-[90vh] mx-3 flex flex-col transition-all duration-300 ease-in-out ${
+        className={`bg-white dark:bg-gray-900 rounded-lg overflow-hidden shadow-xl w-full max-w-2xl min-h-[400px] h-[70vh] max-h-[90vh] mx-3 flex flex-col transition-all duration-300 ease-in-out ${
           visible ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-2'
         }`}
       >
@@ -132,4 +132,3 @@ export default function SettingsView({ onClose }: SettingsViewProps) {
     </div>
   );
 }
-

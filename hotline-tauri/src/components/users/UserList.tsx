@@ -8,6 +8,7 @@ interface User {
   flags: number;
   isAdmin: boolean;
   isIdle: boolean;
+  color?: string | null;
 }
 
 interface UserListProps {
@@ -33,10 +34,11 @@ export default function UserList({ users, unreadCounts, onUserClick, onUserRight
             className={`relative flex items-center gap-2 text-sm py-1 px-2 rounded cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors overflow-hidden ${
               user.isIdle
                 ? 'opacity-50 text-gray-500 dark:text-gray-500'
-                : user.isAdmin
-                  ? 'text-red-600 dark:text-red-400'
+                : user.color
+                  ? ''
                   : 'text-gray-700 dark:text-gray-300'
             }`}
+            style={user.color && !user.isIdle ? { color: user.color } : undefined}
             title={`Click to message${user.isAdmin ? ' (Admin)' : ''}${user.isIdle ? ' (Idle)' : ''} | Right-click for menu`}
           >
             {!isIconBlocked(user.iconId) && <UserBanner iconId={user.iconId} />}

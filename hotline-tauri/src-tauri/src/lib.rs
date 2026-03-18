@@ -69,6 +69,11 @@ pub fn run() {
             commands::fetch_tracker_servers,
             commands::get_server_info,
             commands::get_user_access,
+            commands::get_client_info,
+            commands::delete_file,
+            commands::move_file,
+            commands::get_file_info,
+            commands::set_file_info,
             commands::disconnect_user,
             commands::test_connection,
             commands::check_for_updates,
@@ -79,6 +84,13 @@ pub fn run() {
             commands::create_news_folder,
             commands::delete_news_item,
             commands::delete_news_article,
+            commands::invite_to_new_chat,
+            commands::invite_to_chat,
+            commands::reject_chat_invite,
+            commands::join_chat,
+            commands::leave_chat,
+            commands::set_chat_subject,
+            commands::send_private_chat,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

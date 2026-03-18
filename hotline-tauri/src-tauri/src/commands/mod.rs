@@ -42,6 +42,22 @@ pub struct ConnectResult {
     pub port: u16,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatUser {
+    pub id: u16,
+    pub name: String,
+    pub icon: u16,
+    pub flags: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JoinChatResult {
+    pub subject: String,
+    pub users: Vec<ChatUser>,
+}
+
 #[tauri::command]
 pub async fn connect_to_server(
     bookmark: Bookmark,
@@ -599,6 +615,58 @@ pub async fn get_user_access(
 }
 
 #[tauri::command]
+pub async fn delete_file(
+    server_id: String,
+    path: Vec<String>,
+    file_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.delete_file(&server_id, path, file_name).await
+}
+
+#[tauri::command]
+pub async fn move_file(
+    server_id: String,
+    path: Vec<String>,
+    file_name: String,
+    new_path: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.move_file(&server_id, path, file_name, new_path).await
+}
+
+#[tauri::command]
+pub async fn get_file_info(
+    server_id: String,
+    path: Vec<String>,
+    file_name: String,
+    state: State<'_, AppState>,
+) -> Result<crate::protocol::client::files::FileInfoDetails, String> {
+    state.get_file_info(&server_id, path, file_name).await
+}
+
+#[tauri::command]
+pub async fn set_file_info(
+    server_id: String,
+    path: Vec<String>,
+    file_name: String,
+    new_name: Option<String>,
+    comment: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.set_file_info(&server_id, path, file_name, new_name, comment).await
+}
+
+#[tauri::command]
+pub async fn get_client_info(
+    server_id: String,
+    user_id: u16,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    state.get_client_info(&server_id, user_id).await
+}
+
+#[tauri::command]
 pub async fn disconnect_user(
     server_id: String,
     user_id: u16,
@@ -606,6 +674,76 @@ pub async fn disconnect_user(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     state.disconnect_user(&server_id, user_id, options).await
+}
+
+#[tauri::command]
+pub async fn invite_to_new_chat(
+    server_id: String,
+    user_id: u16,
+    state: State<'_, AppState>,
+) -> Result<u32, String> {
+    state.invite_to_new_chat(&server_id, user_id).await
+}
+
+#[tauri::command]
+pub async fn invite_to_chat(
+    server_id: String,
+    chat_id: u32,
+    user_id: u16,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.invite_to_chat(&server_id, chat_id, user_id).await
+}
+
+#[tauri::command]
+pub async fn reject_chat_invite(
+    server_id: String,
+    chat_id: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.reject_chat_invite(&server_id, chat_id).await
+}
+
+#[tauri::command]
+pub async fn join_chat(
+    server_id: String,
+    chat_id: u32,
+    state: State<'_, AppState>,
+) -> Result<JoinChatResult, String> {
+    let (subject, users) = state.join_chat(&server_id, chat_id).await?;
+    Ok(JoinChatResult {
+        subject,
+        users: users.into_iter().map(|(id, name, icon, flags)| ChatUser { id, name, icon, flags }).collect(),
+    })
+}
+
+#[tauri::command]
+pub async fn leave_chat(
+    server_id: String,
+    chat_id: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.leave_chat(&server_id, chat_id).await
+}
+
+#[tauri::command]
+pub async fn set_chat_subject(
+    server_id: String,
+    chat_id: u32,
+    subject: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.set_chat_subject(&server_id, chat_id, subject).await
+}
+
+#[tauri::command]
+pub async fn send_private_chat(
+    server_id: String,
+    chat_id: u32,
+    message: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.send_private_chat_message(&server_id, chat_id, message).await
 }
 
 #[tauri::command]

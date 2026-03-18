@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import type { ConnectionStatus } from '../../../types';
-import type { ChatMessage, FileItem, User } from '../serverTypes';
+import type { ChatMessage, FileItem, User, PrivateChatRoom } from '../serverTypes';
 import { useSound } from '../../../hooks/useSound';
 import { useAppStore } from '../../../stores/appStore';
 import { usePreferencesStore } from '../../../stores/preferencesStore';
@@ -20,7 +20,10 @@ interface UseServerEventsProps {
   setDownloadProgress: React.Dispatch<React.SetStateAction<Map<string, number>>>;
   setUploadProgress: React.Dispatch<React.SetStateAction<Map<string, number>>>;
   setAgreementText: React.Dispatch<React.SetStateAction<string | null>>;
+  setDisconnectMessage: React.Dispatch<React.SetStateAction<string | null>>;
   setConnectionStatus: React.Dispatch<React.SetStateAction<ConnectionStatus>>;
+  setPrivateChatRooms: React.Dispatch<React.SetStateAction<PrivateChatRoom[]>>;
+  onChatInvite?: (chatId: number, userId: number, userName: string) => void;
   setFileCache: (serverId: string, path: string[], files: FileItem[]) => void;
   currentPathRef: React.MutableRefObject<string[]>;
   parseUserFlags: (flags: number) => { isAdmin: boolean; isIdle: boolean };
@@ -42,7 +45,10 @@ export function useServerEvents({
   setDownloadProgress,
   setUploadProgress,
   setAgreementText,
+  setDisconnectMessage,
   setConnectionStatus,
+  setPrivateChatRooms,
+  onChatInvite,
   setFileCache,
   currentPathRef,
   parseUserFlags,
@@ -214,7 +220,7 @@ export function useServerEvents({
   useEffect(() => {
     let isActive = true;
     
-    const unlistenJoinPromise = listen<{ userId: number; userName: string; iconId: number; flags: number }>(
+    const unlistenJoinPromise = listen<{ userId: number; userName: string; iconId: number; flags: number; color?: string | null }>(
       `user-joined-${serverId}`,
       (event) => {
         if (!isActive) return;
@@ -246,11 +252,12 @@ export function useServerEvents({
             flags: event.payload.flags,
             isAdmin,
             isIdle,
+            color: event.payload.color,
           }];
           usersRef.current = updated;
           return updated;
         });
-        
+
         // Don't show join messages here - this is for initial load
         // Join messages are handled by the user-changed handler for actual new user joins
       }
@@ -292,7 +299,7 @@ export function useServerEvents({
       }
     );
 
-    const unlistenChangePromise = listen<{ userId: number; userName: string; iconId: number; flags: number }>(
+    const unlistenChangePromise = listen<{ userId: number; userName: string; iconId: number; flags: number; color?: string | null }>(
       `user-changed-${serverId}`,
       (event) => {
         if (!isActive) return;
@@ -314,6 +321,7 @@ export function useServerEvents({
                     iconId: event.payload.iconId,
                     flags: event.payload.flags,
                     ...parseUserFlags(event.payload.flags),
+                    color: event.payload.color,
                   }
                 : u
             );
@@ -329,6 +337,7 @@ export function useServerEvents({
               flags: event.payload.flags,
               isAdmin,
               isIdle,
+              color: event.payload.color,
             }];
             usersRef.current = updated;
             
@@ -663,5 +672,84 @@ export function useServerEvents({
       unlisten.then((fn) => fn()).catch(() => {});
     };
   }, [serverId, setAgreementText]);
+
+  // Listen for disconnect messages (server kicking us)
+  useEffect(() => {
+    const unlisten = listen<{ message: string }>(`disconnect-message-${serverId}`, (event) => {
+      setDisconnectMessage(event.payload.message);
+      setConnectionStatus('disconnected');
+    });
+
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
+  }, [serverId, setDisconnectMessage, setConnectionStatus]);
+
+  // Listen for private chat room events
+  useEffect(() => {
+    const unlistenInvite = listen<{ chatId: number; userId: number; userName: string }>(
+      `chat-invite-${serverId}`,
+      (event) => {
+        const { chatId, userId, userName } = event.payload;
+        if (onChatInvite) {
+          onChatInvite(chatId, userId, userName);
+        }
+      }
+    );
+
+    const unlistenMessage = listen<{ chatId: number; userId: number; userName: string; message: string }>(
+      `private-chat-message-${serverId}`,
+      (event) => {
+        const { chatId, userId, userName, message } = event.payload;
+        setPrivateChatRooms((prev) => prev.map((room) =>
+          room.chatId === chatId
+            ? { ...room, messages: [...room.messages, { userId, userName, message, timestamp: new Date() }] }
+            : room
+        ));
+      }
+    );
+
+    const unlistenUserJoined = listen<{ chatId: number; userId: number; userName: string; icon: number; flags: number }>(
+      `chat-user-joined-${serverId}`,
+      (event) => {
+        const { chatId, userId, userName, icon, flags } = event.payload;
+        setPrivateChatRooms((prev) => prev.map((room) => {
+          if (room.chatId !== chatId) return room;
+          if (room.users.some((u) => u.id === userId)) return room;
+          return { ...room, users: [...room.users, { id: userId, name: userName, icon, flags }] };
+        }));
+      }
+    );
+
+    const unlistenUserLeft = listen<{ chatId: number; userId: number }>(
+      `chat-user-left-${serverId}`,
+      (event) => {
+        const { chatId, userId } = event.payload;
+        setPrivateChatRooms((prev) => prev.map((room) =>
+          room.chatId === chatId
+            ? { ...room, users: room.users.filter((u) => u.id !== userId) }
+            : room
+        ));
+      }
+    );
+
+    const unlistenSubject = listen<{ chatId: number; subject: string }>(
+      `chat-subject-${serverId}`,
+      (event) => {
+        const { chatId, subject } = event.payload;
+        setPrivateChatRooms((prev) => prev.map((room) =>
+          room.chatId === chatId ? { ...room, subject } : room
+        ));
+      }
+    );
+
+    return () => {
+      unlistenInvite.then((fn) => fn()).catch(() => {});
+      unlistenMessage.then((fn) => fn()).catch(() => {});
+      unlistenUserJoined.then((fn) => fn()).catch(() => {});
+      unlistenUserLeft.then((fn) => fn()).catch(() => {});
+      unlistenSubject.then((fn) => fn()).catch(() => {});
+    };
+  }, [serverId, setPrivateChatRooms, onChatInvite]);
 }
 

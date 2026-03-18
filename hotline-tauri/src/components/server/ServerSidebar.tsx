@@ -1,5 +1,5 @@
 import UserList from '../users/UserList';
-import type { ViewTab, User } from '../server/serverTypes';
+import type { ViewTab, User, PrivateChatRoom } from '../server/serverTypes';
 
 interface ServerSidebarProps {
   activeTab: ViewTab;
@@ -9,6 +9,8 @@ interface ServerSidebarProps {
   onUserRightClick?: (user: User, event: React.MouseEvent) => void;
   onOpenMessageDialog: (user: User) => void;
   unreadCounts: Map<number, number>;
+  privateChatRooms?: PrivateChatRoom[];
+  onLeaveChat?: (chatId: number) => void;
 }
 
 export default function ServerSidebar({
@@ -19,6 +21,8 @@ export default function ServerSidebar({
   onUserRightClick,
   onOpenMessageDialog,
   unreadCounts,
+  privateChatRooms = [],
+  onLeaveChat,
 }: ServerSidebarProps) {
   return (
     <div className="hidden md:flex w-[200px] bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex-col">
@@ -44,6 +48,35 @@ export default function ServerSidebar({
           />
           <span className="text-sm font-medium">Chat</span>
         </button>
+        {/* Private chat rooms indented below Chat */}
+        {privateChatRooms.map((room) => {
+          const tabId: ViewTab = `pchat-${room.chatId}`;
+          const label = room.subject || `Chat Room ${room.chatId}`;
+          return (
+            <div key={room.chatId} className="flex items-center pl-6">
+              <button
+                onClick={() => onTabChange(tabId)}
+                className={`flex-1 flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${
+                  activeTab === tabId
+                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                    : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200'
+                }`}
+                title={label}
+              >
+                <span className="truncate">{label}</span>
+              </button>
+              {onLeaveChat && (
+                <button
+                  onClick={() => onLeaveChat(room.chatId)}
+                  className="text-gray-400 hover:text-red-500 dark:hover:text-red-400 px-1 text-xs"
+                  title="Leave chat room"
+                >
+                  x
+                </button>
+              )}
+            </div>
+          );
+        })}
         <button
           onClick={() => onTabChange('board')}
           className={`flex items-center gap-2 px-2 py-2 rounded transition-colors ${

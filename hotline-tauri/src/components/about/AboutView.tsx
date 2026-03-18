@@ -96,8 +96,8 @@ export default function AboutView({ onClose }: AboutViewProps) {
               <p>
                 Protocol implementation based on the Hotline protocol specification
               </p>
-              <div className="pt-2 space-y-1">
-                <p>
+              <div className="pt-2 space-y-1 min-[700px]:space-y-0 min-[700px]:flex min-[700px]:items-center min-[700px]:justify-between">
+                <p className="min-[700px]:text-left">
                   <a
                     href="https://github.com/fuzzywalrus/hotline"
                     target="_blank"
@@ -107,7 +107,7 @@ export default function AboutView({ onClose }: AboutViewProps) {
                     GitHub: fuzzywalrus/hotline
                   </a>
                 </p>
-                <p className="text-gray-500 dark:text-gray-500">
+                <p className="text-gray-500 dark:text-gray-500 min-[700px]:text-right">
                   Forked from{' '}
                   <a
                     href="https://github.com/mierau/hotline"
@@ -141,4 +141,3 @@ export default function AboutView({ onClose }: AboutViewProps) {
     </div>
   );
 }
-

@@ -16,6 +16,7 @@ export interface User {
   flags: number;
   isAdmin: boolean;
   isIdle: boolean;
+  color?: string | null;
 }
 
 export interface PrivateMessage {
@@ -49,5 +50,12 @@ export interface NewsArticle {
   path: string[];
 }
 
-export type ViewTab = 'chat' | 'board' | 'news' | 'files';
+export interface PrivateChatRoom {
+  chatId: number;
+  subject: string;
+  users: { id: number; name: string; icon: number; flags: number }[];
+  messages: ChatMessage[];
+}
+
+export type ViewTab = 'chat' | 'board' | 'news' | 'files' | `pchat-${number}`;
 

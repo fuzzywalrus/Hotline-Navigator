@@ -281,12 +281,13 @@ impl AppState {
                         });
                         let _ = app_handle.emit(&format!("chat-message-{}", server_id_clone), payload);
                     }
-                    HotlineEvent::UserJoined { user_id, user_name, icon, flags } => {
+                    HotlineEvent::UserJoined { user_id, user_name, icon, flags, color } => {
                         let payload = serde_json::json!({
                             "userId": user_id,
                             "userName": user_name,
                             "iconId": icon,
                             "flags": flags,
+                            "color": color,
                         });
                         let _ = app_handle.emit(&format!("user-joined-{}", server_id_clone), payload);
                     }
@@ -296,14 +297,21 @@ impl AppState {
                         });
                         let _ = app_handle.emit(&format!("user-left-{}", server_id_clone), payload);
                     }
-                    HotlineEvent::UserChanged { user_id, user_name, icon, flags } => {
+                    HotlineEvent::UserChanged { user_id, user_name, icon, flags, color } => {
                         let payload = serde_json::json!({
                             "userId": user_id,
                             "userName": user_name,
                             "iconId": icon,
                             "flags": flags,
+                            "color": color,
                         });
                         let _ = app_handle.emit(&format!("user-changed-{}", server_id_clone), payload);
+                    }
+                    HotlineEvent::DisconnectMessage(msg) => {
+                        let payload = serde_json::json!({
+                            "message": msg,
+                        });
+                        let _ = app_handle.emit(&format!("disconnect-message-{}", server_id_clone), payload);
                     }
                     HotlineEvent::ServerMessage(msg) => {
                         println!("Server broadcast message: {}", msg);
@@ -357,6 +365,47 @@ impl AppState {
                             "message": message,
                         });
                         let _ = app_handle.emit(&format!("private-message-{}", server_id_clone), payload);
+                    }
+                    HotlineEvent::ChatInvite { chat_id, user_id, user_name } => {
+                        let payload = serde_json::json!({
+                            "chatId": chat_id,
+                            "userId": user_id,
+                            "userName": user_name,
+                        });
+                        let _ = app_handle.emit(&format!("chat-invite-{}", server_id_clone), payload);
+                    }
+                    HotlineEvent::PrivateChatMessage { chat_id, user_id, user_name, message } => {
+                        let payload = serde_json::json!({
+                            "chatId": chat_id,
+                            "userId": user_id,
+                            "userName": user_name,
+                            "message": message,
+                        });
+                        let _ = app_handle.emit(&format!("private-chat-message-{}", server_id_clone), payload);
+                    }
+                    HotlineEvent::ChatUserJoined { chat_id, user_id, user_name, icon, flags } => {
+                        let payload = serde_json::json!({
+                            "chatId": chat_id,
+                            "userId": user_id,
+                            "userName": user_name,
+                            "icon": icon,
+                            "flags": flags,
+                        });
+                        let _ = app_handle.emit(&format!("chat-user-joined-{}", server_id_clone), payload);
+                    }
+                    HotlineEvent::ChatUserLeft { chat_id, user_id } => {
+                        let payload = serde_json::json!({
+                            "chatId": chat_id,
+                            "userId": user_id,
+                        });
+                        let _ = app_handle.emit(&format!("chat-user-left-{}", server_id_clone), payload);
+                    }
+                    HotlineEvent::ChatSubjectChanged { chat_id, subject } => {
+                        let payload = serde_json::json!({
+                            "chatId": chat_id,
+                            "subject": subject,
+                        });
+                        let _ = app_handle.emit(&format!("chat-subject-{}", server_id_clone), payload);
                     }
                     HotlineEvent::StatusChanged(status) => {
                         let payload = serde_json::json!({
@@ -722,10 +771,118 @@ impl AppState {
         }
     }
 
+    pub async fn delete_file(&self, server_id: &str, path: Vec<String>, file_name: String) -> Result<(), String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.delete_file(path, file_name).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn move_file(&self, server_id: &str, path: Vec<String>, file_name: String, new_path: Vec<String>) -> Result<(), String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.move_file(path, file_name, new_path).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn get_file_info(&self, server_id: &str, path: Vec<String>, file_name: String) -> Result<crate::protocol::client::files::FileInfoDetails, String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.get_file_info(path, file_name).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn set_file_info(&self, server_id: &str, path: Vec<String>, file_name: String, new_name: Option<String>, comment: Option<String>) -> Result<(), String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.set_file_info(path, file_name, new_name, comment).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn get_client_info(&self, server_id: &str, user_id: u16) -> Result<String, String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.get_client_info(user_id).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
     pub async fn disconnect_user(&self, server_id: &str, user_id: u16, options: Option<u16>) -> Result<(), String> {
         let clients = self.clients.read().await;
         if let Some(client) = clients.get(server_id) {
             client.disconnect_user(user_id, options).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn invite_to_new_chat(&self, server_id: &str, user_id: u16) -> Result<u32, String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.invite_to_new_chat(user_id).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn invite_to_chat(&self, server_id: &str, chat_id: u32, user_id: u16) -> Result<(), String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.invite_to_chat(chat_id, user_id).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn reject_chat_invite(&self, server_id: &str, chat_id: u32) -> Result<(), String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.reject_chat_invite(chat_id).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn join_chat(&self, server_id: &str, chat_id: u32) -> Result<(String, Vec<(u16, String, u16, u16)>), String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.join_chat(chat_id).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn leave_chat(&self, server_id: &str, chat_id: u32) -> Result<(), String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.leave_chat(chat_id).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn set_chat_subject(&self, server_id: &str, chat_id: u32, subject: String) -> Result<(), String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.set_chat_subject(chat_id, subject).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn send_private_chat_message(&self, server_id: &str, chat_id: u32, message: String) -> Result<(), String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.send_private_chat_message(chat_id, message).await
         } else {
             Err("Server not connected".to_string())
         }

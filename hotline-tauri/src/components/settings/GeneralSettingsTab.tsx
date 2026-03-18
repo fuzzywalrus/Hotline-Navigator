@@ -7,7 +7,7 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import type { Bookmark } from '../../types';
 
 export default function GeneralSettingsTab() {
-  const { username, setUsername, enablePrivateMessaging, setEnablePrivateMessaging, darkMode, setDarkMode, downloadFolder, setDownloadFolder, showServerBanner, setShowServerBanner, clickableLinks, setClickableLinks, showInlineImages, setShowInlineImages, renderMarkdown, setRenderMarkdown, useRemoteIcons, setUseRemoteIcons, showRemoteBanners, setShowRemoteBanners, autoDetectTls, setAutoDetectTls, mentionPopup, setMentionPopup, mutedUsers, addMutedUser, removeMutedUser, watchWords, addWatchWord, removeWatchWord } = usePreferencesStore();
+  const { username, setUsername, enablePrivateMessaging, setEnablePrivateMessaging, darkMode, setDarkMode, downloadFolder, setDownloadFolder, showServerBanner, setShowServerBanner, clickableLinks, setClickableLinks, showInlineImages, setShowInlineImages, renderMarkdown, setRenderMarkdown, renderMarkdownAgreements, setRenderMarkdownAgreements, useRemoteIcons, setUseRemoteIcons, showRemoteBanners, setShowRemoteBanners, autoDetectTls, setAutoDetectTls, mentionPopup, setMentionPopup, mutedUsers, addMutedUser, removeMutedUser, watchWords, addWatchWord, removeWatchWord } = usePreferencesStore();
   const { setBookmarks } = useAppStore();
   const isMobile = useIsMobile();
   const [localUsername, setLocalUsername] = useState(username);
@@ -171,6 +171,24 @@ export default function GeneralSettingsTab() {
                 className="ml-4 toggle toggle-primary"
               />
             </div>
+            {renderMarkdown && (
+              <div className="flex items-center justify-between mt-3 ml-8 pl-4 border-l-2 border-gray-200 dark:border-gray-700">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Server Agreements
+                  </label>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Render markdown formatting in server agreement dialogs. Many servers use ASCII art, so this is recommended off.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={renderMarkdownAgreements}
+                  onChange={(e) => setRenderMarkdownAgreements(e.target.checked)}
+                  className="ml-4 toggle toggle-primary"
+                />
+              </div>
+            )}
           </>
         )}
       </div>

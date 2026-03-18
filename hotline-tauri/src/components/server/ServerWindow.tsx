@@ -5,6 +5,7 @@ import MessageDialog from '../chat/MessageDialog';
 import UserInfoDialog from '../users/UserInfoDialog';
 import { useContextMenu, ContextMenuRenderer, type ContextMenuItem } from '../common/ContextMenu';
 import ChatTab from '../chat/ChatTab';
+import PrivateChatTab from '../chat/PrivateChatTab';
 import BoardTab from '../board/BoardTab';
 import FilesTab from '../files/FilesTab';
 import NewsTab from '../news/NewsTab';
@@ -14,7 +15,7 @@ import ServerSidebar from './ServerSidebar';
 import MobileTabBar from './MobileTabBar';
 import TransferList from '../transfers/TransferList';
 import NotificationLog from '../notifications/NotificationLog';
-import Linkify from '../common/Linkify';
+import MarkdownText from '../common/MarkdownText';
 import { ServerInfo, ConnectionStatus } from '../../types';
 import { useAppStore } from '../../stores/appStore';
 import { usePreferencesStore } from '../../stores/preferencesStore';
@@ -22,7 +23,7 @@ import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useServerEvents } from './hooks/useServerEvents';
 import { useServerHandlers } from './hooks/useServerHandlers';
 import { parseUserFlags } from './serverUtils';
-import type { ChatMessage, User, PrivateMessage, FileItem, NewsCategory, NewsArticle, ViewTab } from './serverTypes';
+import type { ChatMessage, User, PrivateMessage, FileItem, NewsCategory, NewsArticle, ViewTab, PrivateChatRoom } from './serverTypes';
 
 interface ServerWindowProps {
   serverId: string;
@@ -33,7 +34,7 @@ interface ServerWindowProps {
 export default function ServerWindow({ serverId, serverName, onClose }: ServerWindowProps) {
   const { setFileCache, getFileCache, clearFileCache, clearFileCachePath, addTransfer, updateTransfer, updateTabTitle, serverInfo: serverInfoMap, tabs } = useAppStore();
   const isTls = serverInfoMap.get(serverId)?.tls ?? false;
-  const { enablePrivateMessaging, downloadFolder, showServerBanner } = usePreferencesStore();
+  const { enablePrivateMessaging, downloadFolder, showServerBanner, renderMarkdown, renderMarkdownAgreements } = usePreferencesStore();
   const [showTransferList, setShowTransferList] = useState(false);
   const [showNotificationLog, setShowNotificationLog] = useState(false);
   const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
@@ -69,6 +70,9 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
   const [agreementText, setAgreementText] = useState<string | null>(null);
   const [agreementDismissing, setAgreementDismissing] = useState(false);
   const [agreementVisible, setAgreementVisible] = useState(false);
+  const [disconnectMessage, setDisconnectMessage] = useState<string | null>(null);
+  const [privateChatRooms, setPrivateChatRooms] = useState<PrivateChatRoom[]>([]);
+  const [chatInvite, setChatInvite] = useState<{ chatId: number; userId: number; userName: string } | null>(null);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
@@ -242,7 +246,10 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     setDownloadProgress,
     setUploadProgress,
     setAgreementText,
+    setDisconnectMessage,
     setConnectionStatus,
+    setPrivateChatRooms,
+    onChatInvite: (chatId, userId, userName) => setChatInvite({ chatId, userId, userName }),
     setFileCache,
     currentPathRef,
     parseUserFlags,
@@ -467,6 +474,23 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
           setUserInfoDialogUser(user);
         },
       },
+      {
+        label: 'Invite to Chat',
+        icon: '🗨️',
+        action: async () => {
+          try {
+            const chatId = await invoke<number>('invite_to_new_chat', { serverId, userId: user.userId });
+            const result = await invoke<{ subject: string; users: { id: number; name: string; icon: number; flags: number }[] }>('join_chat', { serverId, chatId });
+            setPrivateChatRooms((prev) => [
+              ...prev,
+              { chatId, subject: result.subject, users: result.users, messages: [] },
+            ]);
+            setActiveTab(`pchat-${chatId}`);
+          } catch (error) {
+            console.error('Failed to create chat:', error);
+          }
+        },
+      },
       { divider: true, label: '', action: () => {} },
       {
         label: `Custom icon: #${user.iconId}`,
@@ -557,6 +581,8 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
   // Permission-gated feature flags
   const canBroadcast = hasPermission(32);
   const canCreateFolder = hasPermission(5);
+  const canDeleteFiles = hasPermission(4);
+  const canRenameFiles = hasPermission(6);
   const canCreateNewsCategories = hasPermission(34);
   const canDeleteNewsCategories = hasPermission(35);
   const canCreateNewsFolders = hasPermission(36);
@@ -569,6 +595,59 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     } catch (error) {
       console.error('Failed to send broadcast:', error);
     }
+  };
+
+  const handlePrivateChatSend = async (chatId: number, message: string) => {
+    try {
+      await invoke('send_private_chat', { serverId, chatId, message });
+    } catch (error) {
+      console.error('Failed to send private chat message:', error);
+    }
+  };
+
+  const handleLeaveChat = async (chatId: number) => {
+    try {
+      await invoke('leave_chat', { serverId, chatId });
+      setPrivateChatRooms((prev) => prev.filter((r) => r.chatId !== chatId));
+      // Switch back to main chat if we were viewing this room
+      if (activeTab === `pchat-${chatId}`) {
+        setActiveTab('chat');
+      }
+    } catch (error) {
+      console.error('Failed to leave chat:', error);
+    }
+  };
+
+  const handleSetChatSubject = async (chatId: number, subject: string) => {
+    try {
+      await invoke('set_chat_subject', { serverId, chatId, subject });
+    } catch (error) {
+      console.error('Failed to set chat subject:', error);
+    }
+  };
+
+  const handleAcceptChatInvite = async (chatId: number) => {
+    try {
+      const result = await invoke<{ subject: string; users: { id: number; name: string; icon: number; flags: number }[] }>('join_chat', { serverId, chatId });
+      setPrivateChatRooms((prev) => [
+        ...prev,
+        { chatId, subject: result.subject, users: result.users, messages: [] },
+      ]);
+      setChatInvite(null);
+      setActiveTab(`pchat-${chatId}`);
+    } catch (error) {
+      console.error('Failed to join chat:', error);
+      setChatInvite(null);
+    }
+  };
+
+  const handleRejectChatInvite = async (chatId: number) => {
+    try {
+      await invoke('reject_chat_invite', { serverId, chatId });
+    } catch (error) {
+      console.error('Failed to reject chat invite:', error);
+    }
+    setChatInvite(null);
   };
 
   const handleCreateFolder = async (name: string) => {
@@ -759,10 +838,12 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
             <div className="px-6 pt-5 pb-2">
               <h2 className="text-base font-semibold text-gray-900 dark:text-white">Server Agreement</h2>
             </div>
-            <div className="flex-1 overflow-y-auto px-6 pb-4">
-              <pre className="text-xs font-mono text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">
-                <Linkify text={agreementText} />
-              </pre>
+            <div className="flex-1 overflow-y-auto px-6 pb-4 text-xs text-gray-800 dark:text-gray-200">
+              {renderMarkdown && renderMarkdownAgreements ? (
+                <MarkdownText text={agreementText} className="whitespace-pre-wrap break-words" />
+              ) : (
+                <pre className="whitespace-pre-wrap break-words font-mono">{agreementText}</pre>
+              )}
             </div>
             <div className="flex gap-3 justify-end px-6 py-4 border-t border-gray-200 dark:border-gray-700">
               <button
@@ -788,6 +869,54 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
         </div>
       )}
 
+      {/* Disconnect Message Modal */}
+      {disconnectMessage && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md mx-6 flex flex-col">
+            <div className="px-6 pt-6 pb-2">
+              <h2 className="text-base font-semibold text-red-600 dark:text-red-400">Disconnected by Server</h2>
+            </div>
+            <div className="px-6 pb-4 text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">
+              {disconnectMessage}
+            </div>
+            <div className="flex justify-end px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => setDisconnectMessage(null)}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors text-sm font-medium"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Chat Invite Modal */}
+      {chatInvite && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-sm w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Chat Invitation</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              <span className="font-medium text-gray-800 dark:text-gray-200">{chatInvite.userName}</span> has invited you to a private chat.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => handleRejectChatInvite(chatInvite.chatId)}
+                className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
+              >
+                Decline
+              </button>
+              <button
+                onClick={() => handleAcceptChatInvite(chatInvite.chatId)}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors text-sm font-medium"
+              >
+                Accept
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
         <ServerSidebar
@@ -798,6 +927,8 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
           onUserRightClick={handleUserRightClick}
           onOpenMessageDialog={handleOpenMessageDialog}
           unreadCounts={unreadCounts}
+          privateChatRooms={privateChatRooms}
+          onLeaveChat={handleLeaveChat}
         />
 
         {/* Main area with content */}
@@ -821,6 +952,21 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
               onDeclineAgreement={handleDeclineAgreement}
             />
           )}
+
+          {/* Private chat room views */}
+          {activeTab.startsWith('pchat-') && (() => {
+            const chatId = parseInt(activeTab.replace('pchat-', ''), 10);
+            const room = privateChatRooms.find((r) => r.chatId === chatId);
+            if (!room) return null;
+            return (
+              <PrivateChatTab
+                room={room}
+                onSendMessage={handlePrivateChatSend}
+                onLeave={handleLeaveChat}
+                onSetSubject={handleSetChatSubject}
+              />
+            );
+          })()}
 
           {/* Board view */}
           {activeTab === 'board' && (
@@ -890,6 +1036,8 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
               onWaitForServer={handleWaitForServer}
               onCancelNavigation={handleCancelNavigation}
               canCreateFolder={canCreateFolder}
+              canDeleteFiles={canDeleteFiles}
+              canRenameFiles={canRenameFiles}
               onCreateFolder={handleCreateFolder}
               onDownloadFile={handleDownloadFile}
               onUploadFile={handleUploadFile}
@@ -930,6 +1078,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
       {userInfoDialogUser && (
         <UserInfoDialog
           user={userInfoDialogUser}
+          serverId={serverId}
           onClose={() => setUserInfoDialogUser(null)}
           onSendMessage={handleOpenMessageDialog}
           enablePrivateMessaging={enablePrivateMessaging}

@@ -26,6 +26,8 @@ interface PreferencesState {
   // Markdown preferences
   renderMarkdown: boolean;
   setRenderMarkdown: (enabled: boolean) => void;
+  renderMarkdownAgreements: boolean;
+  setRenderMarkdownAgreements: (enabled: boolean) => void;
 
   // Mention preferences
   mentionPopup: boolean;
@@ -101,6 +103,8 @@ export const usePreferencesStore = create<PreferencesState>()(
       // Markdown preferences
       renderMarkdown: true,
       setRenderMarkdown: (renderMarkdown) => set({ renderMarkdown }),
+      renderMarkdownAgreements: false,
+      setRenderMarkdownAgreements: (renderMarkdownAgreements) => set({ renderMarkdownAgreements }),
 
       // Mention preferences
       mentionPopup: true,

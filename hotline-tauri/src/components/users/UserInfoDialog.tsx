@@ -1,3 +1,5 @@
+import { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import UserIcon from './UserIcon';
 
 interface User {
@@ -11,12 +13,31 @@ interface User {
 
 interface UserInfoDialogProps {
   user: User;
+  serverId: string;
   onClose: () => void;
   onSendMessage?: (user: User) => void;
   enablePrivateMessaging?: boolean;
 }
 
-export default function UserInfoDialog({ user, onClose, onSendMessage, enablePrivateMessaging = true }: UserInfoDialogProps) {
+export default function UserInfoDialog({ user, serverId, onClose, onSendMessage, enablePrivateMessaging = true }: UserInfoDialogProps) {
+  const [clientInfo, setClientInfo] = useState<string | null>(null);
+  const [loadingInfo, setLoadingInfo] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    invoke<string>('get_client_info', { serverId, userId: user.userId })
+      .then((info) => {
+        if (!cancelled) setClientInfo(info);
+      })
+      .catch(() => {
+        if (!cancelled) setClientInfo(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingInfo(false);
+      });
+    return () => { cancelled = true; };
+  }, [serverId, user.userId]);
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-[400px] flex flex-col">
@@ -99,6 +120,24 @@ export default function UserInfoDialog({ user, onClose, onSendMessage, enablePri
               </label>
               <div className="mt-1 text-gray-600 dark:text-gray-400 font-mono text-sm">
                 0x{user.flags.toString(16).padStart(4, '0').toUpperCase()}
+              </div>
+            </div>
+
+            {/* Server-provided client info */}
+            <div>
+              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
+                Client Info
+              </label>
+              <div className="mt-1">
+                {loadingInfo ? (
+                  <span className="text-gray-400 dark:text-gray-500 text-sm italic">Loading...</span>
+                ) : clientInfo ? (
+                  <pre className="text-xs font-mono text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words bg-gray-50 dark:bg-gray-800 rounded p-2 max-h-40 overflow-y-auto">
+                    {clientInfo}
+                  </pre>
+                ) : (
+                  <span className="text-gray-400 dark:text-gray-500 text-sm italic">Not available</span>
+                )}
               </div>
             </div>
           </div>

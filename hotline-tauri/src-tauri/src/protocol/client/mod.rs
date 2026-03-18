@@ -1,11 +1,11 @@
 // Hotline client implementation
 
 mod chat;
-mod files;
+pub(crate) mod files;
 pub(crate) mod hope;
 mod hope_stream;
 mod news;
-mod users;
+pub(crate) mod users;
 
 use super::constants::{
     FieldType, TransactionType, PROTOCOL_ID, PROTOCOL_SUBVERSION,
@@ -84,13 +84,24 @@ pub enum HotlineEvent {
     ChatMessage { user_id: u16, user_name: String, message: String },
     ServerMessage(String),
     PrivateMessage { user_id: u16, message: String },
-    UserJoined { user_id: u16, user_name: String, icon: u16, flags: u16 },
+    UserJoined { user_id: u16, user_name: String, icon: u16, flags: u16, color: Option<String> },
     UserLeft { user_id: u16 },
-    UserChanged { user_id: u16, user_name: String, icon: u16, flags: u16 },
+    UserChanged { user_id: u16, user_name: String, icon: u16, flags: u16, color: Option<String> },
     AgreementRequired(String),
     FileList { files: Vec<FileInfo>, path: Vec<String> },
     NewMessageBoardPost(String),
+    DisconnectMessage(String),
+    ChatInvite { chat_id: u32, user_id: u16, user_name: String },
+    PrivateChatMessage { chat_id: u32, user_id: u16, user_name: String, message: String },
+    ChatUserJoined { chat_id: u32, user_id: u16, user_name: String, icon: u16, flags: u16 },
+    ChatUserLeft { chat_id: u32, user_id: u16 },
+    ChatSubjectChanged { chat_id: u32, subject: String },
     StatusChanged(ConnectionStatus),
+}
+
+/// Convert a 0x00RRGGBB u32 color to a CSS hex string like "#RRGGBB"
+fn color_u32_to_css(c: u32) -> String {
+    format!("#{:02X}{:02X}{:02X}", (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF)
 }
 
 #[derive(Debug, Clone)]
@@ -816,6 +827,7 @@ impl HotlineClient {
                                     user_name: user_info.1,
                                     icon: user_info.2,
                                     flags: user_info.3,
+                                    color: user_info.4.map(color_u32_to_css),
                                 });
                             }
                         } else if field.field_type == FieldType::FileNameWithInfo {
@@ -909,11 +921,23 @@ impl HotlineClient {
                     .and_then(|f| f.to_string().ok())
                     .unwrap_or_default();
 
-                let _ = event_tx.send(HotlineEvent::ChatMessage {
-                    user_id,
-                    user_name,
-                    message,
-                });
+                // Check if this is a private chat room message (has ChatId field)
+                if let Some(chat_id_field) = transaction.get_field(FieldType::ChatId) {
+                    if let Ok(chat_id) = chat_id_field.to_u32() {
+                        let _ = event_tx.send(HotlineEvent::PrivateChatMessage {
+                            chat_id,
+                            user_id,
+                            user_name,
+                            message,
+                        });
+                    }
+                } else {
+                    let _ = event_tx.send(HotlineEvent::ChatMessage {
+                        user_id,
+                        user_name,
+                        message,
+                    });
+                }
             }
             TransactionType::ServerMessage => {
                 let message = transaction
@@ -1000,12 +1024,17 @@ impl HotlineClient {
                     .get_field(FieldType::UserFlags)
                     .and_then(|f| f.to_u16().ok())
                     .unwrap_or(0);
+                let color = transaction
+                    .get_field(FieldType::NickColor)
+                    .and_then(|f| f.to_u32().ok())
+                    .and_then(|c| if c == 0xFFFFFFFF { None } else { Some(color_u32_to_css(c)) });
 
                 let _ = event_tx.send(HotlineEvent::UserChanged {
                     user_id,
                     user_name,
                     icon,
                     flags,
+                    color,
                 });
             }
             TransactionType::NotifyUserDelete => {
@@ -1015,6 +1044,78 @@ impl HotlineClient {
                     .unwrap_or(0);
 
                 let _ = event_tx.send(HotlineEvent::UserLeft { user_id });
+            }
+            TransactionType::DisconnectMessage => {
+                let message = transaction
+                    .get_field(FieldType::Data)
+                    .and_then(|f| f.to_string().ok())
+                    .unwrap_or_else(|| "You have been disconnected.".to_string());
+
+                let _ = event_tx.send(HotlineEvent::DisconnectMessage(message));
+            }
+            TransactionType::InviteToChat => {
+                let chat_id = transaction
+                    .get_field(FieldType::ChatId)
+                    .and_then(|f| f.to_u32().ok())
+                    .unwrap_or(0);
+                let user_id = transaction
+                    .get_field(FieldType::UserId)
+                    .and_then(|f| f.to_u16().ok())
+                    .unwrap_or(0);
+                let user_name = transaction
+                    .get_field(FieldType::UserName)
+                    .and_then(|f| f.to_string().ok())
+                    .unwrap_or_default();
+
+                let _ = event_tx.send(HotlineEvent::ChatInvite { chat_id, user_id, user_name });
+            }
+            TransactionType::NotifyChatOfUserChange => {
+                let chat_id = transaction
+                    .get_field(FieldType::ChatId)
+                    .and_then(|f| f.to_u32().ok())
+                    .unwrap_or(0);
+                let user_id = transaction
+                    .get_field(FieldType::UserId)
+                    .and_then(|f| f.to_u16().ok())
+                    .unwrap_or(0);
+                let user_name = transaction
+                    .get_field(FieldType::UserName)
+                    .and_then(|f| f.to_string().ok())
+                    .unwrap_or_default();
+                let icon = transaction
+                    .get_field(FieldType::UserIconId)
+                    .and_then(|f| f.to_u16().ok())
+                    .unwrap_or(414);
+                let flags = transaction
+                    .get_field(FieldType::UserFlags)
+                    .and_then(|f| f.to_u16().ok())
+                    .unwrap_or(0);
+
+                let _ = event_tx.send(HotlineEvent::ChatUserJoined { chat_id, user_id, user_name, icon, flags });
+            }
+            TransactionType::NotifyChatOfUserDelete => {
+                let chat_id = transaction
+                    .get_field(FieldType::ChatId)
+                    .and_then(|f| f.to_u32().ok())
+                    .unwrap_or(0);
+                let user_id = transaction
+                    .get_field(FieldType::UserId)
+                    .and_then(|f| f.to_u16().ok())
+                    .unwrap_or(0);
+
+                let _ = event_tx.send(HotlineEvent::ChatUserLeft { chat_id, user_id });
+            }
+            TransactionType::NotifyChatSubject => {
+                let chat_id = transaction
+                    .get_field(FieldType::ChatId)
+                    .and_then(|f| f.to_u32().ok())
+                    .unwrap_or(0);
+                let subject = transaction
+                    .get_field(FieldType::ChatSubject)
+                    .and_then(|f| f.to_string().ok())
+                    .unwrap_or_default();
+
+                let _ = event_tx.send(HotlineEvent::ChatSubjectChanged { chat_id, subject });
             }
             _ => {
                 println!("Unhandled server event: {:?}", transaction.transaction_type);

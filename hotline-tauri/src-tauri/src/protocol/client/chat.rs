@@ -1,8 +1,10 @@
 // Chat functionality for Hotline client
 
 use super::HotlineClient;
-use crate::protocol::constants::{FieldType, TransactionType};
+use crate::protocol::constants::{FieldType, TransactionType, resolve_error_message};
 use crate::protocol::transaction::{Transaction, TransactionField};
+use std::time::Duration;
+use tokio::sync::mpsc;
 
 impl HotlineClient {
     pub async fn send_chat(&self, message: String) -> Result<(), String> {
@@ -52,6 +54,141 @@ impl HotlineClient {
         *self.user_icon_id.lock().await = icon_id;
 
         Ok(())
+    }
+
+    /// Invite a user to a new private chat room. Returns the chat_id.
+    pub async fn invite_to_new_chat(&self, user_id: u16) -> Result<u32, String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::InviteToNewChat);
+        transaction.add_field(TransactionField::from_u16(FieldType::UserId, user_id));
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        self.send_transaction(&transaction).await?;
+
+        match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(reply)) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+
+                if reply.error_code != 0 {
+                    let server_text = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok());
+                    return Err(resolve_error_message(reply.error_code, server_text));
+                }
+
+                let chat_id = reply
+                    .get_field(FieldType::ChatId)
+                    .and_then(|f| f.to_u32().ok())
+                    .ok_or_else(|| "No chat ID in reply".to_string())?;
+
+                Ok(chat_id)
+            }
+            Ok(None) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Channel closed".to_string())
+            }
+            Err(_) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Timeout waiting for chat invite reply".to_string())
+            }
+        }
+    }
+
+    /// Invite a user to an existing private chat room.
+    pub async fn invite_to_chat(&self, chat_id: u32, user_id: u16) -> Result<(), String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::InviteToChat);
+        transaction.add_field(TransactionField::from_u32(FieldType::ChatId, chat_id));
+        transaction.add_field(TransactionField::from_u16(FieldType::UserId, user_id));
+        self.send_transaction(&transaction).await
+    }
+
+    /// Reject a chat invite.
+    pub async fn reject_chat_invite(&self, chat_id: u32) -> Result<(), String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::RejectChatInvite);
+        transaction.add_field(TransactionField::from_u32(FieldType::ChatId, chat_id));
+        self.send_transaction(&transaction).await
+    }
+
+    /// Join a private chat room. Returns the subject and user list.
+    pub async fn join_chat(&self, chat_id: u32) -> Result<(String, Vec<(u16, String, u16, u16)>), String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::JoinChat);
+        transaction.add_field(TransactionField::from_u32(FieldType::ChatId, chat_id));
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        self.send_transaction(&transaction).await?;
+
+        match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(reply)) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+
+                if reply.error_code != 0 {
+                    let server_text = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok());
+                    return Err(resolve_error_message(reply.error_code, server_text));
+                }
+
+                let subject = reply
+                    .get_field(FieldType::ChatSubject)
+                    .and_then(|f| f.to_string().ok())
+                    .unwrap_or_default();
+
+                // Parse user list from UserNameWithInfo fields
+                let users: Vec<(u16, String, u16, u16)> = reply.fields.iter()
+                    .filter(|f| f.field_type == FieldType::UserNameWithInfo)
+                    .filter_map(|f| {
+                        Self::parse_user_info(&f.data).ok().map(|(id, name, icon, flags, _color)| (id, name, icon, flags))
+                    })
+                    .collect();
+
+                Ok((subject, users))
+            }
+            Ok(None) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Channel closed".to_string())
+            }
+            Err(_) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Timeout waiting for join chat reply".to_string())
+            }
+        }
+    }
+
+    /// Leave a private chat room.
+    pub async fn leave_chat(&self, chat_id: u32) -> Result<(), String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::LeaveChat);
+        transaction.add_field(TransactionField::from_u32(FieldType::ChatId, chat_id));
+        self.send_transaction(&transaction).await
+    }
+
+    /// Set the subject of a private chat room.
+    pub async fn set_chat_subject(&self, chat_id: u32, subject: String) -> Result<(), String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::SetChatSubject);
+        transaction.add_field(TransactionField::from_u32(FieldType::ChatId, chat_id));
+        transaction.add_field(TransactionField::from_string(FieldType::ChatSubject, &subject));
+        self.send_transaction(&transaction).await
+    }
+
+    /// Send a chat message to a private chat room.
+    pub async fn send_private_chat_message(&self, chat_id: u32, message: String) -> Result<(), String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::SendChat);
+        transaction.add_field(TransactionField::from_string(FieldType::Data, &message));
+        transaction.add_field(TransactionField::from_u32(FieldType::ChatId, chat_id));
+        transaction.add_field(TransactionField::from_u16(FieldType::ChatOptions, 0));
+        self.send_transaction(&transaction).await
     }
 
     pub async fn accept_agreement(&self) -> Result<(), String> {

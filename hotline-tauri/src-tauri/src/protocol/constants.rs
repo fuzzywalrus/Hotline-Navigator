@@ -87,6 +87,55 @@ pub fn resolve_error_message(error_code: u32, server_error_text: Option<String>)
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::{resolve_error_message, HotlineErrorCode};
+
+    #[test]
+    fn error_code_from_code_matches_known_values() {
+        assert_eq!(HotlineErrorCode::from_code(0), Some(HotlineErrorCode::None));
+        assert_eq!(HotlineErrorCode::from_code(u32::from_ne_bytes((-1i32).to_ne_bytes())), Some(HotlineErrorCode::Generic));
+        assert_eq!(HotlineErrorCode::from_code(1), Some(HotlineErrorCode::NotConnected));
+        assert_eq!(HotlineErrorCode::from_code(2), Some(HotlineErrorCode::Socket));
+        assert_eq!(HotlineErrorCode::from_code(1000), Some(HotlineErrorCode::LoginFailed));
+        assert_eq!(HotlineErrorCode::from_code(1001), Some(HotlineErrorCode::AlreadyLoggedIn));
+        assert_eq!(HotlineErrorCode::from_code(1002), Some(HotlineErrorCode::AccessDenied));
+        assert_eq!(HotlineErrorCode::from_code(1003), Some(HotlineErrorCode::UserBanned));
+        assert_eq!(HotlineErrorCode::from_code(1004), Some(HotlineErrorCode::ServerFull));
+        assert_eq!(HotlineErrorCode::from_code(2000), Some(HotlineErrorCode::FileNotFound));
+        assert_eq!(HotlineErrorCode::from_code(2001), Some(HotlineErrorCode::FileInUse));
+        assert_eq!(HotlineErrorCode::from_code(2002), Some(HotlineErrorCode::DiskFull));
+        assert_eq!(HotlineErrorCode::from_code(2003), Some(HotlineErrorCode::TransferFailed));
+        assert_eq!(HotlineErrorCode::from_code(3000), Some(HotlineErrorCode::NewsFull));
+        assert_eq!(HotlineErrorCode::from_code(3001), Some(HotlineErrorCode::MsgRefused));
+        assert_eq!(HotlineErrorCode::from_code(9999), None);
+    }
+
+    #[test]
+    fn resolve_error_prefers_server_text() {
+        let msg = resolve_error_message(1000, Some("Server says nope".to_string()));
+        assert_eq!(msg, "Server says nope");
+    }
+
+    #[test]
+    fn resolve_error_falls_back_to_known_code_message() {
+        let msg = resolve_error_message(1000, None);
+        assert_eq!(msg, HotlineErrorCode::LoginFailed.default_message());
+    }
+
+    #[test]
+    fn resolve_error_handles_empty_server_text() {
+        let msg = resolve_error_message(1000, Some(String::new()));
+        assert_eq!(msg, HotlineErrorCode::LoginFailed.default_message());
+    }
+
+    #[test]
+    fn resolve_error_handles_unknown_code() {
+        let msg = resolve_error_message(4242, None);
+        assert_eq!(msg, "Unknown error (code 4242)");
+    }
+}
+
 // Protocol identifiers
 pub const PROTOCOL_ID: &[u8; 4] = b"TRTP";
 pub const SUBPROTOCOL_ID: &[u8; 4] = b"HOTL";
@@ -281,6 +330,7 @@ pub enum FieldType {
     FileModifyDate = 209,
     FileComment = 210,
     FileNewName = 211,
+    FileNewPath = 212,
     FileType = 213,
     QuotingMessage = 214,
     AutomaticResponse = 215,
@@ -310,6 +360,8 @@ pub enum FieldType {
     Offset64 = 498,           // 0x01F2
     TransferSize64 = 499,     // 0x01F3
     FolderItemCount64 = 500,  // 0x01F4
+    // Colored nicknames extension
+    NickColor = 1280,              // 0x0500 - DATA_COLOR (32-bit 0x00RRGGBB)
     // HOPE (Hotline One-time Password Extension) fields
     HopeAppId = 3585,              // 0x0E01
     HopeAppString = 3586,          // 0x0E02
@@ -366,6 +418,7 @@ impl From<u16> for FieldType {
             209 => Self::FileModifyDate,
             210 => Self::FileComment,
             211 => Self::FileNewName,
+            212 => Self::FileNewPath,
             213 => Self::FileType,
             214 => Self::QuotingMessage,
             215 => Self::AutomaticResponse,
@@ -394,6 +447,7 @@ impl From<u16> for FieldType {
             498 => Self::Offset64,
             499 => Self::TransferSize64,
             500 => Self::FolderItemCount64,
+            1280 => Self::NickColor,
             3585 => Self::HopeAppId,
             3586 => Self::HopeAppString,
             3587 => Self::HopeSessionKey,
