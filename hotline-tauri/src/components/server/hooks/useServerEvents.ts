@@ -7,6 +7,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { usePreferencesStore } from '../../../stores/preferencesStore';
 import { showNotification, useNotificationStore } from '../../../stores/notificationStore';
 import { containsMention, containsWatchWord } from '../../../utils/mentions';
+import { log, error as logError } from '../../../utils/logger';
 
 interface UseServerEventsProps {
   serverId: string;
@@ -158,8 +159,9 @@ export function useServerEvents({
     
     const unlistenPromise = listen<{ message: string }>(`broadcast-message-${serverId}`, (event) => {
       if (!isActive) return;
-      
+
       const broadcastMsg = event.payload.message;
+      log('Chat', 'Broadcast message received', broadcastMsg);
       setMessages((prev) => [
         ...prev,
         {
@@ -182,7 +184,8 @@ export function useServerEvents({
   useEffect(() => {
     const unlisten = listen<{ files: FileItem[]; path: string[] }>(`file-list-${serverId}`, (event) => {
       const { files, path } = event.payload;
-      
+      log('Files', `File list received: ${files.length} items at /${path.join('/')}`);
+
       // Only update UI if this is for the current path
       if (path.length === currentPathRef.current.length && path.every((v, i) => v === currentPathRef.current[i])) {
         setFiles(files);
@@ -204,6 +207,7 @@ export function useServerEvents({
   // Listen for new message board posts
   useEffect(() => {
     const unlisten = listen<{ message: string }>(`message-board-post-${serverId}`, (event) => {
+      log('Board', 'Board post received');
       setBoardPosts((prev) => [...prev, event.payload.message]);
     });
 
@@ -224,13 +228,15 @@ export function useServerEvents({
       `user-joined-${serverId}`,
       (event) => {
         if (!isActive) return;
-        
+        log('Users', 'User joined', { userId: event.payload.userId, userName: event.payload.userName, iconId: event.payload.iconId, flags: event.payload.flags });
+
         // Check if user already exists before updating state
         const currentUsers = usersRef.current;
         const userExists = currentUsers.some(u => u.userId === event.payload.userId);
-        
+
         if (userExists) {
           // User already exists, skip (e.g., during initial load or user update)
+          log('Users', 'User already exists, skipping', event.payload.userId);
           return;
         }
         
@@ -267,17 +273,20 @@ export function useServerEvents({
       `user-left-${serverId}`,
       (event) => {
         if (!isActive) return;
-        
+        log('Users', 'User left event', { userId: event.payload.userId });
+
         // Get username before removing user (check current users ref)
         const currentUsers = usersRef.current;
         const userToRemove = currentUsers.find(u => u.userId === event.payload.userId);
-        
+
         if (!userToRemove) {
           // User not found, nothing to remove
+          log('Users', 'User not found for leave, skipping', event.payload.userId);
           return;
         }
-        
+
         const userName = userToRemove.userName;
+        log('Users', 'User leaving', { userId: event.payload.userId, userName });
         
         // Remove user from list
         setUsers((prev) => {
@@ -303,7 +312,8 @@ export function useServerEvents({
       `user-changed-${serverId}`,
       (event) => {
         if (!isActive) return;
-        
+        log('Users', 'User changed', { userId: event.payload.userId, userName: event.payload.userName, iconId: event.payload.iconId, flags: event.payload.flags });
+
         // Check if user already exists before updating state
         const currentUsers = usersRef.current;
         const prevLength = currentUsers.length;
@@ -383,6 +393,7 @@ export function useServerEvents({
         if (!isActive) return;
         
         const { userId, message } = event.payload;
+        log('Chat', 'Private message received', { userId, message });
 
         soundsRef.current.playPrivateMessageSound();
         
@@ -459,6 +470,7 @@ export function useServerEvents({
         const existingTransfer = useAppStore.getState().transfers.find((t) => t.id === transferId);
         
         if (!existingTransfer) {
+          log('Transfer', `Download started: ${fileName}`, { totalBytes });
           addTransfer({
             id: transferId,
             serverId,
@@ -497,6 +509,7 @@ export function useServerEvents({
         const existingTransfer = useAppStore.getState().transfers.find((t) => t.id === transferId);
         
         if (!existingTransfer) {
+          log('Transfer', `Upload started: ${fileName}`, { totalBytes });
           addTransfer({
             id: transferId,
             serverId,
@@ -527,6 +540,7 @@ export function useServerEvents({
     const unlistenDownloadComplete = listen<{ fileName: string }>(
       `download-complete-${serverId}`,
       (event) => {
+        log('Transfer', `Download complete: ${event.payload.fileName}`);
         setDownloadProgress((prev) => {
           const next = new Map(prev);
           next.delete(event.payload.fileName);
@@ -554,6 +568,7 @@ export function useServerEvents({
     const unlistenUploadComplete = listen<{ fileName: string }>(
       `upload-complete-${serverId}`,
       (event) => {
+        log('Transfer', `Upload complete: ${event.payload.fileName}`);
         setUploadProgress((prev) => {
           const next = new Map(prev);
           next.delete(event.payload.fileName);
@@ -581,6 +596,7 @@ export function useServerEvents({
     const unlistenDownloadError = listen<{ fileName: string; error: string }>(
       `download-error-${serverId}`,
       (event) => {
+        logError('Transfer', `Download error: ${event.payload.fileName}`, event.payload.error);
         setDownloadProgress((prev) => {
           const next = new Map(prev);
           next.delete(event.payload.fileName);
@@ -609,6 +625,7 @@ export function useServerEvents({
     const unlistenUploadError = listen<{ fileName: string; error: string }>(
       `upload-error-${serverId}`,
       (event) => {
+        logError('Transfer', `Upload error: ${event.payload.fileName}`, event.payload.error);
         setUploadProgress((prev) => {
           const next = new Map(prev);
           next.delete(event.payload.fileName);
@@ -648,6 +665,7 @@ export function useServerEvents({
       `status-changed-${serverId}`,
       (event) => {
         const newStatus = event.payload.status;
+        log('Connection', `Status changed: ${newStatus}`);
         setConnectionStatus(newStatus);
         if (newStatus === 'logged-in') {
           soundsRef.current.playLoggedInSound();
@@ -664,7 +682,7 @@ export function useServerEvents({
   useEffect(() => {
     const unlisten = listen<{ agreement: string }>(`agreement-required-${serverId}`, (event) => {
       const agreement = event.payload.agreement;
-      console.log('✅ Received agreement-required event, agreement length:', agreement.length);
+      log('Agreement', 'Agreement required, length:', agreement.length);
       setAgreementText(agreement);
     });
 
@@ -676,6 +694,7 @@ export function useServerEvents({
   // Listen for disconnect messages (server kicking us)
   useEffect(() => {
     const unlisten = listen<{ message: string }>(`disconnect-message-${serverId}`, (event) => {
+      log('Connection', 'Disconnect message received', event.payload.message);
       setDisconnectMessage(event.payload.message);
       setConnectionStatus('disconnected');
     });
@@ -691,6 +710,7 @@ export function useServerEvents({
       `chat-invite-${serverId}`,
       (event) => {
         const { chatId, userId, userName } = event.payload;
+        log('Chat', 'Chat invite received', { chatId, userId, userName });
         if (onChatInvite) {
           onChatInvite(chatId, userId, userName);
         }
@@ -701,6 +721,7 @@ export function useServerEvents({
       `private-chat-message-${serverId}`,
       (event) => {
         const { chatId, userId, userName, message } = event.payload;
+        log('Chat', 'Private chat message', { chatId, userId, userName, message });
         setPrivateChatRooms((prev) => prev.map((room) =>
           room.chatId === chatId
             ? { ...room, messages: [...room.messages, { userId, userName, message, timestamp: new Date() }] }
@@ -713,6 +734,7 @@ export function useServerEvents({
       `chat-user-joined-${serverId}`,
       (event) => {
         const { chatId, userId, userName, icon, flags } = event.payload;
+        log('Chat', 'Chat user joined', { chatId, userId, userName, icon, flags });
         setPrivateChatRooms((prev) => prev.map((room) => {
           if (room.chatId !== chatId) return room;
           if (room.users.some((u) => u.id === userId)) return room;
@@ -725,6 +747,7 @@ export function useServerEvents({
       `chat-user-left-${serverId}`,
       (event) => {
         const { chatId, userId } = event.payload;
+        log('Chat', 'Chat user left', { chatId, userId });
         setPrivateChatRooms((prev) => prev.map((room) =>
           room.chatId === chatId
             ? { ...room, users: room.users.filter((u) => u.id !== userId) }
@@ -737,6 +760,7 @@ export function useServerEvents({
       `chat-subject-${serverId}`,
       (event) => {
         const { chatId, subject } = event.payload;
+        log('Chat', 'Chat subject changed', { chatId, subject });
         setPrivateChatRooms((prev) => prev.map((room) =>
           room.chatId === chatId ? { ...room, subject } : room
         ));

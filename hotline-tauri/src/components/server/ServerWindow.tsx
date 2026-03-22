@@ -24,6 +24,7 @@ import { useServerEvents } from './hooks/useServerEvents';
 import { useServerHandlers } from './hooks/useServerHandlers';
 import { parseUserFlags } from './serverUtils';
 import type { ChatMessage, User, PrivateMessage, FileItem, NewsCategory, NewsArticle, ViewTab, PrivateChatRoom } from './serverTypes';
+import { log, error as logError } from '../../utils/logger';
 
 interface ServerWindowProps {
   serverId: string;
@@ -96,9 +97,9 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
   // Debug: log when bannerUrl changes
   useEffect(() => {
     if (bannerUrl) {
-      console.log('🎨 Banner URL state updated:', bannerUrl);
+      log('Banner', 'Banner URL state updated', bannerUrl);
     } else {
-      console.log('🎨 Banner URL state is null');
+      log('Banner', 'Banner URL state is null');
     }
   }, [bannerUrl]);
 
@@ -119,13 +120,13 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
       try {
         const pending = await invoke<string | null>('get_pending_agreement', { serverId });
         if (pending) {
-          console.log('✅ Found pending agreement on mount, length:', pending.length);
+          log('Agreement', 'Pending agreement found on mount', { length: pending.length });
           setAgreementText(pending);
         } else {
-          console.log('No pending agreement found on mount');
+          log('Agreement', 'No pending agreement on mount');
         }
       } catch (error) {
-        console.error('Failed to check pending agreement:', error);
+        logError('Agreement', 'Failed to check pending agreement', error);
       }
     };
     checkPendingAgreement();
@@ -138,7 +139,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     const unlistenPromise = listen<{ access: number }>(`user-access-${serverId}`, (event) => {
       if (!isActive) return;
       setUserAccess(event.payload.access);
-      console.log('User access permissions received:', '0x' + event.payload.access.toString(16));
+      log('Permissions', 'User access received', '0x' + event.payload.access.toString(16));
     });
 
     return () => {
@@ -335,7 +336,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
         path: currentPath,
       })
         .catch((error) => {
-          console.error('Failed to get file list:', error);
+          logError('Files', 'Failed to get file list', error);
           setIsLoadingFiles(false);
           if (loadingTimeoutRef.current) {
             clearTimeout(loadingTimeoutRef.current);
@@ -367,14 +368,11 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
       invoke<string[]>('get_message_board', {
         serverId,
       }).then((posts) => {
-        console.log('Received board posts:', posts);
-        posts.forEach((post, i) => {
-          console.log(`Post ${i}:`, JSON.stringify(post));
-        });
+        log('Board', 'Board posts received', { count: posts.length });
         setBoardPosts(posts);
         setLoadingBoard(false);
       }).catch((error) => {
-        console.error('Failed to get message board:', error);
+        logError('Board', 'Failed to get message board', error);
         setLoadingBoard(false);
       });
     }
@@ -387,42 +385,38 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     
     const downloadBanner = async () => {
       try {
-        console.log('Starting banner download for server:', serverId);
+        log('Banner', 'Starting banner download for server', serverId);
         // Wait a bit for connection to stabilize
         await new Promise(resolve => setTimeout(resolve, 2000));
         if (cancelled) {
-          console.log('Banner download cancelled (component unmounted)');
+          log('Banner', 'Download cancelled (component unmounted)');
           return;
         }
-        
-        console.log('Requesting banner download from backend...');
+
+        log('Banner', 'Requesting banner download from backend');
         const dataUrl = await invoke<string>('download_banner', { serverId });
-        console.log('Banner data URL received, length:', dataUrl.length);
-        
+        log('Banner', 'Data URL received', { length: dataUrl.length });
+
         if (cancelled) {
-          console.log('Banner download cancelled after receiving data');
+          log('Banner', 'Download cancelled after receiving data');
           return;
         }
-        
-        console.log('✅ Banner downloaded and converted to data URL!');
-        console.log('  Data URL preview:', dataUrl.substring(0, 50) + '...');
-        
+
         if (!cancelled) {
           setBannerUrl(dataUrl);
-          console.log('✅ Banner URL set in state');
+          log('Banner', 'Banner URL set in state');
         }
       } catch (error) {
-        console.error('❌ Banner download failed:', error);
-        // Banner download failure is not critical, just log it
+        logError('Banner', 'Banner download failed', error);
       }
     };
 
     // Only download if we have users (connection is established) and haven't downloaded yet
     if (users.length > 0 && !bannerUrl) {
-      console.log('Conditions met for banner download: users.length =', users.length, 'bannerUrl =', bannerUrl);
+      log('Banner', 'Conditions met for download', { userCount: users.length });
       downloadBanner();
     } else {
-      console.log('Banner download skipped: users.length =', users.length, 'bannerUrl =', bannerUrl);
+      log('Banner', 'Download skipped', { userCount: users.length, hasBanner: !!bannerUrl });
     }
 
     return () => {
@@ -436,12 +430,12 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
       const fetchServerInfo = async () => {
         try {
           const info = await invoke<ServerInfo>('get_server_info', { serverId });
-          console.log('Server info fetched:', info);
+          log('Connection', 'Server info fetched', { name: info.name });
           setServerInfo(info);
           // Update tab title with actual server name
           updateTabTitle(`server-${serverId}`, info.name || serverName);
         } catch (error) {
-          console.error('Failed to fetch server info:', error);
+          logError('Connection', 'Failed to fetch server info', error);
         }
       };
       fetchServerInfo();
@@ -487,7 +481,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
             ]);
             setActiveTab(`pchat-${chatId}`);
           } catch (error) {
-            console.error('Failed to create chat:', error);
+            logError('Chat', 'Failed to create chat', error);
           }
         },
       },
@@ -510,13 +504,14 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
         action: async () => {
           if (confirm(`Are you sure you want to disconnect ${user.userName}? They will be disconnected from the server, but may reconnect.`)) {
             try {
+              log('Users', `Disconnecting user: ${user.userName}`, { userId: user.userId });
               await invoke('disconnect_user', {
                 serverId,
                 userId: user.userId,
                 options: null, // No ban options for now
               });
             } catch (error) {
-              console.error('Failed to disconnect user:', error);
+              logError('Users', 'Failed to disconnect user', error);
             }
           }
         },
@@ -590,22 +585,27 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
   const canDeleteNewsArticles = hasPermission(33);
 
   const handleSendBroadcast = async (msg: string) => {
+    log('Chat', 'Sending broadcast');
     try {
       await invoke('send_broadcast', { serverId, message: msg });
+      log('Chat', 'Broadcast sent');
     } catch (error) {
-      console.error('Failed to send broadcast:', error);
+      logError('Chat', 'Failed to send broadcast', error);
     }
   };
 
   const handlePrivateChatSend = async (chatId: number, message: string) => {
+    log('Chat', 'Sending private chat message', { chatId });
     try {
       await invoke('send_private_chat', { serverId, chatId, message });
+      log('Chat', 'Private chat message sent', { chatId });
     } catch (error) {
-      console.error('Failed to send private chat message:', error);
+      logError('Chat', 'Failed to send private chat message', error);
     }
   };
 
   const handleLeaveChat = async (chatId: number) => {
+    log('Chat', 'Leaving chat', { chatId });
     try {
       await invoke('leave_chat', { serverId, chatId });
       setPrivateChatRooms((prev) => prev.filter((r) => r.chatId !== chatId));
@@ -614,21 +614,24 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
         setActiveTab('chat');
       }
     } catch (error) {
-      console.error('Failed to leave chat:', error);
+      logError('Chat', 'Failed to leave chat', error);
     }
   };
 
   const handleSetChatSubject = async (chatId: number, subject: string) => {
+    log('Chat', 'Setting chat subject', { chatId, subject });
     try {
       await invoke('set_chat_subject', { serverId, chatId, subject });
     } catch (error) {
-      console.error('Failed to set chat subject:', error);
+      logError('Chat', 'Failed to set chat subject', error);
     }
   };
 
   const handleAcceptChatInvite = async (chatId: number) => {
+    log('Chat', 'Accepting chat invite', { chatId });
     try {
       const result = await invoke<{ subject: string; users: { id: number; name: string; icon: number; flags: number }[] }>('join_chat', { serverId, chatId });
+      log('Chat', 'Joined chat', { chatId, subject: result.subject, users: result.users });
       setPrivateChatRooms((prev) => [
         ...prev,
         { chatId, subject: result.subject, users: result.users, messages: [] },
@@ -636,56 +639,61 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
       setChatInvite(null);
       setActiveTab(`pchat-${chatId}`);
     } catch (error) {
-      console.error('Failed to join chat:', error);
+      logError('Chat', 'Failed to join chat', error);
       setChatInvite(null);
     }
   };
 
   const handleRejectChatInvite = async (chatId: number) => {
+    log('Chat', 'Rejecting chat invite', { chatId });
     try {
       await invoke('reject_chat_invite', { serverId, chatId });
     } catch (error) {
-      console.error('Failed to reject chat invite:', error);
+      logError('Chat', 'Failed to reject chat invite', error);
     }
     setChatInvite(null);
   };
 
   const handleCreateFolder = async (name: string) => {
+    log('Files', `Creating folder: ${name}`, { path: currentPath });
     try {
       await invoke('create_folder', { serverId, path: currentPath, name });
       // Refresh file list
       clearFileCachePath(serverId, currentPath);
-      invoke('get_file_list', { serverId, path: currentPath }).catch(console.error);
+      invoke('get_file_list', { serverId, path: currentPath }).catch((err) => logError('Files', 'Failed to refresh file list', err));
     } catch (error) {
-      console.error('Failed to create folder:', error);
+      logError('Files', 'Failed to create folder', error);
       alert(`Failed to create folder: ${error}`);
     }
   };
 
   const handleCreateNewsCategory = async (name: string) => {
+    log('News', `Creating news category: ${name}`, { path: newsPath });
     try {
       await invoke('create_news_category', { serverId, path: newsPath, name });
       // Reload news
       const categories = await invoke<NewsCategory[]>('get_news_categories', { serverId, path: newsPath });
       setNewsCategories(categories);
     } catch (error) {
-      console.error('Failed to create news category:', error);
+      logError('News', 'Failed to create news category', error);
       alert(`Failed to create category: ${error}`);
     }
   };
 
   const handleCreateNewsFolder = async (name: string) => {
+    log('News', `Creating news folder: ${name}`, { path: newsPath });
     try {
       await invoke('create_news_folder', { serverId, path: newsPath, name });
       const categories = await invoke<NewsCategory[]>('get_news_categories', { serverId, path: newsPath });
       setNewsCategories(categories);
     } catch (error) {
-      console.error('Failed to create news folder:', error);
+      logError('News', 'Failed to create news folder', error);
       alert(`Failed to create folder: ${error}`);
     }
   };
 
   const handleDeleteNewsItem = async (itemPath: string[]) => {
+    log('News', 'Deleting news item', { path: itemPath });
     try {
       await invoke('delete_news_item', { serverId, path: itemPath });
       // Reload current news path
@@ -697,12 +705,13 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
         setNewsArticles(articles);
       }
     } catch (error) {
-      console.error('Failed to delete news item:', error);
+      logError('News', 'Failed to delete news item', error);
       alert(`Failed to delete: ${error}`);
     }
   };
 
   const handleDeleteNewsArticle = async (articleId: number, articlePath: string[]) => {
+    log('News', 'Deleting news article', { articleId, path: articlePath });
     try {
       await invoke('delete_news_article', { serverId, path: articlePath, articleId, recursive: false });
       const articles = await invoke<NewsArticle[]>('get_news_articles', { serverId, path: newsPath });
@@ -710,7 +719,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
       setSelectedArticle(null);
       setArticleContent('');
     } catch (error) {
-      console.error('Failed to delete news article:', error);
+      logError('News', 'Failed to delete news article', error);
       alert(`Failed to delete article: ${error}`);
     }
   };
@@ -755,26 +764,31 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
       // Empty path = root, load categories
       // Non-empty path = inside a category, load articles
       const loadNews = async () => {
+        log('News', 'Loading news for path', newsPath);
         try {
           if (newsPath.length === 0) {
             // Root path - load categories only
+            log('News', 'Fetching categories at root path');
             const categories = await invoke<NewsCategory[]>('get_news_categories', {
               serverId,
               path: newsPath,
             });
+            log('News', 'Categories received', { count: categories.length });
             setNewsCategories(categories);
             setNewsArticles([]);
           } else {
             // Inside a category - load articles only
+            log('News', 'Fetching articles for path', newsPath);
             const articles = await invoke<NewsArticle[]>('get_news_articles', {
               serverId,
               path: newsPath,
             });
+            log('News', 'Articles received', { count: articles.length });
             setNewsCategories([]);
             setNewsArticles(articles);
           }
         } catch (error) {
-          console.error('Failed to load news:', error);
+          logError('News', 'Failed to load news', error);
           setNewsCategories([]);
           setNewsArticles([]);
         } finally {
@@ -1049,7 +1063,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
                   serverId,
                   path: currentPath,
                 }).catch((error) => {
-                  console.error('Failed to refresh file list:', error);
+                  logError('Files', 'Failed to refresh file list', error);
                 });
               }}
               getAllCachedFiles={() => {

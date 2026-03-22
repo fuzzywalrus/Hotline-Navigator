@@ -3,6 +3,7 @@ import { openPath } from '@tauri-apps/plugin-opener';
 import type { NewsArticle } from '../serverTypes';
 import { useSound } from '../../../hooks/useSound';
 import { showNotification, useNotificationStore } from '../../../stores/notificationStore';
+import { log, error as logError } from '../../../utils/logger';
 
 interface UseServerHandlersProps {
   serverId: string;
@@ -67,11 +68,12 @@ export function useServerHandlers({
 
       // Don't add message locally - wait for server echo to avoid duplicates
       // The server will echo the message back as a ChatMessage event
+      log('Chat', 'Message sent');
       setMessage('');
-    } catch (error) {
-      console.error('Failed to send message:', error);
+    } catch (err) {
+      logError('Chat', 'Failed to send message', err);
       showNotification.error(
-        `Failed to send message: ${error}`,
+        `Failed to send message: ${err}`,
         'Message Error',
         undefined,
         serverName
@@ -98,9 +100,10 @@ export function useServerHandlers({
       });
       setBoardPosts(posts);
 
+      log('Board', 'Board message posted');
       setBoardMessage('');
     } catch (error) {
-      console.error('Failed to post to board:', error);
+      logError('Board', 'Failed to post to board', error);
       showNotification.error(
         `Failed to post to board: ${error}`,
         'Post Error',
@@ -113,6 +116,7 @@ export function useServerHandlers({
   };
 
   const handleDownloadFile = async (fileName: string, fileSize: number) => {
+    log('Transfer', `Download initiated: ${fileName}`, { fileSize, path: currentPath });
     try {
       setDownloadProgress((prev) => new Map(prev).set(fileName, 0));
 
@@ -149,7 +153,7 @@ export function useServerHandlers({
             label: 'View File',
             onClick: () => {
               openPath(filePath).catch((err) =>
-                console.error('Failed to open file:', err)
+                logError('Files', 'Failed to open file', err)
               );
             },
           },
@@ -164,7 +168,7 @@ export function useServerHandlers({
       }
       sounds.playFileTransferCompleteSound();
     } catch (error) {
-      console.error('Download failed:', error);
+      logError('Transfer', 'Download failed', error);
       sounds.playErrorSound();
 
       setDownloadProgress((prev) => {
@@ -183,6 +187,7 @@ export function useServerHandlers({
   };
 
   const handleUploadFile = async (file: File) => {
+    log('Transfer', `Upload initiated: ${file.name}`, { size: file.size, path: currentPath });
     try {
       const fileName = file.name;
       setUploadProgress((prev) => new Map(prev).set(fileName, 0));
@@ -217,7 +222,7 @@ export function useServerHandlers({
       );
       sounds.playFileTransferCompleteSound();
     } catch (error) {
-      console.error('Upload failed:', error);
+      logError('Transfer', 'Upload failed', error);
       sounds.playErrorSound();
 
       setUploadProgress((prev) => {
@@ -236,12 +241,14 @@ export function useServerHandlers({
   };
 
   const handleSendPrivateMessage = async (userId: number, message: string) => {
+    log('Chat', 'Sending private message', { userId });
     try {
       await invoke('send_private_message', {
         serverId,
         userId,
         message,
       });
+      log('Chat', 'Private message sent', { userId });
 
       setPrivateMessageHistory((prev) => {
         const newHistory = new Map(prev);
@@ -257,7 +264,7 @@ export function useServerHandlers({
         return newHistory;
       });
     } catch (error) {
-      console.error('Failed to send private message:', error);
+      logError('Chat', 'Failed to send private message', error);
       throw error;
     }
   };
@@ -265,9 +272,10 @@ export function useServerHandlers({
   const handleAcceptAgreement = async () => {
     try {
       await invoke('accept_agreement', { serverId });
+      log('Agreement', 'Agreement accepted');
       setAgreementText(null);
     } catch (error) {
-      console.error('Failed to accept agreement:', error);
+      logError('Agreement', 'Failed to accept agreement', error);
       showNotification.error(
         `Failed to accept agreement: ${error}`,
         'Agreement Error',
@@ -283,11 +291,13 @@ export function useServerHandlers({
   };
 
   const handleDisconnect = async () => {
+    log('Connection', 'Disconnecting from server');
     try {
       await invoke('disconnect_from_server', { serverId });
+      log('Connection', 'Disconnected from server');
       onClose();
     } catch (error) {
-      console.error('Failed to disconnect:', error);
+      logError('Connection', 'Failed to disconnect', error);
     }
   };
 
@@ -302,6 +312,7 @@ export function useServerHandlers({
     e.preventDefault();
     if (!composerTitle.trim() || !composerBody.trim() || postingNews) return;
 
+    log('News', 'Posting news article', { path: newsPath, title: composerTitle.trim(), parentId });
     setPostingNews(true);
     try {
       await invoke('post_news_article', {
@@ -311,6 +322,7 @@ export function useServerHandlers({
         text: composerBody.trim(),
         parentId,
       });
+      log('News', 'News article posted');
 
       setComposerTitle('');
       setComposerBody('');
@@ -320,9 +332,10 @@ export function useServerHandlers({
         serverId,
         path: newsPath,
       });
+      log('News', 'Articles refreshed after post', { count: articles.length });
       setNewsArticles(articles);
     } catch (error) {
-      console.error('Failed to post news:', error);
+      logError('News', 'Failed to post news', error);
       const errorMsg = String(error);
       if (errorMsg.includes('Access denied') || errorMsg.toLowerCase().includes('permission')) {
         showNotification.error(
@@ -345,12 +358,14 @@ export function useServerHandlers({
   };
 
   const handleNavigateNews = (category: any) => {
+    log('News', 'Navigating to category', category);
     if (category.type === 2 || category.type === 3) {
       setNewsPath(category.path);
     }
   };
 
   const handleNewsBack = (newsPath: string[]) => {
+    log('News', 'Navigating back from path', newsPath);
     if (newsPath.length > 0) {
       setNewsPath(newsPath.slice(0, -1));
     }
@@ -361,6 +376,7 @@ export function useServerHandlers({
     setSelectedArticle: React.Dispatch<React.SetStateAction<NewsArticle | null>>,
     setArticleContent: React.Dispatch<React.SetStateAction<string>>
   ) => {
+    log('News', 'Selecting article', { id: article.id, title: article.title });
     setSelectedArticle(article);
     setArticleContent('Loading...');
 
@@ -370,9 +386,10 @@ export function useServerHandlers({
         articleId: article.id,
         path: article.path,
       });
+      log('News', 'Article content received', { length: content.length });
       setArticleContent(content);
     } catch (error) {
-      console.error('Failed to get article content:', error);
+      logError('News', 'Failed to get article content', error);
       setArticleContent(`Error loading article: ${error}`);
     }
   };
