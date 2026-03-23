@@ -25,6 +25,7 @@ import { useServerHandlers } from './hooks/useServerHandlers';
 import { parseUserFlags } from './serverUtils';
 import type { ChatMessage, User, PrivateMessage, FileItem, NewsCategory, NewsArticle, ViewTab, PrivateChatRoom } from './serverTypes';
 import { log, error as logError } from '../../utils/logger';
+import { useChatHistoryStore } from '../../stores/chatHistoryStore';
 
 interface ServerWindowProps {
   serverId: string;
@@ -83,6 +84,25 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     tabs.find(t => t.type === 'server' && t.serverId === serverId)?.initialFilePath
   );
   const [pendingFilePath, setPendingFilePath] = useState<string[] | undefined>(initialFilePath.current);
+
+  // Load chat history from encrypted storage on mount
+  useEffect(() => {
+    if (!usePreferencesStore.getState().enableChatHistory) return;
+    useChatHistoryStore.getState().loadHistory(serverId).then((history) => {
+      if (history.length > 0) {
+        log('Chat', `Loaded ${history.length} messages from history`);
+        setMessages(history.map((m) => ({
+          userId: m.userId,
+          userName: m.userName,
+          message: m.message,
+          timestamp: new Date(m.timestamp),
+          isMention: m.isMention,
+          isAdmin: m.isAdmin,
+          type: m.type as any,
+        })));
+      }
+    });
+  }, [serverId]);
 
   // Navigate to file path once agreement is cleared and connection is ready
   useEffect(() => {

@@ -45,6 +45,12 @@ interface PreferencesState {
   showRemoteBanners: boolean;
   setShowRemoteBanners: (enabled: boolean) => void;
 
+  // Chat history
+  enableChatHistory: boolean;
+  setEnableChatHistory: (enabled: boolean) => void;
+  showTimestamps: boolean;
+  setShowTimestamps: (enabled: boolean) => void;
+
   // Connection preferences
   autoDetectTls: boolean;
   setAutoDetectTls: (enabled: boolean) => void;
@@ -129,6 +135,12 @@ export const usePreferencesStore = create<PreferencesState>()(
       setUseRemoteIcons: (useRemoteIcons) => set({ useRemoteIcons }),
       showRemoteBanners: true,
       setShowRemoteBanners: (showRemoteBanners) => set({ showRemoteBanners }),
+
+      // Chat history
+      enableChatHistory: true,
+      setEnableChatHistory: (enableChatHistory) => set({ enableChatHistory }),
+      showTimestamps: true,
+      setShowTimestamps: (showTimestamps) => set({ showTimestamps }),
 
       // Connection preferences
       autoDetectTls: false,

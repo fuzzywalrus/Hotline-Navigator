@@ -8,6 +8,7 @@ import { usePreferencesStore } from '../../../stores/preferencesStore';
 import { showNotification, useNotificationStore } from '../../../stores/notificationStore';
 import { containsMention, containsWatchWord } from '../../../utils/mentions';
 import { log, error as logError } from '../../../utils/logger';
+import { useChatHistoryStore } from '../../../stores/chatHistoryStore';
 
 interface UseServerEventsProps {
   serverId: string;
@@ -118,6 +119,18 @@ export function useServerEvents({
       setMessages((prev) => [...prev, messageData]);
       if (!isMuted) soundsRef.current.playChatSound();
 
+      // Persist to encrypted chat history
+      if (usePreferencesStore.getState().enableChatHistory) {
+        useChatHistoryStore.getState().addMessage(serverId, serverName, {
+          userId: messageData.userId,
+          userName: messageData.userName,
+          message: messageData.message,
+          timestamp: messageData.timestamp.toISOString(),
+          isMention: messageData.isMention,
+          isAdmin: messageData.isAdmin,
+        });
+      }
+
       if (isMuted) return;
 
       // Always log mentions/watch words to history; show toast only when tab is not active (and popup enabled)
@@ -164,16 +177,26 @@ export function useServerEvents({
 
       const broadcastMsg = event.payload.message;
       log('Chat', 'Broadcast message received', broadcastMsg);
+      const now = new Date();
       setMessages((prev) => [
         ...prev,
         {
           userId: 0,
           userName: 'Server',
           message: broadcastMsg,
-          timestamp: new Date(),
+          timestamp: now,
         },
       ]);
       soundsRef.current.playServerMessageSound();
+
+      if (usePreferencesStore.getState().enableChatHistory) {
+        useChatHistoryStore.getState().addMessage(serverId, serverName, {
+          userId: 0,
+          userName: 'Server',
+          message: broadcastMsg,
+          timestamp: now.toISOString(),
+        });
+      }
     });
 
     return () => {
@@ -298,14 +321,25 @@ export function useServerEvents({
         });
         
         // Add leave message to chat (always show leave messages)
+        const leaveTime = new Date();
         setMessages((prevMessages) => [...prevMessages, {
           userId: event.payload.userId,
           userName: userName,
           message: `${userName} left`,
-          timestamp: new Date(),
+          timestamp: leaveTime,
           type: 'left',
         }]);
-        
+
+        if (usePreferencesStore.getState().enableChatHistory) {
+          useChatHistoryStore.getState().addMessage(serverId, serverName, {
+            userId: event.payload.userId,
+            userName,
+            message: `${userName} left`,
+            timestamp: leaveTime.toISOString(),
+            type: 'left',
+          });
+        }
+
         soundsRef.current.playLeaveSound();
       }
     );
@@ -354,14 +388,25 @@ export function useServerEvents({
             usersRef.current = updated;
             
             // Show join message for new users (Swift client shows join messages unconditionally)
+            const joinTime = new Date();
             setMessages((prevMessages) => [...prevMessages, {
               userId: event.payload.userId,
               userName: event.payload.userName,
               message: `${event.payload.userName} joined`,
-              timestamp: new Date(),
+              timestamp: joinTime,
               type: 'joined',
             }]);
-            
+
+            if (usePreferencesStore.getState().enableChatHistory) {
+              useChatHistoryStore.getState().addMessage(serverId, serverName, {
+                userId: event.payload.userId,
+                userName: event.payload.userName,
+                message: `${event.payload.userName} joined`,
+                timestamp: joinTime.toISOString(),
+                type: 'joined',
+              });
+            }
+
             // Only play sound if users list was not empty (to avoid sound spam during initial load)
             if (prevLength > 0) {
               soundsRef.current.playJoinSound();

@@ -5,19 +5,33 @@ import { useAppStore } from '../../stores/appStore';
 import { showNotification } from '../../stores/notificationStore';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import type { Bookmark } from '../../types';
+import { useChatHistoryStore } from '../../stores/chatHistoryStore';
+
+interface ChatHistoryMeta {
+  serverName: string;
+  messageCount: number;
+  lastUpdated: string;
+}
 
 export default function GeneralSettingsTab() {
-  const { username, setUsername, enablePrivateMessaging, setEnablePrivateMessaging, darkMode, setDarkMode, downloadFolder, setDownloadFolder, showServerBanner, setShowServerBanner, clickableLinks, setClickableLinks, showInlineImages, setShowInlineImages, renderMarkdown, setRenderMarkdown, renderMarkdownAgreements, setRenderMarkdownAgreements, useRemoteIcons, setUseRemoteIcons, showRemoteBanners, setShowRemoteBanners, autoDetectTls, setAutoDetectTls, mentionPopup, setMentionPopup, mutedUsers, addMutedUser, removeMutedUser, watchWords, addWatchWord, removeWatchWord } = usePreferencesStore();
+  const { username, setUsername, enablePrivateMessaging, setEnablePrivateMessaging, darkMode, setDarkMode, downloadFolder, setDownloadFolder, showServerBanner, setShowServerBanner, clickableLinks, setClickableLinks, showInlineImages, setShowInlineImages, renderMarkdown, setRenderMarkdown, renderMarkdownAgreements, setRenderMarkdownAgreements, useRemoteIcons, setUseRemoteIcons, showRemoteBanners, setShowRemoteBanners, autoDetectTls, setAutoDetectTls, mentionPopup, setMentionPopup, mutedUsers, addMutedUser, removeMutedUser, watchWords, addWatchWord, removeWatchWord, enableChatHistory, setEnableChatHistory, showTimestamps, setShowTimestamps } = usePreferencesStore();
   const { setBookmarks } = useAppStore();
   const isMobile = useIsMobile();
   const [localUsername, setLocalUsername] = useState(username);
   const [isAddingDefaults, setIsAddingDefaults] = useState(false);
   const [muteInput, setMuteInput] = useState('');
   const [watchInput, setWatchInput] = useState('');
+  const [chatHistoryServers, setChatHistoryServers] = useState<Record<string, ChatHistoryMeta>>({});
+  const [clearingHistory, setClearingHistory] = useState<string | null>(null);
 
   useEffect(() => {
     setLocalUsername(username);
   }, [username]);
+
+  // Load chat history metadata
+  useEffect(() => {
+    useChatHistoryStore.getState().getServersWithHistory().then(setChatHistoryServers);
+  }, []);
 
   const handleSave = async () => {
     const newUsername = localUsername.trim() || 'guest';
@@ -121,6 +135,22 @@ export default function GeneralSettingsTab() {
       </div>
 
       <div>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Show Timestamps
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Display timestamps next to chat messages.
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            checked={showTimestamps}
+            onChange={(e) => setShowTimestamps(e.target.checked)}
+            className="ml-4 toggle toggle-primary"
+          />
+        </div>
         <div className="flex items-center justify-between">
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -451,6 +481,83 @@ export default function GeneralSettingsTab() {
         >
           {isAddingDefaults ? 'Adding...' : 'Re-add Default Servers & Trackers'}
         </button>
+      </div>
+
+      {/* Chat History */}
+      <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+        <div className="flex items-center justify-between mb-2">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            Chat History
+          </label>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={enableChatHistory}
+              onChange={(e) => setEnableChatHistory(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:after:border-gray-500 peer-checked:bg-blue-600"></div>
+          </label>
+        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+          {enableChatHistory
+            ? 'Chat messages are stored encrypted on your device while connected to servers.'
+            : 'Chat history is disabled. Messages are not saved between sessions.'}
+        </p>
+
+        {enableChatHistory && Object.keys(chatHistoryServers).length > 0 ? (
+          <div className="space-y-2 mb-4">
+            {Object.entries(chatHistoryServers).map(([serverId, meta]) => (
+              <div
+                key={serverId}
+                className="flex items-center justify-between bg-gray-50 dark:bg-gray-800 rounded-md px-3 py-2"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-gray-900 dark:text-gray-100 truncate">
+                    {meta.serverName || serverId}
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    {meta.messageCount} {meta.messageCount === 1 ? 'message' : 'messages'}
+                  </div>
+                </div>
+                <button
+                  onClick={async () => {
+                    setClearingHistory(serverId);
+                    await useChatHistoryStore.getState().clearHistory(serverId);
+                    const updated = { ...chatHistoryServers };
+                    delete updated[serverId];
+                    setChatHistoryServers(updated);
+                    setClearingHistory(null);
+                  }}
+                  disabled={clearingHistory === serverId}
+                  className="ml-3 px-3 py-1 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors disabled:opacity-50"
+                >
+                  {clearingHistory === serverId ? 'Clearing...' : 'Clear'}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : enableChatHistory ? (
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-4 italic">
+            No chat history stored.
+          </p>
+        ) : null}
+
+        {enableChatHistory && Object.keys(chatHistoryServers).length > 0 && (
+          <button
+            onClick={async () => {
+              if (!window.confirm('Are you sure you want to clear all chat history? This cannot be undone.')) return;
+              setClearingHistory('__all');
+              await useChatHistoryStore.getState().clearAllHistory();
+              setChatHistoryServers({});
+              setClearingHistory(null);
+            }}
+            disabled={clearingHistory === '__all'}
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-md font-medium disabled:cursor-not-allowed transition-colors"
+          >
+            {clearingHistory === '__all' ? 'Clearing...' : 'Clear All Chat History'}
+          </button>
+        )}
       </div>
     </div>
   );

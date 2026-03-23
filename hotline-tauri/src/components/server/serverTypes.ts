@@ -57,5 +57,16 @@ export interface PrivateChatRoom {
   messages: ChatMessage[];
 }
 
+/// JSON-safe chat message for encrypted storage (timestamps as ISO strings)
+export interface StoredChatMessage {
+  userId: number;
+  userName: string;
+  message: string;
+  timestamp: string; // ISO 8601
+  isMention?: boolean;
+  isAdmin?: boolean;
+  type?: string; // 'joined' | 'left' etc.
+}
+
 export type ViewTab = 'chat' | 'board' | 'news' | 'files' | `pchat-${number}`;
 

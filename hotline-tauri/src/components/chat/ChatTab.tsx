@@ -47,7 +47,11 @@ export default function ChatTab({
   const isAtBottomRef = useRef(true);
   const [broadcastMode, setBroadcastMode] = useState(false);
   const [broadcastMessage, setBroadcastMessage] = useState('');
-  const { clickableLinks } = usePreferencesStore();
+  const { clickableLinks, showTimestamps } = usePreferencesStore();
+
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
 
   const scrollToBottom = (smooth = true) => {
     messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'instant' });
@@ -112,6 +116,9 @@ export default function ChatTab({
                     <div className="flex-1">
                       <div className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-1">
                         Server Broadcast
+                        {showTimestamps && (
+                          <span className="font-normal text-blue-500 dark:text-blue-400 ml-2">{formatTime(msg.timestamp)}</span>
+                        )}
                       </div>
                       <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                         {msg.message}
@@ -127,6 +134,9 @@ export default function ChatTab({
               const uniqueKey = `${msg.type}-${msg.userId}-${msg.timestamp.getTime()}-${index}`;
               return (
                 <div key={uniqueKey} className="text-sm text-center my-1">
+                  {showTimestamps && (
+                    <span className="text-xs text-gray-400 dark:text-gray-500 mr-1">{formatTime(msg.timestamp)}</span>
+                  )}
                   <span className="italic text-gray-500 dark:text-gray-400">
                     {msg.message}
                   </span>
@@ -147,6 +157,9 @@ export default function ChatTab({
                     : ''
                 }`}
               >
+                {showTimestamps && (
+                  <span className="text-xs text-gray-400 dark:text-gray-500 mr-1">{formatTime(msg.timestamp)}</span>
+                )}
                 <span
                   className={`font-semibold ${
                     isOwnMessage
