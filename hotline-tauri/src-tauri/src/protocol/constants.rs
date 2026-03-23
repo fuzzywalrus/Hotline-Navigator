@@ -209,6 +209,8 @@ pub enum TransactionType {
     NotifyUserDelete = 302,
     GetClientInfoText = 303,
     SetClientUserInfo = 304,
+    ListUsers = 348,
+    UpdateUser = 349,
     NewUser = 350,
     DeleteUser = 351,
     GetUser = 352,
@@ -223,6 +225,7 @@ pub enum TransactionType {
     GetNewsArticleData = 400,
     PostNewsArticle = 410,
     DeleteNewsArticle = 411,
+    KeepAlive = 500,
     Unknown = 0xFFFF,
 }
 
@@ -271,6 +274,8 @@ impl From<u16> for TransactionType {
             302 => Self::NotifyUserDelete,
             303 => Self::GetClientInfoText,
             304 => Self::SetClientUserInfo,
+            348 => Self::ListUsers,
+            349 => Self::UpdateUser,
             350 => Self::NewUser,
             351 => Self::DeleteUser,
             352 => Self::GetUser,
@@ -285,6 +290,7 @@ impl From<u16> for TransactionType {
             400 => Self::GetNewsArticleData,
             410 => Self::PostNewsArticle,
             411 => Self::DeleteNewsArticle,
+            500 => Self::KeepAlive,
             _ => Self::Unknown,
         }
     }

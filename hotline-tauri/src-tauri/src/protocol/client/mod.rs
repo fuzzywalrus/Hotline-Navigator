@@ -96,6 +96,7 @@ pub enum HotlineEvent {
     ChatUserJoined { chat_id: u32, user_id: u16, user_name: String, icon: u16, flags: u16 },
     ChatUserLeft { chat_id: u32, user_id: u16 },
     ChatSubjectChanged { chat_id: u32, subject: String },
+    ServerBannerUpdate { banner_type: Option<u16>, url: Option<String> },
     StatusChanged(ConnectionStatus),
 }
 
@@ -1117,6 +1118,16 @@ impl HotlineClient {
 
                 let _ = event_tx.send(HotlineEvent::ChatSubjectChanged { chat_id, subject });
             }
+            TransactionType::ServerBanner => {
+                let banner_type = transaction
+                    .get_field(FieldType::ServerBannerType)
+                    .and_then(|f| f.to_u16().ok());
+                let url = transaction
+                    .get_field(FieldType::ServerBannerUrl)
+                    .and_then(|f| f.to_string().ok());
+
+                let _ = event_tx.send(HotlineEvent::ServerBannerUpdate { banner_type, url });
+            }
             _ => {
                 println!("Unhandled server event: {:?}", transaction.transaction_type);
             }
@@ -1139,10 +1150,11 @@ impl HotlineClient {
                     break;
                 }
 
-                // Send GetUserNameList as keep-alive (works for all server versions)
+                // Send KeepAlive (500) as keep-alive. Falls back to GetUserNameList
+                // if the server doesn't support KeepAlive (older servers).
                 let transaction = Transaction::new(
                     transaction_counter.fetch_add(1, Ordering::SeqCst),
-                    TransactionType::GetUserNameList,
+                    TransactionType::KeepAlive,
                 );
 
                 let mut write_guard = hope_writer.lock().await;
@@ -1151,7 +1163,7 @@ impl HotlineClient {
                         println!("Keep-alive failed, connection lost");
                         break;
                     }
-                    println!("Keep-alive sent (GetUserNameList)");
+                    println!("Keep-alive sent");
                 } else {
                     break;
                 }

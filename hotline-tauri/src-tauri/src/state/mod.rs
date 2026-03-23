@@ -407,6 +407,13 @@ impl AppState {
                         });
                         let _ = app_handle.emit(&format!("chat-subject-{}", server_id_clone), payload);
                     }
+                    HotlineEvent::ServerBannerUpdate { banner_type, url } => {
+                        let payload = serde_json::json!({
+                            "bannerType": banner_type,
+                            "url": url,
+                        });
+                        let _ = app_handle.emit(&format!("server-banner-{}", server_id_clone), payload);
+                    }
                     HotlineEvent::StatusChanged(status) => {
                         let payload = serde_json::json!({
                             "status": status,

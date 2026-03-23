@@ -122,9 +122,349 @@ impl HotlineClient {
         Ok(info)
     }
 
-    /// Get current user access permissions
+    /// Get current user access permissions (local cache)
     pub async fn get_user_access(&self) -> u64 {
         let access_guard = self.user_access.lock().await;
         *access_guard
     }
+
+    /// Request own access privileges from the server (transaction 354)
+    pub async fn request_user_access(&self) -> Result<Vec<u8>, String> {
+        let transaction = Transaction::new(self.next_transaction_id(), TransactionType::UserAccess);
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        self.send_transaction(&transaction).await?;
+
+        match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(reply)) => {
+                if reply.error_code != 0 {
+                    let server_text = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok());
+                    let error_msg = resolve_error_message(reply.error_code, server_text);
+                    return Err(format!("User access request failed: {}", error_msg));
+                }
+                let access_data = reply
+                    .get_field(FieldType::UserAccess)
+                    .map(|f| f.data.clone())
+                    .unwrap_or_default();
+                Ok(access_data)
+            }
+            Ok(None) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Channel closed while waiting for user access reply".to_string())
+            }
+            Err(_) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Timeout waiting for user access reply".to_string())
+            }
+        }
+    }
+
+    /// List all user accounts on the server (admin function, transaction 348)
+    pub async fn list_user_accounts(&self) -> Result<Vec<UserAccountInfo>, String> {
+        let transaction = Transaction::new(self.next_transaction_id(), TransactionType::ListUsers);
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        self.send_transaction(&transaction).await?;
+
+        match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(reply)) => {
+                if reply.error_code != 0 {
+                    let server_text = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok());
+                    let error_msg = resolve_error_message(reply.error_code, server_text);
+                    return Err(format!("List users failed: {}", error_msg));
+                }
+                // Parse user account data from reply fields
+                let mut accounts = Vec::new();
+                for field in &reply.fields {
+                    if field.field_type == FieldType::Data && field.data.len() >= 4 {
+                        // Account data: 2 bytes login length + login + 2 bytes name length + name
+                        let data = &field.data;
+                        let mut offset = 0;
+                        if offset + 2 > data.len() { continue; }
+                        let login_len = u16::from_be_bytes([data[offset], data[offset + 1]]) as usize;
+                        offset += 2;
+                        if offset + login_len > data.len() { continue; }
+                        let login = String::from_utf8_lossy(&data[offset..offset + login_len]).to_string();
+                        offset += login_len;
+                        let name = if offset + 2 <= data.len() {
+                            let name_len = u16::from_be_bytes([data[offset], data[offset + 1]]) as usize;
+                            offset += 2;
+                            if offset + name_len <= data.len() {
+                                String::from_utf8_lossy(&data[offset..offset + name_len]).to_string()
+                            } else {
+                                String::new()
+                            }
+                        } else {
+                            String::new()
+                        };
+                        accounts.push(UserAccountInfo { login, name });
+                    }
+                }
+                Ok(accounts)
+            }
+            Ok(None) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Channel closed while waiting for list users reply".to_string())
+            }
+            Err(_) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Timeout waiting for list users reply".to_string())
+            }
+        }
+    }
+
+    /// Update an existing user account (admin function, transaction 349)
+    pub async fn update_user_account(
+        &self,
+        login: &str,
+        name: Option<&str>,
+        password: Option<&str>,
+        access: Option<&[u8]>,
+    ) -> Result<(), String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::UpdateUser);
+        transaction.add_field(TransactionField::from_string(FieldType::UserLogin, login));
+
+        if let Some(n) = name {
+            transaction.add_field(TransactionField::from_string(FieldType::UserName, n));
+        }
+        if let Some(p) = password {
+            transaction.add_field(TransactionField::from_string(FieldType::UserPassword, p));
+        }
+        if let Some(a) = access {
+            transaction.add_field(TransactionField::new(FieldType::UserAccess, a.to_vec()));
+        }
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        self.send_transaction(&transaction).await?;
+
+        match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(reply)) => {
+                if reply.error_code != 0 {
+                    let server_text = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok());
+                    let error_msg = resolve_error_message(reply.error_code, server_text);
+                    return Err(format!("Update user failed: {}", error_msg));
+                }
+                Ok(())
+            }
+            Ok(None) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Channel closed while waiting for update user reply".to_string())
+            }
+            Err(_) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Timeout waiting for update user reply".to_string())
+            }
+        }
+    }
+
+    /// Create a new user account (admin function, transaction 350)
+    pub async fn create_user_account(
+        &self,
+        login: &str,
+        name: &str,
+        password: &str,
+        access: &[u8],
+    ) -> Result<(), String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::NewUser);
+        transaction.add_field(TransactionField::from_string(FieldType::UserLogin, login));
+        transaction.add_field(TransactionField::from_string(FieldType::UserName, name));
+        transaction.add_field(TransactionField::from_string(FieldType::UserPassword, password));
+        transaction.add_field(TransactionField::new(FieldType::UserAccess, access.to_vec()));
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        self.send_transaction(&transaction).await?;
+
+        match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(reply)) => {
+                if reply.error_code != 0 {
+                    let server_text = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok());
+                    let error_msg = resolve_error_message(reply.error_code, server_text);
+                    return Err(format!("Create user failed: {}", error_msg));
+                }
+                Ok(())
+            }
+            Ok(None) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Channel closed while waiting for create user reply".to_string())
+            }
+            Err(_) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Timeout waiting for create user reply".to_string())
+            }
+        }
+    }
+
+    /// Delete a user account (admin function, transaction 351)
+    pub async fn delete_user_account(&self, login: &str) -> Result<(), String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::DeleteUser);
+        transaction.add_field(TransactionField::from_string(FieldType::UserLogin, login));
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        self.send_transaction(&transaction).await?;
+
+        match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(reply)) => {
+                if reply.error_code != 0 {
+                    let server_text = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok());
+                    let error_msg = resolve_error_message(reply.error_code, server_text);
+                    return Err(format!("Delete user failed: {}", error_msg));
+                }
+                Ok(())
+            }
+            Ok(None) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Channel closed while waiting for delete user reply".to_string())
+            }
+            Err(_) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Timeout waiting for delete user reply".to_string())
+            }
+        }
+    }
+
+    /// Get a user account's details (admin function, transaction 352)
+    pub async fn get_user_account(&self, login: &str) -> Result<UserAccountDetails, String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::GetUser);
+        transaction.add_field(TransactionField::from_string(FieldType::UserLogin, login));
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        self.send_transaction(&transaction).await?;
+
+        match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(reply)) => {
+                if reply.error_code != 0 {
+                    let server_text = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok());
+                    let error_msg = resolve_error_message(reply.error_code, server_text);
+                    return Err(format!("Get user failed: {}", error_msg));
+                }
+                let name = reply.get_field(FieldType::UserName).and_then(|f| f.to_string().ok()).unwrap_or_default();
+                let login = reply.get_field(FieldType::UserLogin).and_then(|f| f.to_string().ok()).unwrap_or_default();
+                let access = reply.get_field(FieldType::UserAccess).map(|f| f.data.clone()).unwrap_or_default();
+                Ok(UserAccountDetails { login, name, access })
+            }
+            Ok(None) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Channel closed while waiting for get user reply".to_string())
+            }
+            Err(_) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Timeout waiting for get user reply".to_string())
+            }
+        }
+    }
+
+    /// Set a user account's details (admin function, transaction 353)
+    pub async fn set_user_account(
+        &self,
+        login: &str,
+        name: Option<&str>,
+        password: Option<&str>,
+        access: Option<&[u8]>,
+    ) -> Result<(), String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::SetUser);
+        transaction.add_field(TransactionField::from_string(FieldType::UserLogin, login));
+
+        if let Some(n) = name {
+            transaction.add_field(TransactionField::from_string(FieldType::UserName, n));
+        }
+        if let Some(p) = password {
+            transaction.add_field(TransactionField::from_string(FieldType::UserPassword, p));
+        }
+        if let Some(a) = access {
+            transaction.add_field(TransactionField::new(FieldType::UserAccess, a.to_vec()));
+        }
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        self.send_transaction(&transaction).await?;
+
+        match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(reply)) => {
+                if reply.error_code != 0 {
+                    let server_text = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok());
+                    let error_msg = resolve_error_message(reply.error_code, server_text);
+                    return Err(format!("Set user failed: {}", error_msg));
+                }
+                Ok(())
+            }
+            Ok(None) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Channel closed while waiting for set user reply".to_string())
+            }
+            Err(_) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Timeout waiting for set user reply".to_string())
+            }
+        }
+    }
+}
+
+/// Basic user account info from ListUsers
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct UserAccountInfo {
+    pub login: String,
+    pub name: String,
+}
+
+/// Detailed user account info from GetUser
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct UserAccountDetails {
+    pub login: String,
+    pub name: String,
+    pub access: Vec<u8>,
 }

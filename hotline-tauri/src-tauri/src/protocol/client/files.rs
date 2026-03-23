@@ -1076,6 +1076,193 @@ impl HotlineClient {
             }
         }
     }
+
+    /// Create a file alias (shortcut) on the server
+    pub async fn make_file_alias(&self, path: Vec<String>, file_name: String, new_path: Vec<String>) -> Result<(), String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::MakeFileAlias);
+        transaction.add_field(TransactionField::from_string(FieldType::FileName, &file_name));
+
+        if !path.is_empty() {
+            if let Some(path_data) = encode_file_path(&path) {
+                transaction.add_field(TransactionField::new(FieldType::FilePath, path_data));
+            }
+        }
+
+        if let Some(new_path_data) = encode_file_path(&new_path) {
+            transaction.add_field(TransactionField::new(FieldType::FileNewPath, new_path_data));
+        }
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        self.send_transaction(&transaction).await?;
+
+        match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(reply)) => {
+                if reply.error_code != 0 {
+                    let server_text = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok());
+                    let error_msg = resolve_error_message(reply.error_code, server_text);
+                    return Err(format!("Make alias failed: {}", error_msg));
+                }
+                Ok(())
+            }
+            Ok(None) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Channel closed while waiting for make alias reply".to_string())
+            }
+            Err(_) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Timeout waiting for make alias reply".to_string())
+            }
+        }
+    }
+
+    /// Query download queue position without starting a transfer
+    pub async fn download_info(&self, reference_number: u32) -> Result<u16, String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::DownloadInfo);
+        transaction.add_field(TransactionField::from_u32(FieldType::ReferenceNumber, reference_number));
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        self.send_transaction(&transaction).await?;
+
+        match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(reply)) => {
+                if reply.error_code != 0 {
+                    let server_text = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok());
+                    let error_msg = resolve_error_message(reply.error_code, server_text);
+                    return Err(format!("Download info failed: {}", error_msg));
+                }
+                let waiting_count = reply
+                    .get_field(FieldType::WaitingCount)
+                    .and_then(|f| f.to_u16().ok())
+                    .unwrap_or(0);
+                Ok(waiting_count)
+            }
+            Ok(None) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Channel closed while waiting for download info reply".to_string())
+            }
+            Err(_) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Timeout waiting for download info reply".to_string())
+            }
+        }
+    }
+
+    /// Download an entire folder from the server
+    pub async fn download_folder(&self, path: Vec<String>, file_name: String) -> Result<(u32, u32, u32), String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::DownloadFolder);
+        transaction.add_field(TransactionField::from_string(FieldType::FileName, &file_name));
+
+        if !path.is_empty() {
+            if let Some(path_data) = encode_file_path(&path) {
+                transaction.add_field(TransactionField::new(FieldType::FilePath, path_data));
+            }
+        }
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        self.send_transaction(&transaction).await?;
+
+        match tokio::time::timeout(Duration::from_secs(30), rx.recv()).await {
+            Ok(Some(reply)) => {
+                if reply.error_code != 0 {
+                    let server_text = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok());
+                    let error_msg = resolve_error_message(reply.error_code, server_text);
+                    return Err(format!("Download folder failed: {}", error_msg));
+                }
+                let reference_number = reply
+                    .get_field(FieldType::ReferenceNumber)
+                    .and_then(|f| f.to_u32().ok())
+                    .ok_or("No reference number in reply".to_string())?;
+                let transfer_size = reply
+                    .get_field(FieldType::TransferSize)
+                    .and_then(|f| f.to_u32().ok())
+                    .ok_or("No transfer size in reply".to_string())?;
+                let item_count = reply
+                    .get_field(FieldType::FolderItemCount)
+                    .and_then(|f| f.to_u32().ok())
+                    .unwrap_or(0);
+                Ok((reference_number, transfer_size, item_count))
+            }
+            Ok(None) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Channel closed while waiting for download folder reply".to_string())
+            }
+            Err(_) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Timeout waiting for download folder reply".to_string())
+            }
+        }
+    }
+
+    /// Upload an entire folder to the server
+    pub async fn upload_folder(&self, path: Vec<String>, file_name: String, item_count: u16) -> Result<u32, String> {
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::UploadFolder);
+        transaction.add_field(TransactionField::from_string(FieldType::FileName, &file_name));
+        transaction.add_field(TransactionField::from_u16(FieldType::FolderItemCount, item_count));
+
+        if !path.is_empty() {
+            if let Some(path_data) = encode_file_path(&path) {
+                transaction.add_field(TransactionField::new(FieldType::FilePath, path_data));
+            }
+        }
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        self.send_transaction(&transaction).await?;
+
+        match tokio::time::timeout(Duration::from_secs(30), rx.recv()).await {
+            Ok(Some(reply)) => {
+                if reply.error_code != 0 {
+                    let server_text = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok());
+                    let error_msg = resolve_error_message(reply.error_code, server_text);
+                    return Err(format!("Upload folder failed: {}", error_msg));
+                }
+                let reference_number = reply
+                    .get_field(FieldType::ReferenceNumber)
+                    .and_then(|f| f.to_u32().ok())
+                    .ok_or("No reference number in reply".to_string())?;
+                Ok(reference_number)
+            }
+            Ok(None) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Channel closed while waiting for upload folder reply".to_string())
+            }
+            Err(_) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                Err("Timeout waiting for upload folder reply".to_string())
+            }
+        }
+    }
 }
 
 /// Detailed file info returned by GetFileInfo

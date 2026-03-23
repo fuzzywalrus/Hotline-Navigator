@@ -106,6 +106,8 @@ export function useServerEvents({
         containsWatchWord(event.payload.message, prefs.watchWords)
       );
 
+      log('Chat', 'Chat message received', { userId: event.payload.userId, userName: event.payload.userName });
+
       const messageData = {
         ...event.payload,
         timestamp: new Date(),
@@ -703,6 +705,17 @@ export function useServerEvents({
       unlisten.then((fn) => fn()).catch(() => {});
     };
   }, [serverId, setDisconnectMessage, setConnectionStatus]);
+
+  // Listen for server banner updates
+  useEffect(() => {
+    const unlisten = listen<{ bannerType: number | null; url: string | null }>(`server-banner-${serverId}`, (event) => {
+      log('Banner', 'Server banner update received', event.payload);
+    });
+
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
+  }, [serverId]);
 
   // Listen for private chat room events
   useEffect(() => {
