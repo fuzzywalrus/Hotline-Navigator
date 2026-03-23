@@ -379,28 +379,16 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
   }, [activeTab, serverId, loadingBoard, boardPosts.length]);
 
 
-  // Download banner after connection (only once)
+  // Download banner immediately after login (before agreement is shown)
   useEffect(() => {
     let cancelled = false;
-    
+
     const downloadBanner = async () => {
       try {
         log('Banner', 'Starting banner download for server', serverId);
-        // Wait a bit for connection to stabilize
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        if (cancelled) {
-          log('Banner', 'Download cancelled (component unmounted)');
-          return;
-        }
 
-        log('Banner', 'Requesting banner download from backend');
         const dataUrl = await invoke<string>('download_banner', { serverId });
         log('Banner', 'Data URL received', { length: dataUrl.length });
-
-        if (cancelled) {
-          log('Banner', 'Download cancelled after receiving data');
-          return;
-        }
 
         if (!cancelled) {
           setBannerUrl(dataUrl);
@@ -411,18 +399,16 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
       }
     };
 
-    // Only download if we have users (connection is established) and haven't downloaded yet
-    if (users.length > 0 && !bannerUrl) {
-      log('Banner', 'Conditions met for download', { userCount: users.length });
+    // Download as soon as we're logged in (fires before agreement dialog appears)
+    if (connectionStatus === 'logged-in' && !bannerUrl) {
+      log('Banner', 'Conditions met for download', { connectionStatus });
       downloadBanner();
-    } else {
-      log('Banner', 'Download skipped', { userCount: users.length, hasBanner: !!bannerUrl });
     }
 
     return () => {
       cancelled = true;
     };
-  }, [serverId, users.length]);
+  }, [serverId, connectionStatus]);
 
   // Fetch server info after connection
   useEffect(() => {
