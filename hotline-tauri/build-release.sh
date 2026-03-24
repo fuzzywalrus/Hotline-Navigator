@@ -49,10 +49,9 @@ echo "🧹 Cleaning previous builds..."
 rm -rf "$RELEASE_DIR"
 rm -rf "src-tauri/target/universal-apple-darwin/release/bundle"
 
-# Build Universal Binary
+# Build Universal Binary (.app only — we create the DMG ourselves)
 echo "🔨 Building Universal Binary (Intel + Apple Silicon)..."
 echo "   This may take several minutes..."
-echo "   Signing Identity: $SIGNING_IDENTITY"
 echo ""
 
 # Export environment variables for Tauri build
@@ -61,8 +60,7 @@ export APP_PASSWORD
 export TEAM_ID
 export SIGNING_IDENTITY
 
-# Tauri v2 will automatically use SIGNING_IDENTITY if set
-npm run build:macos-universal
+npx tauri build --target universal-apple-darwin --bundles app
 
 # Verify build exists
 APP_BUNDLE="src-tauri/target/universal-apple-darwin/release/bundle/macos/$PRODUCT_NAME.app"
@@ -83,24 +81,32 @@ cp -R "$APP_BUNDLE" "$DIST_DIR/"
 
 # Verify code signing
 echo "🔍 Verifying code signature..."
-if codesign -dv --verbose=4 "$DIST_DIR/$PRODUCT_NAME.app" 2>&1 | grep -q "valid on disk"; then
-    echo "✅ Code signature verified"
-else
-    echo "⚠️  Warning: Code signature verification failed or app not signed"
-    echo "   The app may need to be signed manually"
-fi
+codesign -dv --verbose=2 "$DIST_DIR/$PRODUCT_NAME.app" 2>&1 || true
 
-# Create preverified directory for notarization zip
+# Create zip for notarization
+echo "📦 Creating zip archive for notarization..."
 PREVERIFIED_DIR="$RELEASE_DIR/preverified"
 mkdir -p "$PREVERIFIED_DIR"
-
-# Create zip for notarization (if needed)
-echo "📦 Creating zip archive for notarization..."
 ZIP_FILE="$PREVERIFIED_DIR/$PRODUCT_NAME.app.zip"
 ditto -c -k --keepParent "$DIST_DIR/$PRODUCT_NAME.app" "$ZIP_FILE"
 echo "✅ Zip created: $ZIP_FILE"
 
-# Create DMG (optional - requires create-dmg)
+# Notarization
+echo "📝 Notarizing app..."
+xcrun notarytool submit "$ZIP_FILE" \
+    --apple-id "$APPLE_ID" \
+    --password "$APP_PASSWORD" \
+    --team-id "$TEAM_ID" \
+    --wait
+
+echo "📎 Stapling notarization ticket..."
+xcrun stapler staple "$DIST_DIR/$PRODUCT_NAME.app"
+
+# Verify Gatekeeper acceptance
+echo "🔍 Verifying Gatekeeper..."
+spctl -a -vv "$DIST_DIR/$PRODUCT_NAME.app" 2>&1 || true
+
+# Create DMG
 if command -v create-dmg &> /dev/null; then
     echo "💿 Creating DMG..."
     DMG_NAME="$DIST_DIR/$PRODUCT_NAME-$VERSION-universal.dmg"
@@ -114,22 +120,26 @@ if command -v create-dmg &> /dev/null; then
         --app-drop-link 600 185 \
         "$DMG_NAME" \
         "$DIST_DIR/$PRODUCT_NAME.app"
+
+    # Sign and notarize the DMG
+    echo "🔐 Signing DMG..."
+    codesign --force --sign "$SIGNING_IDENTITY" "$DMG_NAME"
+
+    echo "📝 Notarizing DMG..."
+    xcrun notarytool submit "$DMG_NAME" \
+        --apple-id "$APPLE_ID" \
+        --password "$APP_PASSWORD" \
+        --team-id "$TEAM_ID" \
+        --wait
+
+    echo "📎 Stapling DMG..."
+    xcrun stapler staple "$DMG_NAME"
+
     echo "✅ DMG created: $DMG_NAME"
 else
-    echo "ℹ️  Skipping DMG creation (create-dmg not installed)"
+    echo "⚠️  Skipping DMG creation (create-dmg not installed)"
     echo "   Install with: brew install create-dmg"
 fi
-
-# Notarization
-echo "📝 Notarizing app..."
-xcrun notarytool submit "$ZIP_FILE" \
-    --apple-id "$APPLE_ID" \
-    --password "$APP_PASSWORD" \
-    --team-id "$TEAM_ID" \
-    --wait
-
-echo "📎 Stapling notarization ticket..."
-xcrun stapler staple "$DIST_DIR/$PRODUCT_NAME.app"
 
 echo ""
 echo "✅ Release build complete!"
