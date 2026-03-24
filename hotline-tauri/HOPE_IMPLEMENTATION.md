@@ -4,15 +4,16 @@ Map of all HOPE-related code in the Rust backend. This document is for developer
 
 ## Status
 
-HOPE is **fully implemented but disabled**. The probe (`try_hope_probe()`) is bypassed in the login flow because sending a HOPE identification to non-HOPE servers poisons the connection with no reliable recovery. See the README for details on what needs to happen to enable it.
+HOPE is implemented and available as an opt-in path. The client only attempts the HOPE probe when the bookmark has `hope=true`, because sending a HOPE identification to a non-HOPE server poisons the connection and requires a reconnect before legacy login can proceed.
 
-The disable point is a single line in `client/mod.rs`:
+Current behavior:
 
-```rust
-let hope_negotiation: Option<hope::HopeNegotiation> = None;
-```
+- If `bookmark.hope` is `false`, the client uses legacy Hotline login.
+- If `bookmark.hope` is `true`, the client sends the HOPE identification probe.
+- If the probe fails or the server does not return a valid HOPE reply, the client reconnects and falls back to legacy login.
+- If the probe succeeds, the client performs HOPE authenticated login and activates transport encryption when RC4 was negotiated.
 
-To enable HOPE, replace this with a call to `self.try_hope_probe()` when the server is known to support it.
+See [HOPE_JANUS_INTEROP.md](HOPE_JANUS_INTEROP.md) for the step-by-step sequence that currently interoperates with Janus-family servers.
 
 ## File Overview
 
@@ -67,10 +68,10 @@ Unit tests cover all MAC algorithms, encoding/decoding roundtrips, and edge case
 - **`HopeCipherState`** — Wraps an `Rc4` instance with `current_key`, `session_key`, and `mac_algorithm`. Provides `process()` for encryption/decryption and `rotate_key()` for forward secrecy (`new_key = MAC(current_key, session_key)`, then re-init RC4).
 - **`HopeWriter`** — Wraps `BoxedWrite`. Two modes:
   - `write_raw(data)` — Passthrough, used during handshake and HOPE negotiation before encryption is active.
-  - `write_transaction(txn)` — Encodes the transaction, then if encryption is active: encrypts header (20 bytes), encrypts first 2 body bytes, encrypts remaining body. Rotation count is 0 on outbound (no outbound rotation currently).
+  - `write_transaction(txn)` — Encodes the transaction, then if encryption is active: encrypts header (20 bytes), encrypts first 2 body bytes, optionally applies key rotation using the first header byte as the HOPE rotation counter, then encrypts the remaining body. Normal application traffic leaves the rotation counter at 0.
 - **`HopeReader`** — Wraps `BoxedRead`. Two modes:
   - `read_raw(buf)` — Passthrough for handshake.
-  - `read_transaction()` — Reads 20-byte header, decrypts if active, extracts rotation count from top byte of type field, reads body, decrypts first 2 body bytes, applies key rotations, decrypts rest, assembles full transaction.
+  - `read_transaction()` — Reads 20-byte header, decrypts if active, extracts rotation count from the first header byte, clears that byte back to 0 for normal Hotline decoding, reads body, decrypts first 2 body bytes, applies key rotations, decrypts rest, and assembles the full transaction.
 
 Unit tests cover RC4 known vectors, encrypt/decrypt roundtrip, and key rotation.
 

@@ -97,6 +97,7 @@ pub enum HotlineEvent {
     ChatUserLeft { chat_id: u32, user_id: u16 },
     ChatSubjectChanged { chat_id: u32, subject: String },
     ServerBannerUpdate { banner_type: Option<u16>, url: Option<String> },
+    ProtocolLog { level: String, message: String },
     StatusChanged(ConnectionStatus),
 }
 
@@ -149,6 +150,13 @@ pub struct HotlineClient {
 }
 
 impl HotlineClient {
+    fn emit_protocol_log(&self, level: &str, message: impl Into<String>) {
+        let _ = self.event_tx.send(HotlineEvent::ProtocolLog {
+            level: level.to_string(),
+            message: message.into(),
+        });
+    }
+
     pub fn new(bookmark: Bookmark) -> Self {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
@@ -459,6 +467,13 @@ impl HotlineClient {
 
         println!("HOPE negotiation: MAC={:?}, mac_login={}, server_cipher={}, client_cipher={}",
             selected_mac, mac_login, server_cipher, client_cipher);
+        self.emit_protocol_log(
+            "info",
+            format!(
+                "HOPE negotiated: mac={:?}, mac_login={}, server_cipher={}, client_cipher={}",
+                selected_mac, mac_login, server_cipher, client_cipher
+            ),
+        );
 
         Some(hope::HopeNegotiation {
             session_key,
@@ -485,20 +500,39 @@ impl HotlineClient {
         let user_icon_id = *self.user_icon_id.lock().await;
         let username = self.username.lock().await.clone();
 
-        // HOPE (Hotline One-time Password Extension) probe is disabled for now.
+        // HOPE (Hotline One-time Password Extension) probe.
         // The HOPE identification (login=0x00) poisons the connection on non-HOPE
-        // servers — they treat it as a failed login and close/block the connection,
-        // making reconnect unreliable. Since there's no way to detect HOPE support
-        // before the probe, we default to legacy login. HOPE will be activated when
-        // we can detect server support (e.g. from server version or a bookmark flag).
-        //
-        // The full HOPE implementation is ready in hope.rs / hope_stream.rs and can
-        // be enabled by calling try_hope_probe() here when appropriate.
-        let hope_negotiation: Option<hope::HopeNegotiation> = None;
+        // servers — they treat it as a failed login and close/block the connection.
+        // Only attempt HOPE when the bookmark explicitly has hope=true.
+        // If the probe fails, we must reconnect before falling back to legacy login
+        // because the server considers the connection tainted.
+        let hope_negotiation: Option<hope::HopeNegotiation> = if self.bookmark.hope {
+            println!("HOPE enabled for this bookmark, attempting probe...");
+            self.emit_protocol_log("info", "HOPE enabled for this bookmark, attempting probe");
+            let result = self.try_hope_probe().await;
+            if result.is_none() {
+                println!("HOPE probe failed or unsupported, reconnecting for legacy login...");
+                self.emit_protocol_log(
+                    "warn",
+                    "HOPE probe failed or unsupported, reconnecting for legacy login",
+                );
+                self.establish_connection().await?;
+            }
+            result
+        } else {
+            None
+        };
 
         // ─── Send login ───
+        let hope_transport_active = hope_negotiation.as_ref().is_some_and(|negotiation| {
+            negotiation.mac_algorithm.supports_transport()
+                && (negotiation.server_cipher == "RC4" || negotiation.client_cipher == "RC4")
+        });
+
         let login_reply = if let Some(ref negotiation) = hope_negotiation {
-            // HOPE authenticated login (step 3)
+            // HOPE authenticated login (step 3) is sent in the clear.
+            // If transport encryption was negotiated, the server enables it
+            // only after validating this packet, and encrypts the login reply.
             let mut auth_tx = Transaction::new(self.next_transaction_id(), TransactionType::Login);
 
             let login_bytes = self.bookmark.login.as_bytes();
@@ -519,7 +553,10 @@ impl HotlineClient {
                 password.as_bytes(),
                 &negotiation.session_key,
             );
-            auth_tx.add_field(TransactionField::new(FieldType::UserPassword, password_mac));
+            auth_tx.add_field(TransactionField::new(
+                FieldType::UserPassword,
+                password_mac.clone(),
+            ));
 
             auth_tx.add_field(TransactionField::from_u16(FieldType::UserIconId, user_icon_id));
             auth_tx.add_field(TransactionField::from_string(FieldType::UserName, &username));
@@ -527,8 +564,53 @@ impl HotlineClient {
             auth_tx.add_field(TransactionField::from_u16(FieldType::Capabilities, CAPABILITY_LARGE_FILES));
 
             println!("Sending HOPE authenticated login...");
+            self.emit_protocol_log("info", "Sending HOPE authenticated login");
             self.send_transaction_raw(&auth_tx).await?;
-            self.read_transaction_raw().await?
+
+            if hope_transport_active {
+                let encode_key = hope::compute_mac(
+                    negotiation.mac_algorithm,
+                    password.as_bytes(),
+                    &password_mac,
+                );
+                let decode_key = hope::compute_mac(
+                    negotiation.mac_algorithm,
+                    password.as_bytes(),
+                    &encode_key,
+                );
+
+                // After HOPE step 3, the server encrypts outbound replies with
+                // encode_key and expects inbound packets encrypted with
+                // decode_key.
+                {
+                    let mut reader_guard = self.hope_reader.lock().await;
+                    if let Some(reader) = reader_guard.as_mut() {
+                        reader.activate_encryption(
+                            encode_key,
+                            negotiation.session_key,
+                            negotiation.mac_algorithm,
+                        );
+                    }
+                }
+                {
+                    let mut writer_guard = self.hope_writer.lock().await;
+                    if let Some(writer) = writer_guard.as_mut() {
+                        writer.activate_encryption(
+                            decode_key,
+                            negotiation.session_key,
+                            negotiation.mac_algorithm,
+                        );
+                    }
+                }
+
+                println!("HOPE transport encryption activated (RC4)");
+                self.emit_protocol_log("info", "HOPE transport encryption activated (RC4)");
+                self.read_transaction().await?
+            } else {
+                println!("HOPE auth only (no transport encryption)");
+                self.emit_protocol_log("info", "HOPE secure login active (no transport encryption)");
+                self.read_transaction_raw().await?
+            }
         } else {
             // Standard legacy login (XOR-encoded credentials)
             let mut login_tx = Transaction::new(self.next_transaction_id(), TransactionType::Login);
@@ -577,58 +659,6 @@ impl HotlineClient {
             return Err(format!("Login failed: {}", error_msg));
         }
 
-        // ─── Activate transport encryption if negotiated ───
-        if let Some(ref negotiation) = hope_negotiation {
-            if negotiation.mac_algorithm.supports_transport()
-                && (negotiation.server_cipher == "RC4" || negotiation.client_cipher == "RC4")
-            {
-                let password_mac = hope::compute_mac(
-                    negotiation.mac_algorithm,
-                    password.as_bytes(),
-                    &negotiation.session_key,
-                );
-
-                // Key derivation per spec
-                let encode_key = hope::compute_mac(
-                    negotiation.mac_algorithm,
-                    password.as_bytes(),
-                    &password_mac,
-                );
-                let decode_key = hope::compute_mac(
-                    negotiation.mac_algorithm,
-                    password.as_bytes(),
-                    &encode_key,
-                );
-
-                // Client reads with server's encode_key, writes with server's decode_key
-                // (reversed from server perspective)
-                {
-                    let mut reader_guard = self.hope_reader.lock().await;
-                    if let Some(reader) = reader_guard.as_mut() {
-                        reader.activate_encryption(
-                            encode_key.clone(),
-                            negotiation.session_key,
-                            negotiation.mac_algorithm,
-                        );
-                    }
-                }
-                {
-                    let mut writer_guard = self.hope_writer.lock().await;
-                    if let Some(writer) = writer_guard.as_mut() {
-                        writer.activate_encryption(
-                            decode_key,
-                            negotiation.session_key,
-                            negotiation.mac_algorithm,
-                        );
-                    }
-                }
-
-                println!("HOPE transport encryption activated (RC4)");
-            } else {
-                println!("HOPE auth only (no transport encryption)");
-            }
-        }
-
         // ─── Process login reply (same as before) ───
         let server_name = login_reply
             .get_field(FieldType::ServerName)
@@ -674,6 +704,8 @@ impl HotlineClient {
                 name: server_name,
                 description: server_description,
                 version: server_version,
+                hope_enabled: hope_negotiation.is_some(),
+                hope_transport: hope_transport_active,
                 agreement: None,
             });
         }
@@ -740,6 +772,14 @@ impl HotlineClient {
         self.status.lock().await.clone()
     }
 
+    /// Read a single transaction through the HOPE reader (handles decryption if active).
+    /// Used during login after encryption is activated.
+    async fn read_transaction(&self) -> Result<Transaction, String> {
+        let mut read_guard = self.hope_reader.lock().await;
+        let reader = read_guard.as_mut().ok_or("Not connected")?;
+        reader.read_transaction().await
+    }
+
     /// Send a transaction through the HOPE writer (handles encryption if active).
     /// This is the primary method all sub-modules should use to send data.
     pub(crate) async fn send_transaction(&self, transaction: &Transaction) -> Result<(), String> {
@@ -752,6 +792,8 @@ impl HotlineClient {
             .await
             .map_err(|e| format!("Failed to send transaction: {}", e))
     }
+
+
 
     // Start background task to receive messages from server
     async fn start_receive_loop(&self) {
@@ -794,6 +836,40 @@ impl HotlineClient {
                                 write_guard.take();
                             }
                             // Update status
+                            {
+                                let mut status_guard = status.lock().await;
+                                *status_guard = ConnectionStatus::Disconnected;
+                            }
+                            let _ = event_tx.send(HotlineEvent::StatusChanged(ConnectionStatus::Disconnected));
+                            break;
+                        }
+                        if e.contains("Transaction body too large")
+                            || e.contains("Transaction data too short")
+                            || e.contains("Invalid")
+                        {
+                            let reason = format!("HOPE/protocol decode failure: {}", e);
+                            eprintln!("Receive loop: protocol decode failure, disconnecting: {}", e);
+                            let _ = event_tx.send(HotlineEvent::ProtocolLog {
+                                level: "error".to_string(),
+                                message: reason.clone(),
+                            });
+                            let _ = event_tx.send(HotlineEvent::DisconnectMessage(reason));
+                            {
+                                let mut read_guard = hope_reader.lock().await;
+                                read_guard.take();
+                            }
+                            {
+                                let mut write_guard = hope_writer.lock().await;
+                                write_guard.take();
+                            }
+                            {
+                                let mut pending_guard = pending_transactions.write().await;
+                                pending_guard.clear();
+                            }
+                            {
+                                let mut paths_guard = file_list_paths.write().await;
+                                paths_guard.clear();
+                            }
                             {
                                 let mut status_guard = status.lock().await;
                                 *status_guard = ConnectionStatus::Disconnected;

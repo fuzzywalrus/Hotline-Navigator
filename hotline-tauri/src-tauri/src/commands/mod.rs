@@ -761,6 +761,7 @@ pub async fn test_connection(address: String, port: u16) -> Result<String, Strin
         icon: Some(414),
         auto_connect: false,
         tls: false,
+        hope: false,
         bookmark_type: None,
     };
 

@@ -387,22 +387,19 @@ This is fully backward compatible: legacy servers that don't understand the capa
 
 HOPE (Hotline One-time Password Extension) is a protocol extension that replaces Hotline's weak XOR-0xFF password obfuscation with proper MAC-based authentication and optional transport encryption (RC4). The spec lives at [fogWraith/Hotline HOPE-Secure-Login.md](https://github.com/fogWraith/Hotline/blob/main/Docs/Protocol/HOPE-Secure-Login.md).
 
-**Current status: implemented but disabled.** The full HOPE implementation is in place — MAC authentication (HMAC-SHA1, SHA1, HMAC-MD5, MD5), RC4 transport encryption with key rotation, and the 3-step login handshake. However, auto-negotiation is turned off because there is no safe way to detect whether a server supports HOPE before trying it.
+**Current status: implemented and opt-in.** The client will attempt HOPE only when a bookmark explicitly enables it. That avoids poisoning non-HOPE servers while still allowing secure login and RC4 transport encryption on known-compatible servers such as Janus-family servers.
 
-**The problem:** HOPE login starts by sending a Login transaction with `UserLogin` set to a single `0x00` byte. Servers that understand HOPE recognize this as a negotiation request and reply with a session key. Servers that don't understand HOPE treat it as a real login attempt with an invalid username — they reject it, close the connection, and may temporarily block the client's IP. This makes the "try HOPE first, fall back to legacy" approach unsuitable for general use.
+**The problem:** HOPE login starts by sending a Login transaction with `UserLogin` set to a single `0x00` byte. Servers that understand HOPE recognize this as a negotiation request and reply with a session key. Servers that don't understand HOPE treat it as a real login attempt with an invalid username — they reject it, close the connection, and may temporarily block the client's IP. This makes blind auto-probing unsuitable for general use.
 
 <details>
 <summary><strong>Enabling HOPE & implementation details</strong></summary>
 
-**What needs to happen to enable HOPE:**
+**How HOPE is enabled safely today:**
 
-1. **Server-side detection** — A way to know a server supports HOPE *before* sending the probe. Possible approaches:
-   - A per-bookmark "Use HOPE" toggle (user opts in when they know the server supports it)
-   - Server version or capability advertisement in the handshake response (would require a protocol addition)
-   - Tracker metadata indicating HOPE support
-   - A separate lightweight probe that doesn't poison the connection
-
-2. **Enabling the probe** — Once detection is solved, un-comment `try_hope_probe()` in the login flow (`client/mod.rs`). The rest of the implementation (crypto, key derivation, encryption activation, transport wrappers) is ready to go.
+1. **Per-bookmark opt-in** — The UI exposes a `Use HOPE (Secure Login)` toggle for servers known to support HOPE.
+2. **Probe only on opt-in** — The login flow only calls `try_hope_probe()` when that bookmark flag is set.
+3. **Reconnect on probe failure** — If the server does not complete HOPE negotiation, the client reconnects before falling back to legacy login.
+4. **Encrypted reply timing** — If RC4 is negotiated, the authenticated login is sent plaintext, transport keys are activated immediately after, and the login reply is read encrypted.
 
 **How HOPE works (the 3-step login):**
 
@@ -416,10 +413,11 @@ HOPE (Hotline One-time Password Extension) is a protocol extension that replaces
 
 - RC4 stream cipher encrypts each transaction (header + body) as it goes over the wire
 - Key rotation provides forward secrecy: after each packet, `new_key = MAC(current_key, session_key)`, and RC4 is re-initialized
-- The rotation count is embedded in the top byte of the encrypted transaction's type field
+- The rotation count is carried in the first byte of the encrypted packet representation used by this client/server interop path
 - Encryption is packet-aware — the reader/writer know transaction boundaries, which is why this uses custom `HopeReader`/`HopeWriter` wrappers rather than a byte-stream encryption layer
 
 See [HOPE_IMPLEMENTATION.md](HOPE_IMPLEMENTATION.md) for a map of all HOPE-related code locations.
+See [HOPE_JANUS_INTEROP.md](HOPE_JANUS_INTEROP.md) for the working Janus/VesperNET sequence and server interoperability notes.
 
 </details>
 

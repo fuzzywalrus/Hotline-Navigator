@@ -112,12 +112,12 @@ impl HopeWriter {
     /// Encode and send a transaction, encrypting if active.
     pub async fn write_transaction(&mut self, transaction: &Transaction) -> Result<(), std::io::Error> {
         let mut encoded = transaction.encode();
+        let is_encrypted = self.cipher.is_some();
+        let rotation_count = transaction.flags & 0x3F;
 
         if let Some(cipher) = &mut self.cipher {
-            // No rotation on outbound for now (rotation_count = 0).
-            // Encrypt entire packet (header + body) as a contiguous stream.
-            // The rotation count is embedded in the top byte of the type field;
-            // with count=0 the type field is unchanged.
+            println!("[HOPE-W] Encrypting outbound: type={:?}, id={}, body={} bytes",
+                transaction.transaction_type, transaction.id, encoded.len() - TRANSACTION_HEADER_SIZE);
 
             // Encrypt header (20 bytes)
             cipher.process(&mut encoded[..TRANSACTION_HEADER_SIZE]);
@@ -128,15 +128,27 @@ impl HopeWriter {
                 let body_len = encoded.len() - body_start;
                 let first_chunk = 2.min(body_len);
                 cipher.process(&mut encoded[body_start..body_start + first_chunk]);
-                // No rotation (count=0), so encrypt rest directly
+
+                for _ in 0..rotation_count {
+                    cipher.rotate_key();
+                }
+
                 if body_len > 2 {
                     cipher.process(&mut encoded[body_start + 2..]);
                 }
             }
+        } else {
+            println!("[HOPE-W] Plaintext outbound: type={:?}, id={}, body={} bytes",
+                transaction.transaction_type, transaction.id, encoded.len() - TRANSACTION_HEADER_SIZE);
         }
 
         self.inner.write_all(&encoded).await?;
         self.inner.flush().await?;
+
+        if is_encrypted {
+            println!("[HOPE-W] Encrypted packet sent ({} bytes total)", encoded.len());
+        }
+
         Ok(())
     }
 }
@@ -173,6 +185,8 @@ impl HopeReader {
 
     /// Read and decode one transaction, decrypting if active.
     pub async fn read_transaction(&mut self) -> Result<Transaction, String> {
+        let is_encrypted = self.cipher.is_some();
+
         // Read 20-byte header
         let mut header = [0u8; TRANSACTION_HEADER_SIZE];
         self.inner
@@ -186,16 +200,28 @@ impl HopeReader {
             // Decrypt header
             cipher.process(&mut header);
 
-            // Extract rotation count from top byte of type field (bytes 2-3)
-            rotation_count = header[2];
-            header[2] = 0; // Clear rotation bits to get real type
+            // HOPE rotation count is carried in the top 8 bits of the packet type.
+            // In this implementation, that maps to the first header byte. Clear it
+            // before normal Hotline decoding so transaction flags remain reserved/zero.
+            rotation_count = header[0];
+            header[0] = 0;
         }
 
-        // Parse data_size from decrypted header
+        // Parse transaction type and data_size from decrypted header
+        let tx_type = u16::from_be_bytes([header[2], header[3]]);
+        let tx_id = u32::from_be_bytes([header[4], header[5], header[6], header[7]]);
+        let error_code = u32::from_be_bytes([header[8], header[9], header[10], header[11]]);
         let data_size =
             u32::from_be_bytes([header[16], header[17], header[18], header[19]]) as usize;
 
+        if is_encrypted {
+            println!("[HOPE-R] Decrypted header: type={}, id={}, error={}, body={} bytes",
+                tx_type, tx_id, error_code, data_size);
+        }
+
         if data_size > crate::protocol::constants::MAX_TRANSACTION_BODY_SIZE as usize {
+            println!("[HOPE-R] ERROR: body too large ({} bytes), encrypted={}", data_size, is_encrypted);
+            println!("[HOPE-R] Raw decrypted header: {:02X?}", &header);
             return Err(format!(
                 "Transaction body too large: {} bytes (max {})",
                 data_size, crate::protocol::constants::MAX_TRANSACTION_BODY_SIZE
@@ -216,7 +242,6 @@ impl HopeReader {
                 let first_chunk = 2.min(body.len());
                 cipher.process(&mut body[..first_chunk]);
 
-                // Apply key rotation if signalled
                 for _ in 0..rotation_count {
                     cipher.rotate_key();
                 }
@@ -228,20 +253,26 @@ impl HopeReader {
             }
 
             full_data.extend(body);
-        } else if let Some(cipher) = &mut self.cipher {
-            // Even with no body, apply rotation if signalled
-            for _ in 0..rotation_count {
-                cipher.rotate_key();
+        }
+
+        let result = Transaction::decode(&full_data);
+        if let Ok(ref tx) = result {
+            if is_encrypted {
+                println!("[HOPE-R] Decrypted inbound: type={:?}, id={}, error={}, fields={}",
+                    tx.transaction_type, tx.id, tx.error_code, tx.fields.len());
             }
         }
 
-        Transaction::decode(&full_data)
+        result
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocol::constants::{FieldType, TransactionType};
+    use crate::protocol::transaction::{Transaction, TransactionField};
+    use tokio::io::duplex;
 
     #[test]
     fn rc4_known_vector() {
@@ -281,5 +312,66 @@ mod tests {
         state.rotate_key();
         assert_ne!(state.current_key, key);
         assert_eq!(state.current_key.len(), 20); // SHA1 output
+    }
+
+    #[tokio::test]
+    async fn encrypted_transaction_preserves_full_type_field() {
+        let (write_stream, read_stream) = duplex(1024);
+        let key = vec![0x10, 0x20, 0x30, 0x40];
+        let session_key = [0u8; 64];
+
+        let mut writer = HopeWriter::new(Box::new(write_stream));
+        writer.activate_encryption(key.clone(), session_key, MacAlgorithm::HmacSha1);
+
+        let mut reader = HopeReader::new(Box::new(read_stream));
+        reader.activate_encryption(key, session_key, MacAlgorithm::HmacSha1);
+
+        let mut outbound = Transaction::new(42, TransactionType::GetUserNameList);
+        outbound.add_field(TransactionField::from_string(FieldType::Data, "hello"));
+
+        writer.write_transaction(&outbound).await.unwrap();
+        let inbound = reader.read_transaction().await.unwrap();
+
+        assert_eq!(inbound.transaction_type, TransactionType::GetUserNameList);
+        assert_eq!(inbound.id, 42);
+        assert_eq!(
+            inbound
+                .get_field(FieldType::Data)
+                .map(|field| field.data.as_slice()),
+            Some(b"hello".as_slice())
+        );
+    }
+
+    #[tokio::test]
+    async fn encrypted_transaction_applies_rotation_from_flags_byte() {
+        let (write_stream, read_stream) = duplex(1024);
+        let key = vec![0x10, 0x20, 0x30, 0x40];
+        let session_key = [0u8; 64];
+
+        let mut writer = HopeWriter::new(Box::new(write_stream));
+        writer.activate_encryption(key.clone(), session_key, MacAlgorithm::HmacSha1);
+
+        let mut reader = HopeReader::new(Box::new(read_stream));
+        reader.activate_encryption(key, session_key, MacAlgorithm::HmacSha1);
+
+        let mut outbound = Transaction::new(7, TransactionType::ShowAgreement);
+        outbound.flags = 1;
+        outbound.add_field(TransactionField::from_string(
+            FieldType::Data,
+            "rotation-test-payload",
+        ));
+
+        writer.write_transaction(&outbound).await.unwrap();
+        let inbound = reader.read_transaction().await.unwrap();
+
+        assert_eq!(inbound.flags, 0);
+        assert_eq!(inbound.transaction_type, TransactionType::ShowAgreement);
+        assert_eq!(inbound.id, 7);
+        assert_eq!(
+            inbound
+                .get_field(FieldType::Data)
+                .map(|field| field.data.as_slice()),
+            Some(b"rotation-test-payload".as_slice())
+        );
     }
 }
