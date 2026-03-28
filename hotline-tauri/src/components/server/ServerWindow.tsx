@@ -55,6 +55,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
   const [boardMessage, setBoardMessage] = useState('');
   const [postingBoard, setPostingBoard] = useState(false);
   const [loadingBoard, setLoadingBoard] = useState(false);
+  const [boardLoaded, setBoardLoaded] = useState(false);
   const [newsCategories, setNewsCategories] = useState<NewsCategory[]>([]);
   const [newsArticles, setNewsArticles] = useState<NewsArticle[]>([]);
   const [newsPath, setNewsPath] = useState<string[]>([]);
@@ -383,20 +384,21 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
 
   // Request message board when Board tab is activated
   useEffect(() => {
-    if (activeTab === 'board' && !loadingBoard && boardPosts.length === 0) {
+    if (activeTab === 'board' && connectionStatus === 'logged-in' && !loadingBoard && !boardLoaded) {
       setLoadingBoard(true);
       invoke<string[]>('get_message_board', {
         serverId,
       }).then((posts) => {
         log('Board', 'Board posts received', { count: posts.length });
         setBoardPosts(posts);
+        setBoardLoaded(true);
         setLoadingBoard(false);
       }).catch((error) => {
         logError('Board', 'Failed to get message board', error);
         setLoadingBoard(false);
       });
     }
-  }, [activeTab, serverId, loadingBoard, boardPosts.length]);
+  }, [activeTab, connectionStatus, serverId, loadingBoard, boardLoaded]);
 
 
   // Download banner immediately after login (before agreement is shown)
@@ -432,11 +434,15 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
 
   // Fetch server info after connection
   useEffect(() => {
-    if (users.length > 0 && !serverInfo) {
+    if (connectionStatus === 'logged-in' && !serverInfo) {
       const fetchServerInfo = async () => {
         try {
           const info = await invoke<ServerInfo>('get_server_info', { serverId });
-          log('Connection', 'Server info fetched', { name: info.name });
+          log('Connection', 'Server info fetched', {
+            name: info.name,
+            hopeEnabled: info.hopeEnabled,
+            hopeTransport: info.hopeTransport,
+          });
           setServerInfo(info);
           // Update tab title with actual server name
           updateTabTitle(`server-${serverId}`, info.name || serverName);
@@ -446,7 +452,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
       };
       fetchServerInfo();
     }
-  }, [serverId, users.length, serverInfo, serverName, updateTabTitle]);
+  }, [serverId, connectionStatus, serverInfo, serverName, updateTabTitle]);
 
 
   const handleUserClick = (user: User) => {
@@ -894,7 +900,11 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md mx-6 flex flex-col">
             <div className="px-6 pt-6 pb-2">
-              <h2 className="text-base font-semibold text-red-600 dark:text-red-400">Disconnected by Server</h2>
+              <h2 className="text-base font-semibold text-red-600 dark:text-red-400">
+                {disconnectMessage.startsWith('HOPE/protocol')
+                  ? 'Connection Failed'
+                  : 'Disconnected'}
+              </h2>
             </div>
             <div className="px-6 pb-4 text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">
               {disconnectMessage}

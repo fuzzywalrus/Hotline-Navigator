@@ -741,15 +741,58 @@ export function useServerEvents({
   // Listen for disconnect messages (server kicking us)
   useEffect(() => {
     const unlisten = listen<{ message: string }>(`disconnect-message-${serverId}`, (event) => {
-      log('Connection', 'Disconnect message received', event.payload.message);
-      setDisconnectMessage(event.payload.message);
+      const { message } = event.payload;
+      const isProtocolFailure = message.startsWith('HOPE/protocol');
+      logError(isProtocolFailure ? 'HOPE' : 'Connection', 'Disconnect message received', message);
+      setDisconnectMessage(message);
       setConnectionStatus('disconnected');
+      useNotificationStore.getState().addToHistory({
+        type: 'error',
+        title: isProtocolFailure ? 'Connection Failed' : 'Disconnected',
+        message,
+        serverName,
+      });
     });
 
     return () => {
       unlisten.then((fn) => fn()).catch(() => {});
     };
-  }, [serverId, setDisconnectMessage, setConnectionStatus]);
+  }, [serverId, serverName, setDisconnectMessage, setConnectionStatus]);
+
+  // Listen for protocol / HOPE debug messages from the backend
+  useEffect(() => {
+    const unlisten = listen<{ level: string; message: string }>(
+      `protocol-log-${serverId}`,
+      (event) => {
+        const { level, message } = event.payload;
+        const category = message.includes('HOPE') ? 'HOPE' : 'Protocol';
+        const title = category === 'HOPE' ? 'HOPE' : 'Protocol';
+        if (level === 'error') {
+          logError(category, message);
+          useNotificationStore.getState().addToHistory({
+            type: 'error',
+            title: `${title} Error`,
+            message,
+            serverName,
+          });
+        } else if (level === 'warn') {
+          logError(category, message);
+          useNotificationStore.getState().addToHistory({
+            type: 'warning',
+            title: `${title} Warning`,
+            message,
+            serverName,
+          });
+        } else {
+          log(category, message);
+        }
+      }
+    );
+
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
+  }, [serverId, serverName]);
 
   // Listen for server banner updates
   useEffect(() => {
@@ -834,4 +877,3 @@ export function useServerEvents({
     };
   }, [serverId, setPrivateChatRooms, onChatInvite]);
 }
-

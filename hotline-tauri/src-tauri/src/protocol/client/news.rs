@@ -110,7 +110,13 @@ impl HotlineClient {
         let mut categories = Vec::new();
         for field in &reply.fields {
             if field.field_type == FieldType::NewsCategoryListData15 {
+                // v1.5+ hierarchical format
                 if let Ok(category) = self.parse_news_category(&field.data, &path) {
+                    categories.push(category);
+                }
+            } else if field.field_type == FieldType::NewsCategoryListData {
+                // Pre-v1.5 flat format — parse as a simple named bundle
+                if let Ok(category) = self.parse_news_category_legacy(&field.data, &path) {
                     categories.push(category);
                 }
             }
@@ -396,6 +402,32 @@ impl HotlineClient {
         }
         println!("News article {} deleted", article_id);
         Ok(())
+    }
+
+    /// Parse a legacy NewsCategoryListData (field 320) entry.
+    /// Pre-v1.5 servers send a simpler flat format: the first bytes are a
+    /// PString (1-byte length + name).  We treat each entry as a bundle
+    /// (category_type 2) with count 0.
+    fn parse_news_category_legacy(&self, data: &[u8], parent_path: &[String]) -> Result<NewsCategory, String> {
+        if data.is_empty() {
+            return Err("Legacy category data empty".to_string());
+        }
+        let name_len = data[0] as usize;
+        if data.len() < 1 + name_len {
+            return Err("Legacy category name too short".to_string());
+        }
+        let (decoded, _, _) = encoding_rs::MACINTOSH.decode(&data[1..1 + name_len]);
+        let name = decoded.to_string();
+
+        let mut path = parent_path.to_vec();
+        path.push(name.clone());
+
+        Ok(NewsCategory {
+            category_type: 2, // treat as bundle
+            count: 0,
+            name,
+            path,
+        })
     }
 
     // Helper method to parse a single news category from binary data

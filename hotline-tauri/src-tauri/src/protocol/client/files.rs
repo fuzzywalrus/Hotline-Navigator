@@ -296,10 +296,53 @@ impl HotlineClient {
 
         // The header should start with "FILP"
         if &response_header[0..4] != b"FILP" {
-            return Err(format!(
-                "Invalid file transfer header: expected FILP, got {:?}",
-                String::from_utf8_lossy(&response_header[0..4])
-            ));
+            // Legacy fallback: very old servers may not send a FILP header.
+            // If the first 4 bytes look like a fork type (DATA/MACR/INFO),
+            // treat the 24 bytes we read as FILP-header(24 bytes) that is
+            // actually the first fork header (16 bytes) + 8 extra bytes we
+            // over-read.  Otherwise, treat the entire stream as raw file data.
+            let magic = &response_header[0..4];
+            if magic == b"DATA" || magic == b"MACR" || magic == b"INFO" {
+                println!("No FILP wrapper — server sent fork data directly (legacy mode)");
+                self.emit_protocol_log("warn", "Server sent fork data without FILP header (legacy server)");
+                // We read 24 bytes but the fork header is only 16 bytes.
+                // Parse the first fork from response_header[0..16] and treat
+                // response_header[16..24] as the start of fork data.
+                let fork_header = &response_header[0..16];
+                let fork_type = String::from_utf8_lossy(&fork_header[0..4]).to_string();
+                let data_size: u64 = {
+                    let size = u32::from_be_bytes([fork_header[12], fork_header[13], fork_header[14], fork_header[15]]) as u64;
+                    println!("Legacy fork: type='{}', size={} bytes", fork_type.trim(), size);
+                    size
+                };
+                let actual_size = if data_size == 0 && expected_size > 0 { expected_size } else { data_size };
+                // We already consumed 8 bytes past the fork header — prepend them
+                let prefix = &response_header[16..24];
+                let remaining = if actual_size > 8 { actual_size - 8 } else { 0 };
+                let mut file_data = prefix.to_vec();
+                if remaining > 0 {
+                    let mut rest = vec![0u8; remaining as usize];
+                    transfer_read.read_exact(&mut rest).await
+                        .map_err(|e| format!("Failed to read legacy fork data: {}", e))?;
+                    file_data.extend_from_slice(&rest);
+                }
+                progress_callback(file_data.len() as u64, actual_size);
+                return Ok(file_data);
+            } else {
+                println!("No FILP header and no recognisable fork — treating as raw file data");
+                self.emit_protocol_log("warn", "No FILP header — reading raw file data (very old server)");
+                // Treat response_header + remaining stream as raw file bytes
+                let mut file_data = response_header.to_vec();
+                let remaining = if expected_size > 24 { expected_size - 24 } else { 0 };
+                if remaining > 0 {
+                    let mut rest = vec![0u8; remaining as usize];
+                    transfer_read.read_exact(&mut rest).await
+                        .map_err(|e| format!("Failed to read raw file data: {}", e))?;
+                    file_data.extend_from_slice(&rest);
+                }
+                progress_callback(file_data.len() as u64, expected_size);
+                return Ok(file_data);
+            }
         }
 
         let version = u16::from_be_bytes([response_header[4], response_header[5]]);

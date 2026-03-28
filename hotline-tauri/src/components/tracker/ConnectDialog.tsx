@@ -24,6 +24,7 @@ export default function ConnectDialog({ onClose }: ConnectDialogProps) {
     login: 'guest',
     password: '',
     tls: false,
+    hope: false,
     type: 'server' as 'server' | 'tracker' | 'url',
     saveAsBookmark: true,
     url: '',
@@ -94,6 +95,7 @@ export default function ConnectDialog({ onClose }: ConnectDialogProps) {
       login: formData.login,
       password: formData.password || undefined,
       tls,
+      hope: formData.hope,
       type: bookmarkType,
     };
 
@@ -318,6 +320,19 @@ export default function ConnectDialog({ onClose }: ConnectDialogProps) {
                     />
                     <label htmlFor="tls" className="text-sm font-medium text-gray-700 dark:text-gray-300">
                       Use TLS (Secure Connection)
+                    </label>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="hope"
+                      checked={formData.hope}
+                      onChange={(e) => setFormData({ ...formData, hope: e.target.checked })}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                    <label htmlFor="hope" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Use HOPE (Secure Login)
                     </label>
                   </div>
 

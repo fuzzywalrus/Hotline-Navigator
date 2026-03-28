@@ -12,6 +12,7 @@ export interface Bookmark {
   icon?: number;
   autoConnect?: boolean;
   tls?: boolean;
+  hope?: boolean;
   type?: BookmarkType; // 'server' by default, 'tracker' for tracker servers
 }
 
@@ -124,6 +125,8 @@ export interface ServerInfo {
   name: string;
   description: string;
   version: string;
+  hopeEnabled?: boolean;
+  hopeTransport?: boolean;
   agreement?: string;
 }
 

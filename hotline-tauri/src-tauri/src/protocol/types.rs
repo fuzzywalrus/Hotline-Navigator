@@ -23,6 +23,8 @@ pub struct Bookmark {
     pub auto_connect: bool,
     #[serde(default)]
     pub tls: bool,
+    #[serde(default)]
+    pub hope: bool,
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub bookmark_type: Option<BookmarkType>,
 }
@@ -41,6 +43,10 @@ pub struct ServerInfo {
     pub name: String,
     pub description: String,
     pub version: String,
+    #[serde(rename = "hopeEnabled", default)]
+    pub hope_enabled: bool,
+    #[serde(rename = "hopeTransport", default)]
+    pub hope_transport: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agreement: Option<String>,
 }

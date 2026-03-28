@@ -43,6 +43,10 @@ export default function BookmarkInfoDialog({ bookmark, onClose }: BookmarkInfoDi
     rows.push({ label: 'TLS', value: 'Enabled' });
   }
 
+  if (bookmark.hope) {
+    rows.push({ label: 'HOPE', value: 'Enabled' });
+  }
+
   rows.push({ label: 'Type', value: isTracker ? 'Tracker' : 'Server' });
   rows.push({ label: 'URL', value: url });
 

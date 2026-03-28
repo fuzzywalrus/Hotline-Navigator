@@ -121,6 +121,7 @@ impl AppState {
                     icon: None,
                     auto_connect: false,
                     tls: false,
+                    hope: false,
                     bookmark_type: Some(BookmarkType::Tracker),
                 };
                 bookmarks.push(tracker);
@@ -138,6 +139,7 @@ impl AppState {
                     icon: None,
                     auto_connect: false,
                     tls: *tls,
+                    hope: false,
                     bookmark_type: Some(BookmarkType::Server),
                 };
                 bookmarks.push(server);
@@ -413,6 +415,13 @@ impl AppState {
                             "url": url,
                         });
                         let _ = app_handle.emit(&format!("server-banner-{}", server_id_clone), payload);
+                    }
+                    HotlineEvent::ProtocolLog { level, message } => {
+                        let payload = serde_json::json!({
+                            "level": level,
+                            "message": message,
+                        });
+                        let _ = app_handle.emit(&format!("protocol-log-{}", server_id_clone), payload);
                     }
                     HotlineEvent::StatusChanged(status) => {
                         let payload = serde_json::json!({
@@ -981,6 +990,7 @@ impl AppState {
                     icon: None,
                     auto_connect: false,
                     tls: false,
+                    hope: false,
                     bookmark_type: Some(BookmarkType::Tracker),
                 };
                 bookmarks.push(tracker);
@@ -1006,6 +1016,7 @@ impl AppState {
                     icon: None,
                     auto_connect: false,
                     tls: *tls,
+                    hope: false,
                     bookmark_type: Some(BookmarkType::Server),
                 };
                 bookmarks.push(server);

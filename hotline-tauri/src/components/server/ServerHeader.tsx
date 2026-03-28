@@ -45,6 +45,18 @@ export default function ServerHeader({
               connectionStatus === 'failed' ? 'bg-red-500' :
               'bg-gray-400'
             }`} title={connectionStatus} />
+            {serverInfo?.hopeEnabled && (
+              <span
+                title={serverInfo.hopeTransport ? 'HOPE transport encryption active' : 'HOPE secure login active'}
+                className={`inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                  serverInfo.hopeTransport
+                    ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300'
+                    : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                }`}
+              >
+                HOPE
+              </span>
+            )}
             {isTls && (
               <span title="TLS Secure Connection">
                 <svg className="w-3.5 h-3.5 text-green-600 dark:text-green-400" viewBox="0 0 16 16" fill="currentColor">
@@ -98,4 +110,3 @@ export default function ServerHeader({
     </div>
   );
 }
-

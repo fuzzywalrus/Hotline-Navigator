@@ -4,15 +4,93 @@ Map of all HOPE-related code in the Rust backend. This document is for developer
 
 ## Status
 
-HOPE is **fully implemented but disabled**. The probe (`try_hope_probe()`) is bypassed in the login flow because sending a HOPE identification to non-HOPE servers poisons the connection with no reliable recovery. See the README for details on what needs to happen to enable it.
+HOPE is implemented and available as an opt-in path. The client only attempts the HOPE probe when the bookmark has `hope=true`, because sending a HOPE identification to a non-HOPE server poisons the connection and requires a reconnect before legacy login can proceed.
 
-The disable point is a single line in `client/mod.rs`:
+Current behavior:
 
-```rust
-let hope_negotiation: Option<hope::HopeNegotiation> = None;
-```
+- If `bookmark.hope` is `false`, the client uses legacy Hotline login.
+- If `bookmark.hope` is `true`, the client sends the HOPE identification probe.
+- If the probe fails or the server does not return a valid HOPE reply, the client reconnects and falls back to legacy login.
+- If the probe succeeds, the client performs HOPE authenticated login and activates transport encryption when RC4 was negotiated.
 
-To enable HOPE, replace this with a call to `self.try_hope_probe()` when the server is known to support it.
+See [HOPE_JANUS_INTEROP.md](HOPE_JANUS_INTEROP.md) for the step-by-step sequence that currently interoperates with Janus-family servers.
+
+## Plain-Speak Overview
+
+HOPE exists to fix two weak parts of classic Hotline login:
+
+- the password should not be sent with Hotline's old XOR-style obfuscation
+- once login succeeds, the main control connection should be able to stay encrypted
+
+In plain terms, HOPE turns login into a small negotiation:
+
+1. the client asks whether the server supports secure login
+2. the server sends back a one-time session key and its chosen crypto settings
+3. the client proves it knows the password by sending a MAC instead of the raw password
+4. both sides optionally switch the main Hotline socket into encrypted mode
+
+The practical philosophy in this client is conservative interoperability:
+
+- do not try HOPE unless the bookmark explicitly asks for it
+- keep the legacy Hotline path untouched for non-HOPE servers
+- only enable transport encryption when both sides clearly negotiated it
+- fail fast on HOPE decode errors instead of pretending the session is still healthy
+
+## Architecture In Plain English
+
+The HOPE code is split into three layers so the rest of the client does not need to know about crypto details.
+
+1. Negotiation and crypto helpers
+
+This lives in `protocol/client/hope.rs`.
+It knows:
+
+- which MAC algorithms exist
+- how to encode and decode HOPE negotiation fields
+- how to compute password MACs and transport keys
+
+2. Encrypted transport wrappers
+
+This lives in `protocol/client/hope_stream.rs`.
+It wraps the normal socket read/write halves and is responsible for:
+
+- passing raw bytes during handshake and pre-encryption login
+- encrypting and decrypting Hotline transactions once HOPE transport is active
+- handling RC4 key rotation without leaking that complexity into feature code
+
+3. Login orchestration
+
+This lives in `protocol/client/mod.rs`.
+It decides:
+
+- whether to attempt HOPE at all
+- when to send the HOPE probe
+- when to reconnect and fall back
+- when to activate encrypted transport
+- when to hand control back to the normal receive loop
+
+That split is intentional: chat, files, board, and news code call `send_transaction()` and do not need separate HOPE logic.
+
+## Implementation Flow
+
+At runtime, the client behaves like this:
+
+1. Connect and complete the normal Hotline handshake.
+2. If `bookmark.hope` is off, do a normal legacy Hotline login.
+3. If `bookmark.hope` is on, send the HOPE identification login.
+4. If the server does not answer with a valid HOPE reply, reconnect and fall back to legacy login.
+5. If the server does answer with HOPE negotiation data, build the authenticated HOPE login packet.
+6. Send that authenticated login in plaintext.
+7. If RC4 transport was negotiated, derive the reader and writer keys immediately after sending step 6.
+8. Read the login reply through the HOPE reader, because Janus-family servers encrypt that reply.
+9. Start the normal receive loop and let the rest of the client operate through HOPE-aware send/read paths.
+
+The most important implementation detail is timing:
+
+- the HOPE probe is plaintext
+- the authenticated HOPE login is also plaintext
+- encryption starts only after the server validates that authenticated login
+- the first packet that may already be encrypted is the login reply
 
 ## File Overview
 
@@ -67,10 +145,10 @@ Unit tests cover all MAC algorithms, encoding/decoding roundtrips, and edge case
 - **`HopeCipherState`** — Wraps an `Rc4` instance with `current_key`, `session_key`, and `mac_algorithm`. Provides `process()` for encryption/decryption and `rotate_key()` for forward secrecy (`new_key = MAC(current_key, session_key)`, then re-init RC4).
 - **`HopeWriter`** — Wraps `BoxedWrite`. Two modes:
   - `write_raw(data)` — Passthrough, used during handshake and HOPE negotiation before encryption is active.
-  - `write_transaction(txn)` — Encodes the transaction, then if encryption is active: encrypts header (20 bytes), encrypts first 2 body bytes, encrypts remaining body. Rotation count is 0 on outbound (no outbound rotation currently).
+  - `write_transaction(txn)` — Encodes the transaction, then if encryption is active: encrypts header (20 bytes), encrypts first 2 body bytes, optionally applies key rotation using the first header byte as the HOPE rotation counter, then encrypts the remaining body. Normal application traffic leaves the rotation counter at 0.
 - **`HopeReader`** — Wraps `BoxedRead`. Two modes:
   - `read_raw(buf)` — Passthrough for handshake.
-  - `read_transaction()` — Reads 20-byte header, decrypts if active, extracts rotation count from top byte of type field, reads body, decrypts first 2 body bytes, applies key rotations, decrypts rest, assembles full transaction.
+  - `read_transaction()` — Reads 20-byte header, decrypts if active, extracts rotation count from the first header byte, clears that byte back to 0 for normal Hotline decoding, reads body, decrypts first 2 body bytes, applies key rotations, decrypts rest, and assembles the full transaction.
 
 Unit tests cover RC4 known vectors, encrypt/decrypt roundtrip, and key rotation.
 

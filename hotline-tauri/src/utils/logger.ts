@@ -8,7 +8,9 @@ type LogCategory =
   | 'Connection'
   | 'Banner'
   | 'Agreement'
-  | 'Permissions';
+  | 'Permissions'
+  | 'Protocol'
+  | 'HOPE';
 
 const isDev = import.meta.env.DEV;
 
