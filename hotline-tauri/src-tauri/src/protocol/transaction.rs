@@ -14,10 +14,16 @@ impl TransactionField {
     }
 
     pub fn from_string(field_type: FieldType, value: &str) -> Self {
-        Self {
-            field_type,
-            data: value.as_bytes().to_vec(),
-        }
+        // Encode as MacRoman when possible — retro servers only understand
+        // MacRoman.  Fall back to UTF-8 only when the string contains
+        // characters that cannot be represented in MacRoman (e.g. CJK).
+        let (encoded, _encoding, had_unmappable) = encoding_rs::MACINTOSH.encode(value);
+        let data = if had_unmappable {
+            value.as_bytes().to_vec()
+        } else {
+            encoded.into_owned()
+        };
+        Self { field_type, data }
     }
 
     pub fn from_encoded_string(field_type: FieldType, value: &str) -> Self {

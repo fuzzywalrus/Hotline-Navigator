@@ -190,9 +190,8 @@ impl HotlineClient {
         self.transaction_counter.fetch_add(1, Ordering::SeqCst)
     }
 
-    /// Establish TCP (or TLS) connection and perform Hotline handshake.
-    /// Called by connect() and also by login() to reconnect after HOPE probe failure.
-    async fn establish_connection(&self) -> Result<(), String> {
+    /// Open a raw TCP (or TLS) connection and install it in the reader/writer slots.
+    async fn open_connection(&self) -> Result<(), String> {
         let addr = crate::protocol::socket_addr_string(&self.bookmark.address, self.bookmark.port);
         let stream = tokio::time::timeout(
             Duration::from_secs(10),
@@ -213,8 +212,31 @@ impl HotlineClient {
             *self.hope_writer.lock().await = Some(HopeWriter::new(Box::new(write_half)));
         }
 
-        self.handshake().await?;
         Ok(())
+    }
+
+    /// Establish TCP (or TLS) connection and perform Hotline handshake.
+    /// Called by connect() and also by login() to reconnect after HOPE probe failure.
+    /// Tries protocol subversion 2 first; if the server rejects it, reconnects
+    /// and retries with subversion 1 for compatibility with 1990s-era servers.
+    async fn establish_connection(&self) -> Result<(), String> {
+        self.open_connection().await?;
+
+        match self.handshake(PROTOCOL_SUBVERSION).await {
+            Ok(()) => Ok(()),
+            Err(e) if e.contains("error code") => {
+                println!("Handshake with subversion {} failed ({}), retrying with subversion 1...",
+                    PROTOCOL_SUBVERSION, e);
+                self.emit_protocol_log(
+                    "warn",
+                    format!("Handshake v{} rejected, retrying with v1 for legacy compatibility", PROTOCOL_SUBVERSION),
+                );
+                // Server rejected our version — reconnect and try subversion 1
+                self.open_connection().await?;
+                self.handshake(0x0001).await
+            }
+            Err(e) => Err(e),
+        }
     }
 
     pub async fn connect(&self) -> Result<(), String> {
@@ -284,15 +306,15 @@ impl HotlineClient {
             .map_err(|e| format!("TLS handshake failed: {}", e))
     }
 
-    async fn handshake(&self) -> Result<(), String> {
-        println!("Performing handshake...");
+    async fn handshake(&self, subversion: u16) -> Result<(), String> {
+        println!("Performing handshake (subversion {})...", subversion);
 
         // Build handshake packet (12 bytes)
         let mut handshake = Vec::with_capacity(12);
         handshake.extend_from_slice(PROTOCOL_ID); // "TRTP"
         handshake.extend_from_slice(SUBPROTOCOL_ID); // "HOTL"
         handshake.extend_from_slice(&PROTOCOL_VERSION.to_be_bytes()); // 0x0001
-        handshake.extend_from_slice(&PROTOCOL_SUBVERSION.to_be_bytes()); // 0x0002
+        handshake.extend_from_slice(&subversion.to_be_bytes());
 
         // Send handshake (raw — before any encryption)
         {
@@ -329,7 +351,7 @@ impl HotlineClient {
             return Err(format!("Handshake failed with error code {}", error_code));
         }
 
-        println!("Handshake successful");
+        println!("Handshake successful (subversion {})", subversion);
 
         Ok(())
     }
@@ -516,6 +538,10 @@ impl HotlineClient {
                     "warn",
                     "HOPE probe failed or unsupported, reconnecting for legacy login",
                 );
+                // Brief delay before reconnecting — some retro servers treat the
+                // failed HOPE probe as a bad login and may rate-limit or ban the
+                // IP if we reconnect too quickly.
+                tokio::time::sleep(Duration::from_secs(2)).await;
                 self.establish_connection().await?;
             }
             result
