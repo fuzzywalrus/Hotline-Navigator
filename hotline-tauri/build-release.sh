@@ -44,10 +44,13 @@ echo "🍎 Target: macOS Big Sur+ (Universal Binary)"
 echo "🔐 Signing: $SIGNING_IDENTITY"
 echo ""
 
+# Determine target directory (support CARGO_TARGET_DIR override for external drives)
+CARGO_TARGET_BASE="${CARGO_TARGET_DIR:-$SCRIPT_DIR/src-tauri/target}"
+
 # Clean previous builds
 echo "🧹 Cleaning previous builds..."
 rm -rf "$RELEASE_DIR"
-rm -rf "src-tauri/target/universal-apple-darwin/release/bundle"
+rm -rf "$CARGO_TARGET_BASE/universal-apple-darwin/release/bundle"
 
 # Build Universal Binary (.app only — we create the DMG ourselves)
 echo "🔨 Building Universal Binary (Intel + Apple Silicon)..."
@@ -63,7 +66,7 @@ export SIGNING_IDENTITY
 npx tauri build --target universal-apple-darwin --bundles app
 
 # Verify build exists
-APP_BUNDLE="src-tauri/target/universal-apple-darwin/release/bundle/macos/$PRODUCT_NAME.app"
+APP_BUNDLE="$CARGO_TARGET_BASE/universal-apple-darwin/release/bundle/macos/$PRODUCT_NAME.app"
 if [ ! -d "$APP_BUNDLE" ]; then
     echo "❌ Build failed! App bundle not found at: $APP_BUNDLE"
     exit 1
