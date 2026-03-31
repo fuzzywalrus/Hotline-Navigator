@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { useAppStore } from '../../stores/appStore';
+import { usePreferencesStore } from '../../stores/preferencesStore';
 import BookmarkList from './BookmarkList';
 import ConnectDialog from './ConnectDialog';
 import SettingsView from '../settings/SettingsView';
@@ -14,7 +16,8 @@ export default function TrackerWindow() {
   const [showNotificationLog, setShowNotificationLog] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
-  const { bookmarks, setBookmarks } = useAppStore();
+  const { bookmarks, setBookmarks, addActiveServer, addTab } = useAppStore();
+  const autoConnectRan = useRef(false);
 
   // Load bookmarks from disk on mount - replace entire array to avoid duplicates
   useEffect(() => {
@@ -30,6 +33,64 @@ export default function TrackerWindow() {
     loadBookmarks();
   }, [setBookmarks]);
 
+  // Auto-connect bookmarks with autoConnect flag on first load
+  useEffect(() => {
+    if (autoConnectRan.current || bookmarks.length === 0) return;
+    autoConnectRan.current = true;
+
+    const autoConnectBookmarks = bookmarks.filter(
+      b => b.autoConnect && b.type !== 'tracker' && b.port !== 5498
+    );
+    if (autoConnectBookmarks.length === 0) return;
+
+    const { username, userIconId, autoDetectTls, allowLegacyTls } = usePreferencesStore.getState();
+    const currentTabs = useAppStore.getState().tabs;
+    const currentServerInfo = useAppStore.getState().serverInfo;
+
+    for (const bookmark of autoConnectBookmarks) {
+      // Skip if already connected
+      const alreadyConnected = currentTabs.some(t => {
+        if (t.type !== 'server' || !t.serverId) return false;
+        return currentServerInfo.get(t.serverId)?.address === bookmark.address;
+      });
+      if (alreadyConnected) continue;
+
+      // Fire-and-forget connection — don't block other auto-connects
+      (async () => {
+        try {
+          console.log(`Auto-connecting to ${bookmark.name}...`);
+          const result = await invoke<{ serverId: string; tls: boolean; port: number }>('connect_to_server', {
+            bookmark,
+            username,
+            userIconId,
+            autoDetectTls: autoDetectTls && !bookmark.tls,
+            allowLegacyTls,
+          });
+
+          addActiveServer(result.serverId, {
+            id: result.serverId,
+            name: bookmark.name,
+            address: bookmark.address,
+            port: result.port,
+            tls: result.tls,
+          });
+
+          addTab({
+            id: `server-${result.serverId}`,
+            type: 'server',
+            serverId: result.serverId,
+            title: bookmark.name,
+            unreadCount: 0,
+          });
+
+          console.log(`Auto-connected to ${bookmark.name}`);
+        } catch (error) {
+          console.error(`Auto-connect failed for ${bookmark.name}:`, error);
+        }
+      })();
+    }
+  }, [bookmarks, addActiveServer, addTab]);
+
   // Keyboard shortcuts
   useKeyboardShortcuts([
     {
@@ -39,6 +100,21 @@ export default function TrackerWindow() {
       action: () => setShowConnect(true),
     },
   ]);
+
+  // Listen for Settings menu item from native menu bar
+  useEffect(() => {
+    const unlisten = listen('menu-settings', () => {
+      // Switch to tracker tab first, then open settings after React renders
+      const store = useAppStore.getState();
+      const trackerTab = store.tabs.find(t => t.type === 'tracker');
+      if (trackerTab) {
+        store.setActiveTab(trackerTab.id);
+      }
+      // Delay slightly so the tab switch renders before the overlay opens
+      setTimeout(() => setShowSettings(true), 50);
+    });
+    return () => { unlisten.then(fn => fn()).catch(() => {}); };
+  }, []);
 
   return (
     <div className="h-full w-full flex flex-col bg-white dark:bg-gray-900">

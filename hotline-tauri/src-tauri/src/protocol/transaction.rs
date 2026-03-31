@@ -293,6 +293,30 @@ mod tests {
     }
 
     #[test]
+    fn field_from_string_macroman_encoding() {
+        // "café" — the é (U+00E9) maps to MacRoman 0x8E
+        let field = TransactionField::from_string(FieldType::Data, "café");
+        // Should be MacRoman bytes, not UTF-8
+        assert_eq!(field.data, vec![0x63, 0x61, 0x66, 0x8E]);
+        // Decoding back should still produce the original string
+        assert_eq!(field.to_string().unwrap(), "café");
+    }
+
+    #[test]
+    fn field_from_string_ascii_unchanged() {
+        // Pure ASCII is identical in both UTF-8 and MacRoman
+        let field = TransactionField::from_string(FieldType::Data, "hello world");
+        assert_eq!(field.data, b"hello world");
+    }
+
+    #[test]
+    fn field_from_string_unmappable_falls_back_to_utf8() {
+        // CJK character has no MacRoman mapping — should fall back to UTF-8
+        let field = TransactionField::from_string(FieldType::Data, "日本語");
+        assert_eq!(field.data, "日本語".as_bytes());
+    }
+
+    #[test]
     fn field_from_encoded_string_xor() {
         let field = TransactionField::from_encoded_string(FieldType::UserPassword, "abc");
         // Each byte XOR 0xFF

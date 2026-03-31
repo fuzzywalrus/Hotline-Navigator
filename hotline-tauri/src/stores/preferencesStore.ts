@@ -57,6 +57,16 @@ interface PreferencesState {
   allowLegacyTls: boolean;
   setAllowLegacyTls: (enabled: boolean) => void;
 
+  // Auto-reconnect preferences
+  autoReconnect: boolean;
+  setAutoReconnect: (enabled: boolean) => void;
+  autoReconnectInterval: number;
+  setAutoReconnectInterval: (minutes: number) => void;
+  autoReconnectMaxRetries: number;
+  setAutoReconnectMaxRetries: (retries: number) => void;
+  autoReconnectSliding: boolean;
+  setAutoReconnectSliding: (enabled: boolean) => void;
+
   // Sound preferences
   playSounds: boolean;
   playChatSound: boolean;
@@ -149,6 +159,16 @@ export const usePreferencesStore = create<PreferencesState>()(
       setAutoDetectTls: (autoDetectTls) => set({ autoDetectTls }),
       allowLegacyTls: false,
       setAllowLegacyTls: (allowLegacyTls) => set({ allowLegacyTls }),
+
+      // Auto-reconnect preferences
+      autoReconnect: false,
+      setAutoReconnect: (autoReconnect) => set({ autoReconnect }),
+      autoReconnectInterval: 3,
+      setAutoReconnectInterval: (autoReconnectInterval) => set({ autoReconnectInterval: Math.max(1, Math.min(999, autoReconnectInterval)) }),
+      autoReconnectMaxRetries: 10,
+      setAutoReconnectMaxRetries: (autoReconnectMaxRetries) => set({ autoReconnectMaxRetries: Math.max(1, Math.min(99, autoReconnectMaxRetries)) }),
+      autoReconnectSliding: false,
+      setAutoReconnectSliding: (autoReconnectSliding) => set({ autoReconnectSliding }),
 
       // Sound preferences (all enabled by default)
       playSounds: true,

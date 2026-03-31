@@ -22,6 +22,7 @@ import { usePreferencesStore } from '../../stores/preferencesStore';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useServerEvents } from './hooks/useServerEvents';
 import { useServerHandlers } from './hooks/useServerHandlers';
+import { useAutoReconnect } from './hooks/useAutoReconnect';
 import { parseUserFlags } from './serverUtils';
 import type { ChatMessage, User, PrivateMessage, FileItem, NewsCategory, NewsArticle, ViewTab, PrivateChatRoom } from './serverTypes';
 import { log, error as logError } from '../../utils/logger';
@@ -85,6 +86,23 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
   useEffect(() => {
     if (tabId) updateTabConnectionStatus(tabId, connectionStatus);
   }, [tabId, connectionStatus, updateTabConnectionStatus]);
+
+  // Auto-reconnect on unexpected disconnect
+  const {
+    reconnectState,
+    cancelReconnect,
+    retryNow,
+    searchTrackers,
+    trackerResults,
+    clearTrackerResults,
+    searchingTrackers,
+  } = useAutoReconnect({
+    serverId,
+    serverName,
+    connectionStatus,
+    disconnectMessage,
+    setDisconnectMessage,
+  });
 
   // Check if tab has an initial file path to navigate to (from hotline:// URL)
   const initialFilePath = useRef(
@@ -901,27 +919,151 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
         </div>
       )}
 
-      {/* Disconnect Message Modal */}
+      {/* Disconnect / Reconnect Modal */}
       {disconnectMessage && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md mx-6 flex flex-col">
             <div className="px-6 pt-6 pb-2">
               <h2 className="text-base font-semibold text-red-600 dark:text-red-400">
-                {disconnectMessage.startsWith('HOPE/protocol')
-                  ? 'Connection Failed'
-                  : 'Disconnected'}
+                {reconnectState.status === 'connecting' ? 'Reconnecting...' :
+                 reconnectState.status === 'waiting' ? 'Reconnecting' :
+                 reconnectState.status === 'exhausted' ? 'Reconnect Failed' :
+                 disconnectMessage.startsWith('HOPE/protocol') ? 'Connection Failed' :
+                 'Disconnected'}
               </h2>
             </div>
+
             <div className="px-6 pb-4 text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">
               {disconnectMessage}
             </div>
-            <div className="flex justify-end px-6 py-4 border-t border-gray-200 dark:border-gray-700">
-              <button
-                onClick={() => setDisconnectMessage(null)}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors text-sm font-medium"
-              >
-                OK
-              </button>
+
+            {/* Reconnect status */}
+            {reconnectState.status === 'waiting' && (
+              <div className="px-6 pb-4">
+                <div className="text-sm text-gray-600 dark:text-gray-400">
+                  Attempt {reconnectState.attempt + 1} of {reconnectState.maxAttempts} — retrying in{' '}
+                  <span className="font-mono font-medium text-gray-900 dark:text-gray-100">
+                    {Math.floor(reconnectState.countdown / 60)}:{String(reconnectState.countdown % 60).padStart(2, '0')}
+                  </span>
+                </div>
+                {reconnectState.attempt > 0 && reconnectState.currentInterval !== usePreferencesStore.getState().autoReconnectInterval && (
+                  <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                    Interval: {reconnectState.currentInterval}m (sliding)
+                  </div>
+                )}
+              </div>
+            )}
+
+            {reconnectState.status === 'connecting' && (
+              <div className="px-6 pb-4 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Connecting... (attempt {reconnectState.attempt + 1} of {reconnectState.maxAttempts})
+              </div>
+            )}
+
+            {reconnectState.status === 'exhausted' && (
+              <div className="px-6 pb-4 text-sm text-gray-600 dark:text-gray-400">
+                All {reconnectState.maxAttempts} reconnect attempts failed.
+              </div>
+            )}
+
+            {/* Tracker search results */}
+            {trackerResults && trackerResults.length > 0 && (
+              <div className="px-6 pb-4">
+                <p className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Server may have moved — found on trackers:
+                </p>
+                <div className="space-y-2 max-h-32 overflow-y-auto">
+                  {trackerResults.map((match, i) => (
+                    <div key={i} className="flex items-center justify-between text-xs bg-gray-50 dark:bg-gray-800 rounded px-3 py-2">
+                      <div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{match.name}</div>
+                        <div className="text-gray-500">{match.address}:{match.port} via {match.trackerName}</div>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          const { bookmarks, updateBookmark } = useAppStore.getState();
+                          const info = useAppStore.getState().serverInfo.get(serverId);
+                          const bm = bookmarks.find(b => b.address === info?.address);
+                          if (bm) {
+                            updateBookmark(bm.id, { address: match.address, port: match.port });
+                            try {
+                              await invoke('save_bookmark', { bookmark: { ...bm, address: match.address, port: match.port } });
+                            } catch { /* best effort */ }
+                          }
+                          clearTrackerResults();
+                          cancelReconnect();
+                          retryNow();
+                        }}
+                        className="ml-2 px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium whitespace-nowrap"
+                      >
+                        Update &amp; Connect
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+              <div className="flex gap-2">
+                {reconnectState.status === 'exhausted' && useAppStore.getState().trackers.length > 0 && (
+                  <button
+                    onClick={searchTrackers}
+                    disabled={searchingTrackers}
+                    className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors disabled:opacity-50"
+                  >
+                    {searchingTrackers ? 'Searching...' : 'Search Trackers'}
+                  </button>
+                )}
+                {reconnectState.status === 'exhausted' && (
+                  <button
+                    onClick={() => {
+                      cancelReconnect();
+                      retryNow();
+                    }}
+                    className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors"
+                  >
+                    Try Again
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                {(reconnectState.status === 'waiting' || reconnectState.status === 'connecting') && (
+                  <>
+                    <button
+                      onClick={retryNow}
+                      disabled={reconnectState.status === 'connecting'}
+                      className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors disabled:opacity-50"
+                    >
+                      Retry Now
+                    </button>
+                    <button
+                      onClick={() => {
+                        cancelReconnect();
+                      }}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors text-sm font-medium"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                )}
+                {(reconnectState.status === 'idle' || reconnectState.status === 'exhausted') && (
+                  <button
+                    onClick={() => {
+                      cancelReconnect();
+                      setDisconnectMessage(null);
+                    }}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors text-sm font-medium"
+                  >
+                    OK
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

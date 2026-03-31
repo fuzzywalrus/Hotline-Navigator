@@ -21,6 +21,7 @@ export default function EditBookmarkDialog({ bookmark, onClose, mode = 'edit', o
     password: bookmark.password || '',
     tls: bookmark.tls || false,
     hope: bookmark.hope || false,
+    autoConnect: bookmark.autoConnect || false,
   });
 
   useEffect(() => {
@@ -44,6 +45,7 @@ export default function EditBookmarkDialog({ bookmark, onClose, mode = 'edit', o
       password: formData.password || undefined,
       tls: formData.tls,
       hope: formData.hope,
+      autoConnect: formData.autoConnect,
       type: bookmark.type,
     };
 
@@ -154,6 +156,21 @@ export default function EditBookmarkDialog({ bookmark, onClose, mode = 'edit', o
               />
               <label htmlFor={`${mode}-hope`} className="text-sm font-medium text-gray-700 dark:text-gray-300">
                 Use HOPE (Secure Login)
+              </label>
+            </div>
+          )}
+
+          {bookmark.type !== 'tracker' && (
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id={`${mode}-autoconnect`}
+                checked={formData.autoConnect}
+                onChange={(e) => setFormData({ ...formData, autoConnect: e.target.checked })}
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <label htmlFor={`${mode}-autoconnect`} className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Connect on launch
               </label>
             </div>
           )}

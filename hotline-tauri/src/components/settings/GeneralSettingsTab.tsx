@@ -14,7 +14,7 @@ interface ChatHistoryMeta {
 }
 
 export default function GeneralSettingsTab() {
-  const { username, setUsername, enablePrivateMessaging, setEnablePrivateMessaging, darkMode, setDarkMode, downloadFolder, setDownloadFolder, showServerBanner, setShowServerBanner, clickableLinks, setClickableLinks, showInlineImages, setShowInlineImages, renderMarkdown, setRenderMarkdown, renderMarkdownAgreements, setRenderMarkdownAgreements, useRemoteIcons, setUseRemoteIcons, showRemoteBanners, setShowRemoteBanners, autoDetectTls, setAutoDetectTls, allowLegacyTls, setAllowLegacyTls, mentionPopup, setMentionPopup, mutedUsers, addMutedUser, removeMutedUser, watchWords, addWatchWord, removeWatchWord, enableChatHistory, setEnableChatHistory, showTimestamps, setShowTimestamps } = usePreferencesStore();
+  const { username, setUsername, enablePrivateMessaging, setEnablePrivateMessaging, darkMode, setDarkMode, downloadFolder, setDownloadFolder, showServerBanner, setShowServerBanner, clickableLinks, setClickableLinks, showInlineImages, setShowInlineImages, renderMarkdown, setRenderMarkdown, renderMarkdownAgreements, setRenderMarkdownAgreements, useRemoteIcons, setUseRemoteIcons, showRemoteBanners, setShowRemoteBanners, autoDetectTls, setAutoDetectTls, allowLegacyTls, setAllowLegacyTls, autoReconnect, setAutoReconnect, autoReconnectInterval, setAutoReconnectInterval, autoReconnectMaxRetries, setAutoReconnectMaxRetries, autoReconnectSliding, setAutoReconnectSliding, mentionPopup, setMentionPopup, mutedUsers, addMutedUser, removeMutedUser, watchWords, addWatchWord, removeWatchWord, enableChatHistory, setEnableChatHistory, showTimestamps, setShowTimestamps } = usePreferencesStore();
   const { setBookmarks } = useAppStore();
   const isMobile = useIsMobile();
   const [localUsername, setLocalUsername] = useState(username);
@@ -296,6 +296,65 @@ export default function GeneralSettingsTab() {
             className="ml-4 toggle toggle-primary"
           />
         </div>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Auto-Reconnect
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Automatically reconnect when a server disconnects unexpectedly.
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            checked={autoReconnect}
+            onChange={(e) => setAutoReconnect(e.target.checked)}
+            className="ml-4 toggle toggle-primary"
+          />
+        </div>
+        {autoReconnect && (
+          <div className="mt-3 ml-4 pl-4 border-l-2 border-gray-200 dark:border-gray-700 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm text-gray-700 dark:text-gray-300">Interval (minutes)</label>
+              <input
+                type="number"
+                min={1}
+                max={999}
+                value={autoReconnectInterval}
+                onChange={(e) => setAutoReconnectInterval(parseInt(e.target.value) || 1)}
+                className="w-20 px-2 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <label className="text-sm text-gray-700 dark:text-gray-300">Max retries</label>
+              <input
+                type="number"
+                min={1}
+                max={99}
+                value={autoReconnectMaxRetries}
+                onChange={(e) => setAutoReconnectMaxRetries(parseInt(e.target.value) || 1)}
+                className="w-20 px-2 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <label className="text-sm text-gray-700 dark:text-gray-300">Sliding interval</label>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Double the wait after each attempt ({autoReconnectInterval}m, {autoReconnectInterval * 2}m, {autoReconnectInterval * 4}m... max 12 hours).
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={autoReconnectSliding}
+                onChange={(e) => setAutoReconnectSliding(e.target.checked)}
+                className="ml-4 toggle toggle-primary"
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <div>

@@ -5,7 +5,87 @@ mod protocol;
 mod state;
 
 use state::AppState;
-use tauri::Manager;
+use tauri::{Manager, Emitter};
+
+#[cfg(not(mobile))]
+fn build_menu(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{MenuBuilder, SubmenuBuilder, PredefinedMenuItem, AboutMetadata, MenuItem};
+
+    let app_submenu = SubmenuBuilder::new(app, "Hotline Navigator")
+        .item(&PredefinedMenuItem::about(app, Some("About Hotline Navigator"), Some(AboutMetadata {
+            name: Some("Hotline Navigator".into()),
+            version: Some(env!("CARGO_PKG_VERSION").into()),
+            copyright: Some("Copyright © 2025-2026 Greg Gant".into()),
+            comments: Some("A modern Hotline client".into()),
+            ..Default::default()
+        }))?)
+        .separator()
+        .item(&MenuItem::with_id(app, "settings", "Settings...", true, Some("CmdOrCtrl+,"))?)
+        .separator()
+        .item(&PredefinedMenuItem::hide(app, Some("Hide Hotline Navigator"))?)
+        .item(&PredefinedMenuItem::hide_others(app, Some("Hide Others"))?)
+        .item(&PredefinedMenuItem::show_all(app, Some("Show All"))?)
+        .separator()
+        .item(&PredefinedMenuItem::quit(app, Some("Quit Hotline Navigator"))?)
+        .build()?;
+
+    let edit_submenu = SubmenuBuilder::new(app, "Edit")
+        .item(&PredefinedMenuItem::undo(app, None)?)
+        .item(&PredefinedMenuItem::redo(app, None)?)
+        .separator()
+        .item(&PredefinedMenuItem::cut(app, None)?)
+        .item(&PredefinedMenuItem::copy(app, None)?)
+        .item(&PredefinedMenuItem::paste(app, None)?)
+        .item(&PredefinedMenuItem::select_all(app, None)?)
+        .build()?;
+
+    let window_submenu = SubmenuBuilder::new(app, "Window")
+        .item(&PredefinedMenuItem::minimize(app, None)?)
+        .item(&PredefinedMenuItem::maximize(app, None)?)
+        .separator()
+        .item(&PredefinedMenuItem::close_window(app, Some("Close Window"))?)
+        .build()?;
+
+    let help_submenu = SubmenuBuilder::new(app, "Help")
+        .item(&MenuItem::with_id(app, "help_wiki", "Hotline Navigator Wiki", true, None::<&str>)?)
+        .item(&MenuItem::with_id(app, "help_github", "Hotline Navigator on GitHub", true, None::<&str>)?)
+        .item(&MenuItem::with_id(app, "help_issues", "Report an Issue", true, None::<&str>)?)
+        .item(&MenuItem::with_id(app, "help_readme", "README", true, None::<&str>)?)
+        .build()?;
+
+    let menu = MenuBuilder::new(app)
+        .item(&app_submenu)
+        .item(&edit_submenu)
+        .item(&window_submenu)
+        .item(&help_submenu)
+        .build()?;
+
+    app.set_menu(menu)?;
+
+    // Handle menu events
+    app.on_menu_event(move |app_handle, event| {
+        match event.id().as_ref() {
+            "settings" => {
+                let _ = app_handle.emit("menu-settings", ());
+            }
+            "help_wiki" => {
+                let _ = tauri_plugin_opener::open_url("https://github.com/fuzzywalrus/Hotline-Navigator/wiki", None::<&str>);
+            }
+            "help_github" => {
+                let _ = tauri_plugin_opener::open_url("https://github.com/fuzzywalrus/Hotline-Navigator", None::<&str>);
+            }
+            "help_issues" => {
+                let _ = tauri_plugin_opener::open_url("https://github.com/fuzzywalrus/Hotline-Navigator/issues", None::<&str>);
+            }
+            "help_readme" => {
+                let _ = tauri_plugin_opener::open_url("https://github.com/fuzzywalrus/Hotline-Navigator/blob/main/README.md", None::<&str>);
+            }
+            _ => {}
+        }
+    });
+
+    Ok(())
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -38,6 +118,10 @@ pub fn run() {
             // Initialize app state with persistent storage
             let app_state = AppState::new(app_data_dir, app.handle().clone());
             app.manage(app_state);
+
+            // Build native menu bar (macOS/Windows/Linux only)
+            #[cfg(not(mobile))]
+            build_menu(app)?;
 
             Ok(())
         })
