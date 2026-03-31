@@ -193,20 +193,38 @@ impl HotlineClient {
     /// Open a raw TCP (or TLS) connection and install it in the reader/writer slots.
     async fn open_connection(&self) -> Result<(), String> {
         let addr = crate::protocol::socket_addr_string(&self.bookmark.address, self.bookmark.port);
+        self.emit_protocol_log("info", format!("Connecting to {}...", addr));
+
         let stream = tokio::time::timeout(
             Duration::from_secs(10),
             TcpStream::connect(&addr),
         )
         .await
-        .map_err(|_| format!("Connection timed out after 10 seconds"))?
-        .map_err(|e| format!("Failed to connect: {}", e))?;
+        .map_err(|_| {
+            self.emit_protocol_log("error", format!("Connection to {} timed out after 10s", addr));
+            format!("Connection timed out after 10 seconds")
+        })?
+        .map_err(|e| {
+            self.emit_protocol_log("error", format!("TCP connect failed: {}", e));
+            format!("Failed to connect: {}", e)
+        })?;
 
         if self.bookmark.tls {
-            let tls_stream = Self::wrap_tls(stream, &self.bookmark.address).await?;
-            let (read_half, write_half) = tokio::io::split(tls_stream);
-            *self.hope_reader.lock().await = Some(HopeReader::new(Box::new(read_half)));
-            *self.hope_writer.lock().await = Some(HopeWriter::new(Box::new(write_half)));
+            self.emit_protocol_log("info", format!("TLS enabled — starting handshake with {}", self.bookmark.address));
+            match Self::wrap_tls(stream, &self.bookmark.address).await {
+                Ok(tls_stream) => {
+                    self.emit_protocol_log("info", "TLS handshake successful");
+                    let (read_half, write_half) = tokio::io::split(tls_stream);
+                    *self.hope_reader.lock().await = Some(HopeReader::new(Box::new(read_half)));
+                    *self.hope_writer.lock().await = Some(HopeWriter::new(Box::new(write_half)));
+                }
+                Err(e) => {
+                    self.emit_protocol_log("error", format!("TLS handshake failed: {}", e));
+                    return Err(e);
+                }
+            }
         } else {
+            self.emit_protocol_log("info", "Plain TCP connection established (no TLS)");
             let (read_half, write_half) = stream.into_split();
             *self.hope_reader.lock().await = Some(HopeReader::new(Box::new(read_half)));
             *self.hope_writer.lock().await = Some(HopeWriter::new(Box::new(write_half)));
@@ -308,6 +326,7 @@ impl HotlineClient {
 
     async fn handshake(&self, subversion: u16) -> Result<(), String> {
         println!("Performing handshake (subversion {})...", subversion);
+        self.emit_protocol_log("info", format!("Protocol handshake: TRTP/HOTL v{}.{}", PROTOCOL_VERSION, subversion));
 
         // Build handshake packet (12 bytes)
         let mut handshake = Vec::with_capacity(12);
@@ -348,10 +367,12 @@ impl HotlineClient {
 
         let error_code = u32::from_be_bytes([response[4], response[5], response[6], response[7]]);
         if error_code != 0 {
+            self.emit_protocol_log("error", format!("Handshake rejected by server (error code {})", error_code));
             return Err(format!("Handshake failed with error code {}", error_code));
         }
 
         println!("Handshake successful (subversion {})", subversion);
+        self.emit_protocol_log("info", format!("Handshake successful (subversion {})", subversion));
 
         Ok(())
     }
@@ -434,8 +455,10 @@ impl HotlineClient {
         ));
 
         println!("Sending HOPE identification...");
+        self.emit_protocol_log("info", "Sending HOPE identification probe...");
         if let Err(e) = self.send_transaction_raw(&hope_tx).await {
             println!("HOPE probe send failed: {}", e);
+            self.emit_protocol_log("warn", format!("HOPE probe send failed: {}", e));
             return None;
         }
 
@@ -444,6 +467,7 @@ impl HotlineClient {
             Ok(r) => r,
             Err(e) => {
                 println!("HOPE probe read failed: {}", e);
+                self.emit_protocol_log("warn", format!("HOPE probe — server did not respond ({})", e));
                 return None;
             }
         };
@@ -452,6 +476,7 @@ impl HotlineClient {
         let session_key_field = reply.get_field(FieldType::HopeSessionKey)?;
         if session_key_field.data.len() != 64 {
             println!("HOPE session key wrong size ({}), not supported", session_key_field.data.len());
+            self.emit_protocol_log("warn", format!("HOPE session key wrong size ({}), server does not support HOPE", session_key_field.data.len()));
             return None;
         }
 
@@ -654,6 +679,7 @@ impl HotlineClient {
             login_tx.add_field(TransactionField::from_u16(FieldType::Capabilities, CAPABILITY_LARGE_FILES));
 
             println!("Sending login...");
+            self.emit_protocol_log("info", "Sending legacy login (XOR-encoded credentials)");
             self.send_transaction_raw(&login_tx).await?;
             self.read_transaction_raw().await?
         };
@@ -682,6 +708,7 @@ impl HotlineClient {
                 }
             }
 
+            self.emit_protocol_log("error", format!("Login failed: {}", error_msg));
             return Err(format!("Login failed: {}", error_msg));
         }
 
@@ -723,6 +750,13 @@ impl HotlineClient {
         let large_files = (server_capabilities & CAPABILITY_LARGE_FILES) != 0;
         self.large_file_support.store(large_files, Ordering::SeqCst);
         println!("Server capabilities: 0x{:04X} (large files: {})", server_capabilities, large_files);
+        self.emit_protocol_log("info", format!(
+            "Login successful — server: \"{}\", version: {}, large files: {}, HOPE: {}",
+            server_name,
+            server_version,
+            large_files,
+            if hope_negotiation.is_some() { if hope_transport_active { "encrypted" } else { "auth only" } } else { "off" },
+        ));
 
         {
             let mut server_info = self.server_info.lock().await;
