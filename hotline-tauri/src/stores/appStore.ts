@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Bookmark, TrackerBookmark, Transfer } from '../types';
+import { Bookmark, ConnectionStatus, TrackerBookmark, Transfer } from '../types';
 
 interface ServerInfo {
   id: string;
@@ -27,6 +27,7 @@ export interface Tab {
   title: string;
   unreadCount: number;
   initialFilePath?: string[]; // Navigate to this path in Files tab on connect
+  connectionStatus?: ConnectionStatus; // Tracks server connection state for tab styling
 }
 
 interface AppState {
@@ -72,6 +73,7 @@ interface AppState {
   setActiveTab: (tabId: string) => void;
   updateTabUnread: (tabId: string, count: number) => void;
   updateTabTitle: (tabId: string, title: string) => void;
+  updateTabConnectionStatus: (tabId: string, status: ConnectionStatus) => void;
 
   setShowAbout: (show: boolean) => void;
   setShowUpdate: (show: boolean) => void;
@@ -212,8 +214,14 @@ export const useAppStore = create<AppState>((set) => ({
   })),
 
   updateTabTitle: (tabId, title) => set((state) => ({
-    tabs: state.tabs.map(t => 
+    tabs: state.tabs.map(t =>
       t.id === tabId ? { ...t, title } : t
+    ),
+  })),
+
+  updateTabConnectionStatus: (tabId, status) => set((state) => ({
+    tabs: state.tabs.map(t =>
+      t.id === tabId ? { ...t, connectionStatus: status } : t
     ),
   })),
 

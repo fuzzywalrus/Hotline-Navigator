@@ -34,7 +34,7 @@ interface ServerWindowProps {
 }
 
 export default function ServerWindow({ serverId, serverName, onClose }: ServerWindowProps) {
-  const { setFileCache, getFileCache, clearFileCache, clearFileCachePath, addTransfer, updateTransfer, updateTabTitle, serverInfo: serverInfoMap, tabs } = useAppStore();
+  const { setFileCache, getFileCache, clearFileCache, clearFileCachePath, addTransfer, updateTransfer, updateTabTitle, updateTabConnectionStatus, serverInfo: serverInfoMap, tabs } = useAppStore();
   const isTls = serverInfoMap.get(serverId)?.tls ?? false;
   const { enablePrivateMessaging, downloadFolder, showServerBanner, renderMarkdown, renderMarkdownAgreements } = usePreferencesStore();
   const [showTransferList, setShowTransferList] = useState(false);
@@ -79,6 +79,12 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
+
+  // Sync connection status to tab store so TabBar can reflect it
+  const tabId = tabs.find(t => t.type === 'server' && t.serverId === serverId)?.id;
+  useEffect(() => {
+    if (tabId) updateTabConnectionStatus(tabId, connectionStatus);
+  }, [tabId, connectionStatus, updateTabConnectionStatus]);
 
   // Check if tab has an initial file path to navigate to (from hotline:// URL)
   const initialFilePath = useRef(

@@ -59,13 +59,22 @@ export default function TabBar() {
               }
             `}
           >
-            {/* Tab icon */}
-            <span className="text-sm flex-shrink-0">
+            {/* Tab icon + connection indicator */}
+            <span className={`text-sm flex-shrink-0 ${
+              tab.type === 'server' && (tab.connectionStatus === 'disconnected' || tab.connectionStatus === 'failed')
+                ? 'opacity-40 grayscale' : ''
+            }`}>
               {tab.type === 'tracker' ? '🌐' : '🖥️'}
             </span>
+            {tab.type === 'server' && (tab.connectionStatus === 'disconnected' || tab.connectionStatus === 'failed') && (
+              <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-red-500" title="Disconnected" />
+            )}
             
             {/* Tab title */}
-            <span className="text-sm truncate flex-1 font-medium">
+            <span className={`text-sm truncate flex-1 font-medium ${
+              tab.type === 'server' && (tab.connectionStatus === 'disconnected' || tab.connectionStatus === 'failed')
+                ? 'text-gray-400 dark:text-gray-500' : ''
+            }`}>
               {tab.title}
             </span>
             
