@@ -64,10 +64,11 @@ pub async fn connect_to_server(
     username: String,
     user_icon_id: u16,
     auto_detect_tls: Option<bool>,
+    allow_legacy_tls: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<ConnectResult, String> {
     println!("Command: connect_to_server to {}:{} as {}", bookmark.address, bookmark.port, username);
-    state.connect_server(bookmark, username, user_icon_id, auto_detect_tls.unwrap_or(false)).await
+    state.connect_server(bookmark, username, user_icon_id, auto_detect_tls.unwrap_or(false), allow_legacy_tls.unwrap_or(false)).await
 }
 
 #[tauri::command]
@@ -766,7 +767,7 @@ pub async fn test_connection(address: String, port: u16) -> Result<String, Strin
     };
 
     // Create client and connect
-    let client = crate::protocol::HotlineClient::new(bookmark);
+    let client = crate::protocol::HotlineClient::new(bookmark, false);
     client.connect().await?;
 
     Ok("Connected successfully!".to_string())

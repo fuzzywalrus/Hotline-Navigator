@@ -11,7 +11,7 @@ interface ConnectDialogProps {
 
 export default function ConnectDialog({ onClose }: ConnectDialogProps) {
   const { addBookmark, bookmarks, addActiveServer, addTab, tabs, serverInfo, setActiveTab } = useAppStore();
-  const { username, userIconId, autoDetectTls } = usePreferencesStore();
+  const { username, userIconId, autoDetectTls, allowLegacyTls } = usePreferencesStore();
   const [visible, setVisible] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -133,6 +133,7 @@ export default function ConnectDialog({ onClose }: ConnectDialogProps) {
         username,
         userIconId,
         autoDetectTls: autoDetectTls && !tls,
+        allowLegacyTls,
       });
 
       addActiveServer(result.serverId, {

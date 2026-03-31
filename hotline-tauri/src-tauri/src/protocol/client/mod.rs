@@ -36,6 +36,17 @@ use tokio_rustls::TlsConnector;
 pub(crate) type BoxedRead = Box<dyn AsyncRead + Unpin + Send>;
 pub(crate) type BoxedWrite = Box<dyn AsyncWrite + Unpin + Send>;
 
+const LEGACY_TLS_CIPHER_LIST: &str =
+    "DHE-RSA-AES256-SHA:DHE-RSA-AES128-SHA:AES256-SHA:AES128-SHA:DES-CBC3-SHA:RC4-SHA:@SECLEVEL=0";
+
+fn legacy_tls_sni_host(host: &str) -> &str {
+    if host.parse::<IpAddr>().is_ok() || (host.contains('%') && host.matches(':').count() >= 2) {
+        "hotline"
+    } else {
+        host
+    }
+}
+
 /// Certificate verifier that accepts any certificate.
 /// Hotline servers typically use self-signed certificates.
 #[derive(Debug)]
@@ -117,6 +128,7 @@ pub struct FileInfo {
 
 pub struct HotlineClient {
     bookmark: Bookmark,
+    allow_legacy_tls: bool,
     username: Arc<Mutex<String>>,
     user_icon_id: Arc<Mutex<u16>>,
     status: Arc<Mutex<ConnectionStatus>>,
@@ -157,11 +169,12 @@ impl HotlineClient {
         });
     }
 
-    pub fn new(bookmark: Bookmark) -> Self {
+    pub fn new(bookmark: Bookmark, allow_legacy_tls: bool) -> Self {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
         Self {
             bookmark,
+            allow_legacy_tls,
             username: Arc::new(Mutex::new("guest".to_string())),
             user_icon_id: Arc::new(Mutex::new(191)),
             status: Arc::new(Mutex::new(ConnectionStatus::Disconnected)),
@@ -210,17 +223,72 @@ impl HotlineClient {
         })?;
 
         if self.bookmark.tls {
+            // Always try modern TLS (1.2+) first via rustls.
+            // If that fails and legacy TLS is enabled, reconnect and retry
+            // with native-tls which supports TLS 1.0/1.1 for older servers.
             self.emit_protocol_log("info", format!("TLS enabled — starting handshake with {}", self.bookmark.address));
-            match Self::wrap_tls(stream, &self.bookmark.address).await {
-                Ok(tls_stream) => {
-                    self.emit_protocol_log("info", "TLS handshake successful");
+            match tokio::time::timeout(
+                Duration::from_secs(10),
+                Self::wrap_tls(stream, &self.bookmark.address),
+            ).await {
+                Ok(Ok(tls_stream)) => {
+                    self.emit_protocol_log("info", "TLS 1.2+ handshake successful");
                     let (read_half, write_half) = tokio::io::split(tls_stream);
                     *self.hope_reader.lock().await = Some(HopeReader::new(Box::new(read_half)));
                     *self.hope_writer.lock().await = Some(HopeWriter::new(Box::new(write_half)));
                 }
-                Err(e) => {
+                modern_err if self.allow_legacy_tls => {
+                    let reason = match &modern_err {
+                        Ok(Err(e)) => format!("{}", e),
+                        Err(_) => "timed out".to_string(),
+                        _ => unreachable!(),
+                    };
+                    self.emit_protocol_log("warn", format!("TLS 1.2+ failed ({}), retrying with legacy TLS 1.0...", reason));
+
+                    // Reconnect — the failed/timed-out TLS handshake consumed the TCP stream
+                    let addr = crate::protocol::socket_addr_string(&self.bookmark.address, self.bookmark.port);
+                    let stream = tokio::time::timeout(
+                        Duration::from_secs(10),
+                        TcpStream::connect(&addr),
+                    )
+                    .await
+                    .map_err(|_| format!("Legacy TLS reconnect timed out"))?
+                    .map_err(|e| format!("Legacy TLS reconnect failed: {}", e))?;
+
+                    match tokio::time::timeout(
+                        Duration::from_secs(10),
+                        Self::wrap_tls_legacy(stream, &self.bookmark.address),
+                    ).await {
+                        Ok(Ok(tls_stream)) => {
+                            self.emit_protocol_log("info", "Legacy TLS handshake successful (TLS 1.0/1.1)");
+                            let (read_half, write_half) = tokio::io::split(tls_stream);
+                            *self.hope_reader.lock().await = Some(HopeReader::new(Box::new(read_half)));
+                            *self.hope_writer.lock().await = Some(HopeWriter::new(Box::new(write_half)));
+                        }
+                        Ok(Err(e2)) => {
+                            self.emit_protocol_log("error", format!("Legacy TLS handshake also failed: {}", e2));
+                            return Err(e2);
+                        }
+                        Err(_) => {
+                            self.emit_protocol_log("error", "Legacy TLS handshake timed out after 10s");
+                            return Err("Legacy TLS handshake timed out".to_string());
+                        }
+                    }
+                }
+                Ok(Err(e)) => {
                     self.emit_protocol_log("error", format!("TLS handshake failed: {}", e));
-                    return Err(e);
+                    return Err(format!(
+                        "TLS handshake failed: {}. This server may only support older TLS versions (1.0/1.1). \
+                        Try enabling \"Allow Legacy TLS\" in Settings.",
+                        e
+                    ));
+                }
+                Err(_) => {
+                    self.emit_protocol_log("error", "TLS handshake timed out after 10s");
+                    return Err(
+                        "TLS handshake timed out. This server may only support older TLS versions (1.0/1.1). \
+                        Try enabling \"Allow Legacy TLS\" in Settings.".to_string()
+                    );
                 }
             }
         } else {
@@ -292,7 +360,7 @@ impl HotlineClient {
         Ok(())
     }
 
-    /// Wrap a TCP stream with TLS, accepting any certificate (for self-signed Hotline servers).
+    /// Wrap a TCP stream with TLS (rustls, TLS 1.2+), accepting any certificate.
     pub(crate) async fn wrap_tls(
         stream: TcpStream,
         host: &str,
@@ -322,6 +390,64 @@ impl HotlineClient {
 
         connector.connect(server_name, stream).await
             .map_err(|e| format!("TLS handshake failed: {}", e))
+    }
+
+    /// Wrap a TCP stream with legacy TLS (OpenSSL, supports TLS 1.0+ with DHE ciphers).
+    /// Used for older Hotline servers that don't support TLS 1.2.
+    /// macOS SecureTransport has removed DHE cipher suites, so we use vendored
+    /// OpenSSL which still supports them.
+    ///
+    /// Key compatibility detail: Tiger-era SecureTransport (TLS 1.0 only) may not
+    /// understand a ClientHello that advertises TLS 1.2+ or includes TLS 1.3
+    /// extensions. We cap max version at TLS 1.0 so the ClientHello itself is
+    /// pure TLS 1.0 — no extensions the old stack can't parse.
+    pub(crate) async fn wrap_tls_legacy(
+        stream: TcpStream,
+        host: &str,
+    ) -> Result<tokio_openssl::SslStream<TcpStream>, String> {
+        let mut builder = openssl::ssl::SslConnector::builder(openssl::ssl::SslMethod::tls())
+            .map_err(|e| format!("Failed to create OpenSSL context: {}", e))?;
+
+        // Pin to TLS 1.0 only — ensures the ClientHello is a pure TLS 1.0
+        // record that ancient SecureTransport (Tiger/Leopard) can parse.
+        // A TLS 1.0-1.2 range ClientHello has client_version=0x0303 which
+        // pre-TLS-1.2 stacks may reject outright.
+        builder.set_min_proto_version(Some(openssl::ssl::SslVersion::TLS1))
+            .map_err(|e| format!("Failed to set min TLS version: {}", e))?;
+        builder.set_max_proto_version(Some(openssl::ssl::SslVersion::TLS1))
+            .map_err(|e| format!("Failed to set max TLS version: {}", e))?;
+
+        // Include legacy DHE and RSA ciphers that older Hotline servers use.
+        // @SECLEVEL=0 disables OpenSSL security restrictions on weak ciphers.
+        builder.set_cipher_list(LEGACY_TLS_CIPHER_LIST)
+            .map_err(|e| format!("Failed to set cipher list: {}", e))?;
+
+        // Accept self-signed certificates (standard for Hotline servers)
+        builder.set_verify(openssl::ssl::SslVerifyMode::NONE);
+
+        // Allow unsafe legacy renegotiation — Tiger-era servers don't support
+        // RFC 5746 secure renegotiation, and OpenSSL 3.x rejects them by default.
+        builder.set_options(openssl::ssl::SslOptions::ALLOW_UNSAFE_LEGACY_RENEGOTIATION);
+
+        // Disable SNI for maximum compatibility — Tiger SecureTransport
+        // predates SNI support and may reject connections that include it.
+        let connector = builder.build();
+        let mut config = connector.configure()
+            .map_err(|e| format!("Failed to configure OpenSSL: {}", e))?;
+        config.set_use_server_name_indication(false);
+
+        let sni_host = legacy_tls_sni_host(host);
+        let ssl = config.into_ssl(sni_host)
+            .map_err(|e| format!("Failed to create SSL object: {}", e))?;
+
+        let mut tls_stream = tokio_openssl::SslStream::new(ssl, stream)
+            .map_err(|e| format!("Failed to create SSL stream: {}", e))?;
+
+        std::pin::Pin::new(&mut tls_stream).connect()
+            .await
+            .map_err(|e| format!("Legacy TLS handshake failed: {}", e))?;
+
+        Ok(tls_stream)
     }
 
     async fn handshake(&self, subversion: u16) -> Result<(), String> {
@@ -1317,5 +1443,249 @@ impl HotlineClient {
         server_info
             .clone()
             .ok_or_else(|| "Server info not available".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HotlineClient;
+    use openssl::asn1::Asn1Time;
+    use openssl::bn::BigNum;
+    use openssl::hash::MessageDigest;
+    use openssl::nid::Nid;
+    use openssl::pkey::{PKey, Private};
+    use openssl::rsa::Rsa;
+    use openssl::ssl::{SslAcceptor, SslMethod, SslVersion};
+    use openssl::x509::{X509NameBuilder, X509};
+    use std::net::TcpListener;
+    use std::thread;
+    use tokio::net::TcpStream;
+
+    fn build_self_signed_cert() -> Result<(PKey<Private>, X509), String> {
+        let rsa = Rsa::generate(2048).map_err(|e| format!("rsa generate failed: {}", e))?;
+        let pkey = PKey::from_rsa(rsa).map_err(|e| format!("pkey create failed: {}", e))?;
+
+        let mut name_builder =
+            X509NameBuilder::new().map_err(|e| format!("name builder failed: {}", e))?;
+        name_builder
+            .append_entry_by_nid(Nid::COMMONNAME, "localhost")
+            .map_err(|e| format!("set CN failed: {}", e))?;
+        let name = name_builder.build();
+
+        let mut builder = X509::builder().map_err(|e| format!("x509 builder failed: {}", e))?;
+        builder
+            .set_version(2)
+            .map_err(|e| format!("set version failed: {}", e))?;
+
+        let mut serial = BigNum::new().map_err(|e| format!("serial bignum failed: {}", e))?;
+        serial
+            .rand(64, openssl::bn::MsbOption::MAYBE_ZERO, false)
+            .map_err(|e| format!("serial rand failed: {}", e))?;
+        let serial = serial
+            .to_asn1_integer()
+            .map_err(|e| format!("serial to asn1 failed: {}", e))?;
+        builder
+            .set_serial_number(&serial)
+            .map_err(|e| format!("set serial failed: {}", e))?;
+
+        builder
+            .set_subject_name(&name)
+            .map_err(|e| format!("set subject failed: {}", e))?;
+        builder
+            .set_issuer_name(&name)
+            .map_err(|e| format!("set issuer failed: {}", e))?;
+        builder
+            .set_pubkey(&pkey)
+            .map_err(|e| format!("set pubkey failed: {}", e))?;
+        let not_before =
+            Asn1Time::days_from_now(0).map_err(|e| format!("not_before failed: {}", e))?;
+        builder
+            .set_not_before(&not_before)
+            .map_err(|e| format!("set not_before failed: {}", e))?;
+        let not_after =
+            Asn1Time::days_from_now(1).map_err(|e| format!("not_after failed: {}", e))?;
+        builder
+            .set_not_after(&not_after)
+            .map_err(|e| format!("set not_after failed: {}", e))?;
+
+        builder
+            .sign(&pkey, MessageDigest::sha256())
+            .map_err(|e| format!("cert sign failed: {}", e))?;
+
+        Ok((pkey, builder.build()))
+    }
+
+    fn spawn_tls10_server() -> Result<(u16, thread::JoinHandle<Result<(), String>>), String> {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .map_err(|e| format!("bind test server failed: {}", e))?;
+        let port = listener
+            .local_addr()
+            .map_err(|e| format!("local_addr failed: {}", e))?
+            .port();
+
+        let (pkey, cert) = build_self_signed_cert()?;
+
+        let mut builder = SslAcceptor::mozilla_intermediate_v5(SslMethod::tls())
+            .map_err(|e| format!("acceptor builder failed: {}", e))?;
+        builder
+            .set_private_key(&pkey)
+            .map_err(|e| format!("set private key failed: {}", e))?;
+        builder
+            .set_certificate(&cert)
+            .map_err(|e| format!("set certificate failed: {}", e))?;
+        builder
+            .check_private_key()
+            .map_err(|e| format!("check private key failed: {}", e))?;
+        builder
+            .set_min_proto_version(Some(SslVersion::TLS1))
+            .map_err(|e| format!("set min version failed: {}", e))?;
+        builder
+            .set_max_proto_version(Some(SslVersion::TLS1))
+            .map_err(|e| format!("set max version failed: {}", e))?;
+        builder
+            .set_cipher_list("AES128-SHA:AES256-SHA:@SECLEVEL=0")
+            .map_err(|e| format!("set cipher list failed: {}", e))?;
+
+        let acceptor = builder.build();
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener
+                .accept()
+                .map_err(|e| format!("accept failed: {}", e))?;
+            let _ = acceptor
+                .accept(stream)
+                .map_err(|e| format!("tls accept failed: {}", e))?;
+            Ok(())
+        });
+
+        Ok((port, handle))
+    }
+
+    #[tokio::test]
+    async fn rustls_modern_tls_fails_against_tls10_only_server() {
+        let (port, server) = spawn_tls10_server().expect("failed to start tls10 server");
+        let stream = TcpStream::connect(("127.0.0.1", port))
+            .await
+            .expect("connect test server failed");
+
+        let result = HotlineClient::wrap_tls(stream, "127.0.0.1").await;
+        assert!(result.is_err(), "modern TLS unexpectedly succeeded");
+
+        // For this test, handshake failure on the server side is expected.
+        let _ = server.join();
+    }
+
+    fn spawn_tls12_server() -> Result<(u16, thread::JoinHandle<Result<(), String>>), String> {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .map_err(|e| format!("bind test server failed: {}", e))?;
+        let port = listener
+            .local_addr()
+            .map_err(|e| format!("local_addr failed: {}", e))?
+            .port();
+
+        let (pkey, cert) = build_self_signed_cert()?;
+
+        let mut builder = SslAcceptor::mozilla_intermediate_v5(SslMethod::tls())
+            .map_err(|e| format!("acceptor builder failed: {}", e))?;
+        builder
+            .set_private_key(&pkey)
+            .map_err(|e| format!("set private key failed: {}", e))?;
+        builder
+            .set_certificate(&cert)
+            .map_err(|e| format!("set certificate failed: {}", e))?;
+        builder
+            .check_private_key()
+            .map_err(|e| format!("check private key failed: {}", e))?;
+        builder
+            .set_min_proto_version(Some(SslVersion::TLS1_2))
+            .map_err(|e| format!("set min version failed: {}", e))?;
+        builder
+            .set_max_proto_version(Some(SslVersion::TLS1_2))
+            .map_err(|e| format!("set max version failed: {}", e))?;
+
+        let acceptor = builder.build();
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener
+                .accept()
+                .map_err(|e| format!("accept failed: {}", e))?;
+            let _ = acceptor
+                .accept(stream)
+                .map_err(|e| format!("tls accept failed: {}", e))?;
+            Ok(())
+        });
+
+        Ok((port, handle))
+    }
+
+    fn test_tls_bookmark(port: u16) -> crate::protocol::types::Bookmark {
+        crate::protocol::types::Bookmark {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            address: "127.0.0.1".to_string(),
+            port,
+            login: "guest".to_string(),
+            password: None,
+            icon: None,
+            auto_connect: false,
+            tls: true,
+            hope: false,
+            bookmark_type: Some(crate::protocol::types::BookmarkType::Server),
+        }
+    }
+
+    #[tokio::test]
+    async fn rustls_modern_tls_succeeds_against_tls12_only_server() {
+        let (port, server) = spawn_tls12_server().expect("failed to start tls12 server");
+        let stream = TcpStream::connect(("127.0.0.1", port))
+            .await
+            .expect("connect test server failed");
+
+        let result = HotlineClient::wrap_tls(stream, "127.0.0.1").await;
+        assert!(
+            result.is_ok(),
+            "modern TLS should succeed against TLS1.2-only server, got: {:?}",
+            result.err()
+        );
+
+        server
+            .join()
+            .expect("tls12 server thread panicked")
+            .expect("tls12 server failed");
+    }
+
+    #[tokio::test]
+    async fn open_connection_prefers_modern_tls_even_when_legacy_is_enabled() {
+        let (port, server) = spawn_tls12_server().expect("failed to start tls12 server");
+        let client = HotlineClient::new(test_tls_bookmark(port), true);
+
+        client
+            .open_connection()
+            .await
+            .expect("open_connection should succeed against a TLS1.2 server");
+
+        assert!(client.hope_reader.lock().await.is_some());
+        assert!(client.hope_writer.lock().await.is_some());
+
+        server
+            .join()
+            .expect("tls12 server thread panicked")
+            .expect("tls12 server failed");
+    }
+
+    #[test]
+    fn legacy_tls_cipher_list_includes_compatibility_ciphers() {
+        assert!(super::LEGACY_TLS_CIPHER_LIST.contains("DHE-RSA-AES256-SHA"));
+        assert!(super::LEGACY_TLS_CIPHER_LIST.contains("DHE-RSA-AES128-SHA"));
+        assert!(super::LEGACY_TLS_CIPHER_LIST.contains("@SECLEVEL=0"));
+    }
+
+    #[test]
+    fn legacy_tls_sni_host_uses_dummy_name_for_ip_literals() {
+        assert_eq!(super::legacy_tls_sni_host("127.0.0.1"), "hotline");
+        assert_eq!(super::legacy_tls_sni_host("::1"), "hotline");
+        assert_eq!(super::legacy_tls_sni_host("fe80::1%en0"), "hotline");
+        assert_eq!(
+            super::legacy_tls_sni_host("hotline.example.com"),
+            "hotline.example.com"
+        );
     }
 }

@@ -28,8 +28,8 @@ Right now the iOS, iPadOS, and Android versions are not in their respective app 
 | **macOS** | x86_64, ARM64 (Universal) | ✅ Supported (macOS 11.0+) |
 | **Windows** | x86_64 | ✅ Supported |
 | **Linux** | x86_64, ARM64 | ✅ Supported |
-| **iOS** | ARM64 | ✅ Supported (iOS 18.7+) |
-| **iPadOS** | ARM64 | ✅ Supported (iPadOS 18.7+) |
+| **iOS** | ARM64 | ✅ Supported (iOS 15.0+) |
+| **iPadOS** | ARM64 | ✅ Supported (iPadOS 15.0+) |
 | **Android** | ARM64, x86_64 | ✅ Supported (Android 7.0+) |
 
 [Download the Latest Release](https://github.com/fuzzywalrus/hotline/releases/)

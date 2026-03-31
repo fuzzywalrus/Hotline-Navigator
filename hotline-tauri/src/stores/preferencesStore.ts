@@ -54,6 +54,8 @@ interface PreferencesState {
   // Connection preferences
   autoDetectTls: boolean;
   setAutoDetectTls: (enabled: boolean) => void;
+  allowLegacyTls: boolean;
+  setAllowLegacyTls: (enabled: boolean) => void;
 
   // Sound preferences
   playSounds: boolean;
@@ -145,6 +147,8 @@ export const usePreferencesStore = create<PreferencesState>()(
       // Connection preferences
       autoDetectTls: false,
       setAutoDetectTls: (autoDetectTls) => set({ autoDetectTls }),
+      allowLegacyTls: false,
+      setAllowLegacyTls: (allowLegacyTls) => set({ allowLegacyTls }),
 
       // Sound preferences (all enabled by default)
       playSounds: true,

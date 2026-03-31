@@ -77,9 +77,29 @@ impl HotlineClient {
         .map_err(|e| format!("Failed to connect for file transfer: {}", e))?;
 
         if self.bookmark.tls {
-            let tls_stream = Self::wrap_tls(tcp_stream, &self.bookmark.address).await?;
-            let (read_half, write_half) = tokio::io::split(tls_stream);
-            Ok((Box::new(read_half), Box::new(write_half)))
+            // Try modern TLS first; fall back to legacy if enabled
+            match Self::wrap_tls(tcp_stream, &self.bookmark.address).await {
+                Ok(tls_stream) => {
+                    let (read_half, write_half) = tokio::io::split(tls_stream);
+                    return Ok((Box::new(read_half), Box::new(write_half)));
+                }
+                Err(e) if self.allow_legacy_tls => {
+                    println!("File transfer TLS 1.2+ failed ({}), retrying with legacy TLS...", e);
+                    let addr = crate::protocol::socket_addr_string(&self.bookmark.address, transfer_port);
+                    let tcp_stream = tokio::time::timeout(
+                        Duration::from_secs(10),
+                        TcpStream::connect(&addr),
+                    )
+                    .await
+                    .map_err(|_| "File transfer legacy TLS reconnect timed out".to_string())?
+                    .map_err(|e| format!("File transfer legacy TLS reconnect failed: {}", e))?;
+
+                    let tls_stream = Self::wrap_tls_legacy(tcp_stream, &self.bookmark.address).await?;
+                    let (read_half, write_half) = tokio::io::split(tls_stream);
+                    return Ok((Box::new(read_half), Box::new(write_half)));
+                }
+                Err(e) => return Err(e),
+            }
         } else {
             let (read_half, write_half) = tcp_stream.into_split();
             Ok((Box::new(read_half), Box::new(write_half)))
@@ -1305,6 +1325,151 @@ impl HotlineClient {
                 Err("Timeout waiting for upload folder reply".to_string())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HotlineClient;
+    use openssl::asn1::Asn1Time;
+    use openssl::bn::BigNum;
+    use openssl::hash::MessageDigest;
+    use openssl::nid::Nid;
+    use openssl::pkey::{PKey, Private};
+    use openssl::rsa::Rsa;
+    use openssl::ssl::{SslAcceptor, SslMethod, SslVersion};
+    use openssl::x509::{X509NameBuilder, X509};
+    use std::net::TcpListener;
+    use std::thread;
+
+    fn build_self_signed_cert() -> Result<(PKey<Private>, X509), String> {
+        let rsa = Rsa::generate(2048).map_err(|e| format!("rsa generate failed: {}", e))?;
+        let pkey = PKey::from_rsa(rsa).map_err(|e| format!("pkey create failed: {}", e))?;
+
+        let mut name_builder =
+            X509NameBuilder::new().map_err(|e| format!("name builder failed: {}", e))?;
+        name_builder
+            .append_entry_by_nid(Nid::COMMONNAME, "localhost")
+            .map_err(|e| format!("set CN failed: {}", e))?;
+        let name = name_builder.build();
+
+        let mut builder = X509::builder().map_err(|e| format!("x509 builder failed: {}", e))?;
+        builder
+            .set_version(2)
+            .map_err(|e| format!("set version failed: {}", e))?;
+
+        let mut serial = BigNum::new().map_err(|e| format!("serial bignum failed: {}", e))?;
+        serial
+            .rand(64, openssl::bn::MsbOption::MAYBE_ZERO, false)
+            .map_err(|e| format!("serial rand failed: {}", e))?;
+        let serial = serial
+            .to_asn1_integer()
+            .map_err(|e| format!("serial to asn1 failed: {}", e))?;
+        builder
+            .set_serial_number(&serial)
+            .map_err(|e| format!("set serial failed: {}", e))?;
+
+        builder
+            .set_subject_name(&name)
+            .map_err(|e| format!("set subject failed: {}", e))?;
+        builder
+            .set_issuer_name(&name)
+            .map_err(|e| format!("set issuer failed: {}", e))?;
+        builder
+            .set_pubkey(&pkey)
+            .map_err(|e| format!("set pubkey failed: {}", e))?;
+        let not_before =
+            Asn1Time::days_from_now(0).map_err(|e| format!("not_before failed: {}", e))?;
+        builder
+            .set_not_before(&not_before)
+            .map_err(|e| format!("set not_before failed: {}", e))?;
+        let not_after =
+            Asn1Time::days_from_now(1).map_err(|e| format!("not_after failed: {}", e))?;
+        builder
+            .set_not_after(&not_after)
+            .map_err(|e| format!("set not_after failed: {}", e))?;
+
+        builder
+            .sign(&pkey, MessageDigest::sha256())
+            .map_err(|e| format!("cert sign failed: {}", e))?;
+
+        Ok((pkey, builder.build()))
+    }
+
+    fn spawn_tls12_server() -> Result<(u16, thread::JoinHandle<Result<(), String>>), String> {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .map_err(|e| format!("bind test server failed: {}", e))?;
+        let port = listener
+            .local_addr()
+            .map_err(|e| format!("local_addr failed: {}", e))?
+            .port();
+
+        let (pkey, cert) = build_self_signed_cert()?;
+
+        let mut builder = SslAcceptor::mozilla_intermediate_v5(SslMethod::tls())
+            .map_err(|e| format!("acceptor builder failed: {}", e))?;
+        builder
+            .set_private_key(&pkey)
+            .map_err(|e| format!("set private key failed: {}", e))?;
+        builder
+            .set_certificate(&cert)
+            .map_err(|e| format!("set certificate failed: {}", e))?;
+        builder
+            .check_private_key()
+            .map_err(|e| format!("check private key failed: {}", e))?;
+        builder
+            .set_min_proto_version(Some(SslVersion::TLS1_2))
+            .map_err(|e| format!("set min version failed: {}", e))?;
+        builder
+            .set_max_proto_version(Some(SslVersion::TLS1_2))
+            .map_err(|e| format!("set max version failed: {}", e))?;
+
+        let acceptor = builder.build();
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener
+                .accept()
+                .map_err(|e| format!("accept failed: {}", e))?;
+            let _ = acceptor
+                .accept(stream)
+                .map_err(|e| format!("tls accept failed: {}", e))?;
+            Ok(())
+        });
+
+        Ok((port, handle))
+    }
+
+    fn test_tls_bookmark(port: u16) -> crate::protocol::types::Bookmark {
+        crate::protocol::types::Bookmark {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            address: "127.0.0.1".to_string(),
+            port: port - 1,
+            login: "guest".to_string(),
+            password: None,
+            icon: None,
+            auto_connect: false,
+            tls: true,
+            hope: false,
+            bookmark_type: Some(crate::protocol::types::BookmarkType::Server),
+        }
+    }
+
+    #[tokio::test]
+    async fn create_transfer_stream_uses_modern_tls_for_tls12_server() {
+        let (transfer_port, server) = spawn_tls12_server().expect("failed to start tls12 server");
+        let client = HotlineClient::new(test_tls_bookmark(transfer_port), true);
+
+        let result = client.create_transfer_stream().await;
+        assert!(
+            result.is_ok(),
+            "transfer TLS should succeed against TLS1.2-only server, got: {:?}",
+            result.err()
+        );
+
+        server
+            .join()
+            .expect("tls12 server thread panicked")
+            .expect("tls12 server failed");
     }
 }
 

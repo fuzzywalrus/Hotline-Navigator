@@ -14,7 +14,7 @@ interface ChatHistoryMeta {
 }
 
 export default function GeneralSettingsTab() {
-  const { username, setUsername, enablePrivateMessaging, setEnablePrivateMessaging, darkMode, setDarkMode, downloadFolder, setDownloadFolder, showServerBanner, setShowServerBanner, clickableLinks, setClickableLinks, showInlineImages, setShowInlineImages, renderMarkdown, setRenderMarkdown, renderMarkdownAgreements, setRenderMarkdownAgreements, useRemoteIcons, setUseRemoteIcons, showRemoteBanners, setShowRemoteBanners, autoDetectTls, setAutoDetectTls, mentionPopup, setMentionPopup, mutedUsers, addMutedUser, removeMutedUser, watchWords, addWatchWord, removeWatchWord, enableChatHistory, setEnableChatHistory, showTimestamps, setShowTimestamps } = usePreferencesStore();
+  const { username, setUsername, enablePrivateMessaging, setEnablePrivateMessaging, darkMode, setDarkMode, downloadFolder, setDownloadFolder, showServerBanner, setShowServerBanner, clickableLinks, setClickableLinks, showInlineImages, setShowInlineImages, renderMarkdown, setRenderMarkdown, renderMarkdownAgreements, setRenderMarkdownAgreements, useRemoteIcons, setUseRemoteIcons, showRemoteBanners, setShowRemoteBanners, autoDetectTls, setAutoDetectTls, allowLegacyTls, setAllowLegacyTls, mentionPopup, setMentionPopup, mutedUsers, addMutedUser, removeMutedUser, watchWords, addWatchWord, removeWatchWord, enableChatHistory, setEnableChatHistory, showTimestamps, setShowTimestamps } = usePreferencesStore();
   const { setBookmarks } = useAppStore();
   const isMobile = useIsMobile();
   const [localUsername, setLocalUsername] = useState(username);
@@ -274,6 +274,25 @@ export default function GeneralSettingsTab() {
             type="checkbox"
             checked={autoDetectTls}
             onChange={(e) => setAutoDetectTls(e.target.checked)}
+            className="ml-4 toggle toggle-primary"
+          />
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Allow Legacy TLS (1.0/1.1)
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Enable TLS 1.0 and 1.1 support for older Hotline servers that don't support TLS 1.2+. Less secure but required for some retro servers.
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            checked={allowLegacyTls}
+            onChange={(e) => setAllowLegacyTls(e.target.checked)}
             className="ml-4 toggle toggle-primary"
           />
         </div>

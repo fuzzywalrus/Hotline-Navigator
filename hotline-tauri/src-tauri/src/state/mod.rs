@@ -175,7 +175,7 @@ impl AppState {
         println!("Cancelling in-flight connection (was generation {})", gen);
     }
 
-    pub async fn connect_server(&self, bookmark: Bookmark, username: String, user_icon_id: u16, auto_detect_tls: bool) -> Result<crate::commands::ConnectResult, String> {
+    pub async fn connect_server(&self, bookmark: Bookmark, username: String, user_icon_id: u16, auto_detect_tls: bool, allow_legacy_tls: bool) -> Result<crate::commands::ConnectResult, String> {
         // Don't allow connecting to trackers - they use a different protocol
         if matches!(bookmark.bookmark_type, Some(crate::protocol::types::BookmarkType::Tracker)) {
             return Err("Cannot connect to tracker. Trackers are used to browse servers, not to connect directly.".to_string());
@@ -210,7 +210,7 @@ impl AppState {
             tls_bookmark.tls = true;
             tls_bookmark.port = tls_port;
 
-            let tls_client = HotlineClient::new(tls_bookmark);
+            let tls_client = HotlineClient::new(tls_bookmark, allow_legacy_tls);
             tls_client.set_user_info(username.clone(), user_icon_id).await;
 
             match tokio::time::timeout(
@@ -225,7 +225,7 @@ impl AppState {
                 Ok(Err(e)) => {
                     check_cancelled()?;
                     println!("Auto-detect TLS: TLS failed ({}), falling back to plain on port {}", e, bookmark.port);
-                    let client = HotlineClient::new(bookmark.clone());
+                    let client = HotlineClient::new(bookmark.clone(), allow_legacy_tls);
                     client.set_user_info(username, user_icon_id).await;
                     check_cancelled()?;
                     client.connect().await?;
@@ -234,7 +234,7 @@ impl AppState {
                 Err(_) => {
                     check_cancelled()?;
                     println!("Auto-detect TLS: timed out, falling back to plain on port {}", bookmark.port);
-                    let client = HotlineClient::new(bookmark.clone());
+                    let client = HotlineClient::new(bookmark.clone(), allow_legacy_tls);
                     client.set_user_info(username, user_icon_id).await;
                     check_cancelled()?;
                     client.connect().await?;
@@ -242,7 +242,7 @@ impl AppState {
                 }
             }
         } else {
-            let client = HotlineClient::new(bookmark.clone());
+            let client = HotlineClient::new(bookmark.clone(), allow_legacy_tls);
             client.set_user_info(username, user_icon_id).await;
             check_cancelled()?;
             client.connect().await?;

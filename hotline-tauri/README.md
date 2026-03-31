@@ -31,7 +31,7 @@ This project complements the [original Swift client](https://github.com/mierau/h
 - **News**: Browse categories, read articles, post news and replies
 - **File Management**: Browse, download, upload files with progress tracking
 - **File Preview**: Preview images, audio, and text files before downloading
-- **TLS Support**: Secure encrypted connections to TLS-enabled servers (e.g. Mobius on port 5600), with per-bookmark TLS toggle and auto-detect from tracker listings
+- **TLS Support**: Secure encrypted connections to TLS-enabled servers (e.g. Mobius on port 5600), with per-bookmark TLS toggle, auto-detect from tracker listings, and an optional legacy TLS 1.0 fallback for older servers
 - **Settings**: Username and icon customization with persistent storage
 - **Server Banners**: Automatic banner download and display
 - **Server Agreements**: Agreement acceptance flow
@@ -187,7 +187,7 @@ npm run android:dev              # Run on device/emulator
 ```bash
 npm run build:release-all
 ```
-This runs the macOS/Windows/Linux build scripts in sequence and packages artifacts under `release/`.
+This runs the macOS, Windows, Linux, and Linux ARM64 build scripts in sequence and packages artifacts under `release/`.
 
 ### macOS Code Signing
 
@@ -213,7 +213,7 @@ For distribution-ready builds with code signing:
    - Create a DMG (if `create-dmg` is installed)
    - Output to `release/hotline-navigator-{version}-macos/`
 
-**Notarization:** the script includes commented `notarytool`/`stapler` steps you can enable for your release flow.
+**Notarization:** the script submits the app to Apple notarization with `notarytool`, staples the result to the `.app`, and, when `create-dmg` is installed, also signs, notarizes, and staples the generated DMG.
 
 **Note:** The `.env` file is gitignored and contains sensitive credentials.
 
@@ -224,15 +224,26 @@ For distribution-ready builds with code signing:
 
 ## Testing & Quality
 
-**Rust (protocol, transaction encoding, IPv6 address formatting):**
+**Rust (`cargo test` in `src-tauri/`):**
 ```bash
 cd hotline-tauri/src-tauri && cargo test
 ```
 
-**Frontend (Vitest — stores, utils):**
+This exercises the inline Rust test modules that live alongside the implementation, primarily under `src-tauri/src/protocol/`:
+- transaction encoding/decoding
+- Hotline constants and helpers
+- IPv4/IPv6 socket address formatting
+- HOPE MAC/key derivation and encrypted stream behavior
+- selected async client behavior
+
+**Frontend (Vitest in `src/`):**
 ```bash
 cd hotline-tauri && npm run test
 ```
+
+Frontend tests are colocated with the code they cover, with shared test setup in `src/test/setup.ts`. Current coverage is focused on:
+- Zustand stores such as `src/stores/notificationStore.test.ts`
+- utility modules such as `src/utils/mentions.test.ts`
 
 Watch mode: `npm run test:watch`. Coverage: `npm run test:coverage`.
 
@@ -281,6 +292,8 @@ npm run lint
 ```
 hotline-tauri/
 ├── src/                          # React frontend (TypeScript + Vite)
+│   ├── main.tsx                  # Frontend entry point
+│   ├── App.tsx                   # Top-level application shell
 │   ├── assets/                   # App images and static UI assets
 │   ├── components/
 │   │   ├── tracker/              # Server browser and bookmarks
@@ -304,24 +317,27 @@ hotline-tauri/
 │   ├── types/                    # TypeScript definitions
 │   └── utils/                    # Shared utility functions (logger, sounds, etc.)
 ├── src-tauri/                    # Rust backend
+│   ├── capabilities/             # Tauri capability definitions
+│   ├── gen/                      # Generated mobile/project artifacts
+│   ├── icons/                    # App icons for bundles/platforms
 │   ├── src/
 │   │   ├── protocol/             # Hotline protocol implementation
-│   │   │   ├── client/           # Client connection (chat, files, news, users)
+│   │   │   ├── client/           # Client connection, file transfer, HOPE/TLS
 │   │   │   ├── tracker.rs        # Tracker protocol
 │   │   │   ├── types.rs          # Protocol types
 │   │   │   ├── transaction.rs    # Transaction handling
 │   │   │   └── constants.rs      # Protocol constants
 │   │   ├── state/                # Application state
 │   │   ├── commands/             # Tauri IPC commands
-│   │   ├── lib.rs                # Plugin setup and entry
-│   │   └── main.rs               # Application entry point
+│   │   ├── lib.rs                # Tauri app setup and command registration
+│   │   └── main.rs               # Native entry point delegating to lib.rs
 │   └── tauri.conf.json           # Tauri configuration
 ├── build-release.sh              # Signed macOS release helper
 ├── build-release-all.sh          # Multi-platform release helper
 ├── build-release-linux-arm64.sh  # Linux ARM64 packaging helper
-└── public/
-    ├── icons/                    # User icons (classic set)
-    └── sounds/                   # Sound effects
+└── public/                       # Static web assets bundled by Vite/Tauri
+    ├── icons/                    # Optional local icon assets (if bundled)
+    └── sounds/                   # Optional local sound assets (if bundled)
 ```
 
 ## Protocol Details
@@ -332,22 +348,31 @@ These sections document the protocol implementation details for contributors and
 
 Hotline Navigator supports TLS connections to servers that offer encryption (such as [Mobius](https://github.com/jhalter/mobius) v0.20+). TLS wraps the TCP connection before the Hotline protocol handshake, protecting credentials and data in transit.
 
+By default, the client uses modern TLS (TLS 1.2+) via `rustls`. For older Hotline servers that only speak legacy TLS, there is an opt-in compatibility setting in `Settings > General > Allow Legacy TLS (1.0/1.1)`. When enabled, the client still tries modern TLS first, then reconnects and retries with a TLS 1.0-compatible OpenSSL handshake if the modern handshake fails. This is less secure and is meant only for retro servers that cannot negotiate newer TLS versions.
+
 **Per-bookmark TLS:** Each bookmark has a "Use TLS" toggle. When enabled, the client connects on the specified port (typically 5600) using TLS. Toggling TLS on/off in the Connect or Edit Bookmark dialogs automatically switches between port 5600 and 5500.
 
-**Auto-Detect TLS:** An opt-in setting (Settings > General > Auto-Detect TLS) that automatically tries a TLS connection when connecting from tracker listings. When enabled, the client attempts to connect on port+100 with TLS first; if TLS fails or times out (5 seconds), it falls back to a plain connection on the original port. This works transparently — no user action needed beyond enabling the setting.
+**Auto-Detect TLS:** An opt-in setting (Settings > General > Auto-Detect TLS) that automatically tries a TLS connection when connecting from tracker listings. When enabled, the client attempts to connect on port+100 with TLS first; if TLS succeeds, it uses that secure connection. If the TLS attempt fails, it can optionally retry with legacy TLS when `Allow Legacy TLS` is enabled, and if that still fails or times out it falls back to a plain connection on the original port. This works transparently once the settings are enabled.
 
 <details>
 <summary><strong>Implementation guide for client authors</strong></summary>
 
 Hotline TLS follows the convention established by [Mobius](https://github.com/jhalter/mobius): TLS is served on a port 100 higher than the plain Hotline port (e.g. plain on 5500, TLS on 5600). TLS wraps the raw TCP socket *before* the Hotline protocol handshake — the protocol bytes on the wire are identical, just encrypted. File transfers follow the same pattern (transfer port = server port + 1, so TLS transfers on 5601).
 
+This client has two TLS paths:
+
+1. **Modern TLS (default).** Uses `rustls` and targets TLS 1.2+.
+2. **Legacy TLS compatibility mode (opt-in).** Uses vendored OpenSSL, pins the handshake to TLS 1.0 for maximum compatibility with Tiger/Leopard-era SecureTransport servers, disables SNI, accepts self-signed certificates, and enables older cipher suites/legacy renegotiation support. It is only attempted after a failed modern TLS handshake and only when the user explicitly enables `Allow Legacy TLS`.
+
 To implement auto-detect TLS in your own client:
 
-1. **Try TLS first, fall back to plain.** Attempt a full TLS connection on port+100 with a reasonable timeout (we use 5 seconds). If it succeeds, you're done. If it fails or times out, connect on the original port without TLS.
-2. **Do not probe separately.** An earlier approach of opening a TCP connection to check if the TLS port was open, then closing it and opening a second connection for the real TLS handshake, caused the server to reject the second connection. Hotline servers (particularly Mobius) appear to treat the aborted probe as a bad client and temporarily refuse connections from the same IP. The correct approach is a single connection attempt — try TLS, and if it fails, try plain.
-3. **SNI with IP addresses.** Go's `crypto/tls` server rejects the TLS IP Address SNI extension (`ServerName::IpAddress`). When connecting by IP rather than hostname, either omit the SNI extension entirely or send a dummy DNS hostname (we use `"hotline"`). Since Hotline servers use self-signed certificates, the SNI value only affects certificate selection, not validation — any value (or none) works.
-4. **Certificate verification.** Hotline servers use self-signed certificates, so TLS clients must either skip verification or implement a trust-on-first-use model. We skip verification entirely (`InsecureSkipVerify` equivalent).
-5. **Per-bookmark persistence.** Store whether a bookmark uses TLS so users don't pay the auto-detect timeout cost on every connection. Auto-detect is best suited for tracker listings where TLS capability isn't known in advance.
+1. **Try modern TLS first, then plain if needed.** Attempt a full TLS connection on port+100 with a reasonable timeout. If it succeeds, you're done. If it fails or times out, either retry with an opt-in legacy TLS mode or connect on the original port without TLS.
+2. **Reconnect before retrying legacy TLS.** A failed TLS handshake consumes the TCP stream. If you want to retry on the same TLS port with older protocol settings, open a fresh socket first.
+3. **Do not probe separately.** An earlier approach of opening a TCP connection to check if the TLS port was open, then closing it and opening a second connection for the real TLS handshake, caused the server to reject the second connection. Hotline servers (particularly Mobius) appear to treat the aborted probe as a bad client and temporarily refuse connections from the same IP. The correct approach is to attempt the real TLS handshake on the first connection.
+4. **SNI with IP addresses.** Go's `crypto/tls` server rejects the TLS IP Address SNI extension (`ServerName::IpAddress`). When connecting by IP rather than hostname, either omit the SNI extension entirely or send a dummy DNS hostname (we use `"hotline"`). Since Hotline servers use self-signed certificates, the SNI value only affects certificate selection, not validation. For very old TLS stacks, disabling SNI entirely may be the safer option.
+5. **Certificate verification.** Hotline servers use self-signed certificates, so TLS clients must either skip verification or implement a trust-on-first-use model. We skip verification entirely (`InsecureSkipVerify` equivalent for modern TLS; `SslVerifyMode::NONE` for the legacy compatibility path).
+6. **Per-bookmark persistence.** Store whether a bookmark uses TLS so users don't pay the auto-detect timeout cost on every connection. Auto-detect is best suited for tracker listings where TLS capability isn't known in advance.
+7. **Treat legacy TLS as a compatibility escape hatch.** If you support TLS 1.0/1.1 for old servers, gate it behind an explicit user setting and prefer modern TLS whenever possible.
 
 </details>
 
@@ -364,7 +389,7 @@ Bytes 12-15: Flags               <- Usually 0 for legacy transfers
 
 After the handshake, file data flows as a **FILP** (Flattened File) stream. A FILP wraps one or more "forks" — the DATA fork is the actual file content, and there may also be an INFO fork (metadata) or MACR fork (classic Mac resource fork). Each fork has a 16-byte header describing its type and size, followed by the raw fork data.
 
-For TLS-enabled servers, the transfer connection is also wrapped in TLS, using the same approach as the main connection.
+For TLS-enabled servers, the transfer connection is also wrapped in TLS using the same approach as the main connection. That means modern TLS is attempted first, and if `Allow Legacy TLS` is enabled the transfer socket can reconnect and retry with the legacy TLS 1.0-compatible path before giving up.
 
 <details>
 <summary><strong>Large file support (>4 GB)</strong></summary>

@@ -4,11 +4,11 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import AboutStarfield from './AboutStarfield';
 
 export default function AboutSettingsTab() {
-  const [version, setVersion] = useState<string>('0.2.1');
+  const [version, setVersion] = useState<string>('0.2.2');
 
   useEffect(() => {
     getVersion().then(setVersion).catch(() => {
-      setVersion('0.2.1');
+      setVersion('0.2.2');
     });
   }, []);
 

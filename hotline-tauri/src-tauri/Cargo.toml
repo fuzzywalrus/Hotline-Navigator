@@ -1,6 +1,6 @@
 [package]
 name = "hotline-tauri"
-version = "0.2.1"
+version = "0.2.2"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -28,6 +28,8 @@ base64 = "0.21"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tokio-rustls = "0.26"
 rustls = { version = "0.23", features = ["ring"] }
+openssl = { version = "0.10", features = ["vendored"] }
+tokio-openssl = "0.6"
 hmac = "0.12"
 sha1 = "0.10"
 md-5 = "0.10"

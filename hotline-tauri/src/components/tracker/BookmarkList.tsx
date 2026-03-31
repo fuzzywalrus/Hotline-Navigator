@@ -68,7 +68,7 @@ function SortableItem({ id, children }: SortableItemProps) {
 
 export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkListProps) {
   const { removeBookmark, addActiveServer, addTab, setBookmarks, tabs, serverInfo, setActiveTab } = useAppStore();
-  const { username, userIconId, autoDetectTls } = usePreferencesStore();
+  const { username, userIconId, autoDetectTls, allowLegacyTls } = usePreferencesStore();
   const [editingBookmark, setEditingBookmark] = useState<Bookmark | null>(null);
   const [addingBookmark, setAddingBookmark] = useState<Bookmark | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -145,6 +145,7 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
         username,
         userIconId,
         autoDetectTls: autoDetectTls && !bookmark.tls, // Only probe if not already TLS
+        allowLegacyTls,
       });
       console.log('Connected to server:', result.serverId, result.tls ? '(TLS)' : '(plain)');
 
