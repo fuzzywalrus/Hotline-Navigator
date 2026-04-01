@@ -46,6 +46,7 @@ This project complements the [original Swift client](https://github.com/mierau/h
 
 ### Roadmap
 - [ ] HOPE secure login — re-enable the probe with a reconnect delay (probe-disconnect-reconnect is the intended detection flow per the spec author; INVERSE MAC is the bare minimum for authenticated login without transport encryption)
+- [ ] HOPE ChaCha20-Poly1305 AEAD transport and file transfer encryption ([spec](https://github.com/fogWraith/Hotline/blob/main/Docs/Protocol/HOPE-ChaCha20-Poly1305.md))
 - [ ] Account management and permissions
 - [ ] Bonjour/mDNS server discovery
 - [ ] Auto-reconnect on disconnect
