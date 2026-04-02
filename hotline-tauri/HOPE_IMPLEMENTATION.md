@@ -1,5 +1,7 @@
 # HOPE Implementation Reference
 
+Based on the [HOPE Secure Login specification](https://github.com/fogWraith/Hotline/blob/main/Docs/Protocol/HOPE-Secure-Login.md) by fogWraith.
+
 Map of all HOPE-related code in the Rust backend. This document is for developers working on enabling or extending HOPE support.
 
 ## Status

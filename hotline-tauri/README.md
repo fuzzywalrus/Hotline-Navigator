@@ -46,11 +46,12 @@ This project complements the [original Swift client](https://github.com/mierau/h
 - **Mnemosyne Search**: Discover files, news, and message board posts across multiple Hotline servers via [Mnemosyne](https://github.com/benabernathy/mnemosyne) search indexes — ships with a default instance and supports adding custom ones
 
 ### Roadmap
+- [x] Auto-reconnect on disconnect *(0.2.2)*
+- [x] Mnemosyne cross-server search *(0.2.3)*
 - [ ] HOPE secure login — re-enable the probe with a reconnect delay (probe-disconnect-reconnect is the intended detection flow per the spec author; INVERSE MAC is the bare minimum for authenticated login without transport encryption)
 - [ ] HOPE ChaCha20-Poly1305 AEAD transport and file transfer encryption ([spec](https://github.com/fogWraith/Hotline/blob/main/Docs/Protocol/HOPE-ChaCha20-Poly1305.md))
 - [ ] Account management and permissions
 - [ ] Bonjour/mDNS server discovery
-- [ ] Auto-reconnect on disconnect
 - [ ] Message filtering and blocking
 - [ ] Bookmark import/export
 
@@ -449,6 +450,61 @@ See [HOPE_IMPLEMENTATION.md](HOPE_IMPLEMENTATION.md) for a map of all HOPE-relat
 See [HOPE_JANUS_INTEROP.md](HOPE_JANUS_INTEROP.md) for the working Janus/VesperNET sequence and server interoperability notes.
 
 </details>
+
+### Access Privileges
+
+Hotline access privileges are a 64-bit bitmap sent in the `UserAccess` field (FieldType 116) during login. Each bit controls a specific permission. The following table is based on fogWraith's Wireshark analysis of official Hotline 1.2.3 and 1.9 servers/clients, cross-referenced with the [Hotline Wiki](https://hlwiki.com/index.php/AccessPriviledges).
+
+**Important:** Bits are indexed from the MSB of the 8-byte field. Bit 0 is the highest bit of byte 0. To test bit N: `(access[N / 8] >> (7 - (N % 8))) & 1`, or equivalently for a 64-bit integer: `(access >> (63 - N)) & 1`.
+
+| Bit | Name | 1.2.3 | 1.9 | Notes |
+|-----|------|-------|-----|-------|
+| 0 | Can Delete Files | yes | yes | |
+| 1 | Can Upload Files | yes | yes | |
+| 2 | Can Download Files | yes | yes | |
+| 3 | Can Rename Files | yes | yes | |
+| 4 | Can Move Files | yes | yes | |
+| 5 | Can Create Folders | yes | yes | |
+| 6 | Can Delete Folders | yes | yes | |
+| 7 | Can Rename Folders | yes | yes | |
+| 8 | Can Move Folders | yes | yes | |
+| 9 | Can Read Chat | yes | yes | confirmed by toggle test |
+| 10 | Can Send Chat | yes | yes | confirmed by toggle test |
+| 11 | Can Initiate Private Chat | — | yes | new in 1.5+; absent from 1.2.3 |
+| 12 | Close Chat | — | — | documented, never implemented |
+| 13 | Show in List | — | — | documented, never implemented |
+| 14 | Can Create Users | yes | yes | |
+| 15 | Can Delete Users | yes | yes | |
+| 16 | Can Read Users | yes | yes | |
+| 17 | Can Modify Users | yes | yes | |
+| 18 | Change Own Password | — | — | documented, never implemented |
+| 19 | Send Private Message | — | — | documented, never implemented |
+| 20 | Can Read News | yes | yes | |
+| 21 | Can Post News | yes | yes | |
+| 22 | Can Disconnect Users | yes | yes | |
+| 23 | Cannot be Disconnected | yes | yes | |
+| 24 | Can Get User Info | yes | yes | |
+| 25 | Can Upload Anywhere | yes | yes | |
+| 26 | Can Use Any Name | yes | yes | |
+| 27 | Don't Show Agreement | yes | yes | |
+| 28 | Can Comment Files | yes | yes | |
+| 29 | Can Comment Folders | yes | yes | |
+| 30 | Can View Drop Boxes | yes | yes | |
+| 31 | Can Make Aliases | yes | yes | |
+| 32 | Can Broadcast | — | yes | new in 1.5+; confirmed by toggle test |
+| 33 | Can Delete News Articles | — | yes | new in 1.5+ |
+| 34 | Can Create News Categories | — | yes | new in 1.5+ |
+| 35 | Can Delete News Categories | — | yes | new in 1.5+ |
+| 36 | Can Create News Bundles | — | yes | new in 1.5+ |
+| 37 | Can Delete News Bundles | — | yes | new in 1.5+ |
+| 38 | Can Upload Folders | — | yes | new in 1.5+ |
+| 39 | Can Download Folders | — | yes | new in 1.5+ |
+| 40 | Can Send Message | — | yes | instant/private messaging |
+| 41–54 | (GLoarbLine extensions) | — | — | third-party server extensions |
+| 55 | Voice Chat | — | — | Janus extension |
+| 56–63 | Unused | — | — | |
+
+**Note on bit 19 vs 40:** The Hotline Wiki lists bit 19 as "Send Private Message" but fogWraith's Wireshark captures show it was never implemented in official clients. Bit 40 is the actual "Can Send Message" privilege used by Hotline 1.9 for instant/private messaging. [Mobius](https://github.com/jhalter/mobius) also uses bit 40. Navigator checks bit 40 for private message permissions.
 
 ### Error Handling
 
