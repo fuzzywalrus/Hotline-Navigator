@@ -10,7 +10,7 @@ interface ConnectDialogProps {
 }
 
 export default function ConnectDialog({ onClose }: ConnectDialogProps) {
-  const { addBookmark, bookmarks, addActiveServer, addTab, tabs, serverInfo, setActiveTab } = useAppStore();
+  const { addBookmark, bookmarks, addActiveServer, addTab, addMnemosyneBookmark, tabs, serverInfo, setActiveTab } = useAppStore();
   const { username, userIconId, autoDetectTls, allowLegacyTls } = usePreferencesStore();
   const [visible, setVisible] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -25,10 +25,13 @@ export default function ConnectDialog({ onClose }: ConnectDialogProps) {
     password: '',
     tls: false,
     hope: false,
-    type: 'server' as 'server' | 'tracker' | 'url',
+    type: 'server' as 'server' | 'tracker' | 'url' | 'mnemosyne',
     saveAsBookmark: true,
     url: '',
+    mnemosyneUrl: '',
   });
+  const [testingMnemosyne, setTestingMnemosyne] = useState(false);
+  const [mnemosyneTestResult, setMnemosyneTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true));
@@ -43,7 +46,7 @@ export default function ConnectDialog({ onClose }: ConnectDialogProps) {
 
   useEffect(() => {
     requestAnimationFrame(measureContent);
-  }, [formData.type, formData.tls, error, measureContent]);
+  }, [formData.type, formData.tls, error, mnemosyneTestResult, measureContent]);
 
   const handleClose = () => {
     setVisible(false);
@@ -68,9 +71,56 @@ export default function ConnectDialog({ onClose }: ConnectDialogProps) {
     return { address, port, tls, filePath };
   };
 
+  const normalizeUrl = (raw: string): string => {
+    const trimmed = raw.trim();
+    if (!/^https?:\/\//i.test(trimmed)) return `http://${trimmed}`;
+    return trimmed;
+  };
+
+  const handleTestMnemosyne = async () => {
+    if (!formData.mnemosyneUrl.trim()) return;
+    setTestingMnemosyne(true);
+    setMnemosyneTestResult(null);
+    try {
+      const healthUrl = new URL('/api/v1/health', normalizeUrl(formData.mnemosyneUrl));
+      console.log(`[Mnemosyne] Health check: ${healthUrl.toString()}`);
+      const data = await invoke<any>('mnemosyne_fetch', { url: healthUrl.toString() });
+      console.log('[Mnemosyne] Health data:', data);
+      if (data.status === 'ok') {
+        setMnemosyneTestResult({ ok: true, message: `Connected — v${data.version}` });
+      } else {
+        setMnemosyneTestResult({ ok: false, message: `Service degraded: ${data.database}` });
+      }
+    } catch (err: any) {
+      console.error('[Mnemosyne] Health check error:', err);
+      setMnemosyneTestResult({ ok: false, message: err.message || err || 'Connection failed' });
+    } finally {
+      setTestingMnemosyne(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    // Handle Mnemosyne type separately
+    if (formData.type === 'mnemosyne') {
+      if (!formData.mnemosyneUrl.trim()) return;
+      const finalName = formData.name.trim() || new URL(normalizeUrl(formData.mnemosyneUrl)).hostname;
+      const finalUrl = normalizeUrl(formData.mnemosyneUrl).replace(/\/+$/, '');
+      const id = crypto.randomUUID();
+      addMnemosyneBookmark({ id, name: finalName, url: finalUrl });
+      // Open the new mnemosyne tab immediately
+      addTab({
+        id: `mnemosyne-${id}`,
+        type: 'mnemosyne',
+        mnemosyneId: id,
+        title: finalName,
+        unreadCount: 0,
+      });
+      handleClose();
+      return;
+    }
 
     let address = formData.address;
     let port = parseInt(formData.port);
@@ -181,7 +231,7 @@ export default function ConnectDialog({ onClose }: ConnectDialogProps) {
       >
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Connect to Server
+            {formData.type === 'mnemosyne' ? 'Add Search Engine' : 'Connect to Server'}
           </h2>
         </div>
 
@@ -197,9 +247,10 @@ export default function ConnectDialog({ onClose }: ConnectDialogProps) {
             <select
               value={formData.type}
               onChange={(e) => {
-                const newType = e.target.value as 'server' | 'tracker' | 'url';
-                if (newType === 'url') {
+                const newType = e.target.value as 'server' | 'tracker' | 'url' | 'mnemosyne';
+                if (newType === 'url' || newType === 'mnemosyne') {
                   setFormData({ ...formData, type: newType });
+                  setMnemosyneTestResult(null);
                 } else {
                   const newPort = newType === 'tracker' ? '5498' : (formData.tls ? '5600' : '5500');
                   setFormData({ ...formData, type: newType, port: newPort, tls: newType === 'tracker' ? false : formData.tls });
@@ -210,9 +261,59 @@ export default function ConnectDialog({ onClose }: ConnectDialogProps) {
               <option value="server">Server</option>
               <option value="tracker">Tracker</option>
               <option value="url">Hotline URL</option>
+              <option value="mnemosyne">Mnemosyne (Search)</option>
             </select>
           </div>
-          {formData.type === 'url' ? (
+          {formData.type === 'mnemosyne' ? (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Name
+                </label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="My Mnemosyne"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  URL *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formData.mnemosyneUrl}
+                  onChange={(e) => {
+                    setFormData({ ...formData, mnemosyneUrl: e.target.value });
+                    setMnemosyneTestResult(null);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="tracker.vespernet.net:8980"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleTestMnemosyne}
+                  disabled={!formData.mnemosyneUrl.trim() || testingMnemosyne}
+                  className="text-xs px-3 py-1.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {testingMnemosyne ? 'Testing...' : 'Test Connection'}
+                </button>
+                {mnemosyneTestResult && (
+                  <span className={`text-xs ${mnemosyneTestResult.ok ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                    {mnemosyneTestResult.message}
+                  </span>
+                )}
+              </div>
+            </>
+          ) : formData.type === 'url' ? (
             <>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -396,7 +497,7 @@ export default function ConnectDialog({ onClose }: ConnectDialogProps) {
               disabled={connecting}
               className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-md transition-colors disabled:cursor-not-allowed"
             >
-              {connecting ? 'Connecting...' : (formData.type === 'tracker' ? 'Save' : 'Connect')}
+              {connecting ? 'Connecting...' : formData.type === 'mnemosyne' ? 'Add' : formData.type === 'tracker' ? 'Save' : 'Connect'}
             </button>
           </div>
           </form>

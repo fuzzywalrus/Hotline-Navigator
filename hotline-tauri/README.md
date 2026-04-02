@@ -43,6 +43,7 @@ This project complements the [original Swift client](https://github.com/mierau/h
 - **Transfer List**: Track active and completed file transfers
 - **IPv6**: Connect to servers and trackers via IPv6 literals (e.g. `[::1]:5493`) and hostnames that resolve to AAAA
 - **Large File Support**: 64-bit file sizes for transfers >4 GB via [capability negotiation](https://github.com/fogWraith/Hotline/blob/main/Docs/Protocol/Capabilities-Large-File.md), backward compatible with legacy servers
+- **Mnemosyne Search**: Discover files, news, and message board posts across multiple Hotline servers via [Mnemosyne](https://github.com/benabernathy/mnemosyne) search indexes — ships with a default instance and supports adding custom ones
 
 ### Roadmap
 - [ ] HOPE secure login — re-enable the probe with a reconnect delay (probe-disconnect-reconnect is the intended detection flow per the spec author; INVERSE MAC is the bare minimum for authenticated login without transport encryption)
@@ -245,6 +246,7 @@ cd hotline-tauri && npm run test
 Frontend tests are colocated with the code they cover, with shared test setup in `src/test/setup.ts`. Current coverage is focused on:
 - Zustand stores such as `src/stores/notificationStore.test.ts`
 - utility modules such as `src/utils/mentions.test.ts`
+- Mnemosyne search: `src/components/mnemosyne/MnemosyneWindow.test.tsx` (stats, search, filters, URL normalization)
 
 Watch mode: `npm run test:watch`. Coverage: `npm run test:coverage`.
 
@@ -304,6 +306,7 @@ hotline-tauri/
 │   │   ├── board/                # Message board
 │   │   ├── news/                 # News reader
 │   │   ├── files/                # File browser
+│   │   ├── mnemosyne/            # Mnemosyne search integration
 │   │   ├── about/                # About dialog
 │   │   ├── users/                # User list and info
 │   │   ├── settings/             # Preferences
@@ -515,6 +518,59 @@ Remote images render at natural size, clipped to the icon container — no scali
 Both toggles are in Settings > General.
 
 **Adding bundled icons:** Drop a PNG named `{id}.png` into `public/icons/classic/`. Local icons always take priority over the remote fallback.
+
+### Mnemosyne Search
+
+[Mnemosyne](https://github.com/benabernathy/mnemosyne) is an optional indexing service for the Hotline ecosystem. Hotline servers that opt in periodically sync their content (message board posts, news articles, and file listings) to a Mnemosyne instance, which provides a full-text search API over the aggregated index. This lets users discover servers and content *before* connecting.
+
+**Default instance:** The app ships with [vespernet.net](http://tracker.vespernet.net:8980) pre-configured. New installations get this automatically; existing installations are prompted to add it on first launch after the feature is available.
+
+**Adding custom instances:** Open the Connect dialog (Cmd+K) and select "Mnemosyne (Search)" from the Type dropdown. Enter a name and the instance URL, optionally test the connection, then click Add. The instance appears in the tracker bookmark list and can be opened from the Search button in the tracker header.
+
+**How it works in the UI:**
+
+1. Mnemosyne instances appear at the bottom of the tracker bookmark list with a purple search icon
+2. Clicking one (or the Search header button) opens a new tab with a search bar
+3. The empty state fetches `/api/v1/stats` and displays the number of indexed servers, files, posts, and articles
+4. Type a query and press Enter to search — results show type labels (File/Board/News), content preview, source server name, and metadata
+5. Filter results by type using the All/Board/News/Files toggle buttons
+6. Hover a result to reveal a Connect button that joins the source Hotline server as a guest
+
+**CORS and the Rust proxy:** Browser-side `fetch()` to Mnemosyne instances is blocked by CORS (the webview origin is `localhost` or `tauri://`). All Mnemosyne HTTP requests go through the `mnemosyne_fetch` Tauri command, which uses `reqwest` on the Rust side to bypass CORS entirely. The command accepts a URL string, makes a GET request with a 10-second timeout, and returns the JSON response or an error string.
+
+**API endpoints used:**
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/v1/health` | Connection test (used in the Add dialog) |
+| `GET /api/v1/stats` | Index statistics shown in the empty search state |
+| `GET /api/v1/search?q=...&type=...&limit=20` | Full-text search |
+
+**Storage:** Mnemosyne bookmarks are persisted in `localStorage` under the `mnemosyne-bookmarks` key as a JSON array of `{ id, name, url }` objects. They are managed by the `mnemosyneBookmarks` slice of the Zustand app store.
+
+<details>
+<summary><strong>Implementation details for contributors</strong></summary>
+
+**Key files:**
+
+| File | Purpose |
+|------|---------|
+| `src/components/mnemosyne/MnemosyneWindow.tsx` | Search tab UI: search bar, filters, results list, stats display, connect-from-result |
+| `src/components/mnemosyne/MnemosyneWindow.test.tsx` | 21 tests covering stats, search, filters, errors, URL normalization |
+| `src/components/tracker/ConnectDialog.tsx` | "Mnemosyne (Search)" type in the Connect dialog with URL/name fields and connection test |
+| `src/components/tracker/BookmarkList.tsx` | Renders Mnemosyne instances in the tracker bookmark list |
+| `src/components/tracker/TrackerWindow.tsx` | Search header button (hidden when no instances exist) |
+| `src/stores/appStore.ts` | `mnemosyneBookmarks` state, `addMnemosyneBookmark` / `removeMnemosyneBookmark` actions, localStorage persistence, default seeding |
+| `src/types/index.ts` | `MnemosyneBookmark`, `MnemosyneSearchResponse`, `MnemosyneSearchResult`, and per-type data interfaces |
+| `src-tauri/src/commands/mod.rs` | `mnemosyne_fetch` Tauri command (reqwest-based HTTP proxy) |
+
+**URL normalization:** User-entered URLs that lack a protocol prefix (e.g. `tracker.vespernet.net:8980`) are automatically prefixed with `http://` before being passed to the `URL` constructor.
+
+**Tab system:** Mnemosyne tabs use `type: 'mnemosyne'` with a `mnemosyneId` field linking to the bookmark. Tab deduplication prevents opening the same instance twice. Tabs show a magnifying glass icon and can be closed like server tabs.
+
+**Rate limiting:** The Mnemosyne API enforces 120 requests/minute per IP. The client fires searches on Enter (not on every keystroke) to stay well within limits. The UI displays rate limit errors and a retry button.
+
+</details>
 
 ## Contributing
 

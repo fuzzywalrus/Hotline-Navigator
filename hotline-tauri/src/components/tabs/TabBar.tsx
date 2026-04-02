@@ -64,7 +64,7 @@ export default function TabBar() {
               tab.type === 'server' && (tab.connectionStatus === 'disconnected' || tab.connectionStatus === 'failed')
                 ? 'opacity-40 grayscale' : ''
             }`}>
-              {tab.type === 'tracker' ? '🌐' : '🖥️'}
+              {tab.type === 'tracker' ? '🌐' : tab.type === 'mnemosyne' ? '🔍' : '🖥️'}
             </span>
             {tab.type === 'server' && (tab.connectionStatus === 'disconnected' || tab.connectionStatus === 'failed') && (
               <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-red-500" title="Disconnected" />
@@ -85,8 +85,8 @@ export default function TabBar() {
               </span>
             )}
             
-            {/* Close button - only show for server tabs, not tracker tabs */}
-            {tab.type === 'server' && (
+            {/* Close button - show for server and mnemosyne tabs, not tracker tabs */}
+            {(tab.type === 'server' || tab.type === 'mnemosyne') && (
               <button
                 onClick={(e) => handleCloseTab(e, tab.id)}
                 className="flex-shrink-0 ml-1 w-4 h-4 rounded hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center justify-center text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"

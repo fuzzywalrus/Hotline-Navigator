@@ -67,7 +67,7 @@ function SortableItem({ id, children }: SortableItemProps) {
 }
 
 export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkListProps) {
-  const { removeBookmark, addActiveServer, addTab, setBookmarks, tabs, serverInfo, setActiveTab } = useAppStore();
+  const { removeBookmark, addActiveServer, addTab, setBookmarks, tabs, serverInfo, setActiveTab, mnemosyneBookmarks, removeMnemosyneBookmark } = useAppStore();
   const { username, userIconId, autoDetectTls, allowLegacyTls } = usePreferencesStore();
   const [editingBookmark, setEditingBookmark] = useState<Bookmark | null>(null);
   const [addingBookmark, setAddingBookmark] = useState<Bookmark | null>(null);
@@ -910,6 +910,122 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
           </div>
         </SortableContext>
       </DndContext>
+
+      {/* Mnemosyne instances */}
+      {mnemosyneBookmarks.length > 0 && (
+        <div className="bg-white dark:bg-gray-900">
+          {mnemosyneBookmarks
+            .filter((m) => !searchQuery.trim() || m.name.toLowerCase().includes(searchQuery.toLowerCase()))
+            .map((mnemosyne, index) => {
+              const rowIndex = filteredBookmarks.length + index;
+              const isEven = rowIndex % 2 === 0;
+              return (
+                <div
+                  key={mnemosyne.id}
+                  onClick={() => {
+                    addTab({
+                      id: `mnemosyne-${mnemosyne.id}`,
+                      type: 'mnemosyne',
+                      mnemosyneId: mnemosyne.id,
+                      title: mnemosyne.name,
+                      unreadCount: 0,
+                    });
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const items: ContextMenuItem[] = [
+                      {
+                        label: 'Open',
+                        icon: '🔍',
+                        action: () => {
+                          addTab({
+                            id: `mnemosyne-${mnemosyne.id}`,
+                            type: 'mnemosyne',
+                            mnemosyneId: mnemosyne.id,
+                            title: mnemosyne.name,
+                            unreadCount: 0,
+                          });
+                        },
+                      },
+                      {
+                        label: 'Copy URL',
+                        icon: '📋',
+                        action: () => {
+                          navigator.clipboard.writeText(mnemosyne.url);
+                        },
+                      },
+                      { divider: true },
+                      {
+                        label: 'Delete',
+                        icon: '🗑️',
+                        action: () => {
+                          removeMnemosyneBookmark(mnemosyne.id);
+                        },
+                      },
+                    ];
+                    showContextMenu(e, items);
+                  }}
+                  className={`h-[34px] px-2 flex items-center gap-1.5 group cursor-pointer ${
+                    isEven
+                      ? 'bg-white dark:bg-gray-900'
+                      : 'bg-gray-50 dark:bg-gray-800/50'
+                  } hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors`}
+                >
+                  {/* Spacer for drag handle alignment */}
+                  <div className="w-[12px] flex-shrink-0"></div>
+
+                  {/* Search icon */}
+                  <div className="w-4 h-4 flex-shrink-0 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+
+                  {/* Name */}
+                  <span className="text-sm font-semibold text-gray-900 dark:text-white flex-1 truncate min-w-0">
+                    {mnemosyne.name}
+                  </span>
+
+                  {/* URL hint */}
+                  <span className="text-xs text-gray-400 dark:text-gray-500 truncate max-w-[150px] hidden sm:inline">
+                    {mnemosyne.url.replace(/^https?:\/\//, '')}
+                  </span>
+
+                  {/* Delete button on hover */}
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeMnemosyneBookmark(mnemosyne.id);
+                      }}
+                      className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-xs px-1.5 py-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30"
+                      title="Delete"
+                    >
+                      Delete
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        addTab({
+                          id: `mnemosyne-${mnemosyne.id}`,
+                          type: 'mnemosyne',
+                          mnemosyneId: mnemosyne.id,
+                          title: mnemosyne.name,
+                          unreadCount: 0,
+                        });
+                      }}
+                      className="text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 text-xs px-2 py-0.5 rounded bg-purple-50 dark:bg-purple-900/30"
+                      title="Open search"
+                    >
+                      Open
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+      )}
 
       {/* Info dialog */}
       {infoBookmark && (

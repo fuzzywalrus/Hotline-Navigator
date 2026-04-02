@@ -865,3 +865,39 @@ pub async fn check_for_updates() -> Result<Option<UpdateRelease>, String> {
         published_at: latest.published_at.clone(),
     }))
 }
+
+// --- Mnemosyne HTTP proxy (bypasses CORS) ---
+
+#[tauri::command]
+pub async fn mnemosyne_fetch(url: String) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("HTTP client error: {e}"))?;
+
+    let response = client
+        .get(&url)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
+
+    let status = response.status().as_u16();
+    if status == 429 {
+        return Err("Rate limit exceeded. Please wait a moment before trying again.".into());
+    }
+
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Invalid JSON response: {e}"))?;
+
+    if status >= 400 {
+        if let Some(msg) = body.pointer("/error/message").and_then(|v| v.as_str()) {
+            return Err(msg.to_string());
+        }
+        return Err(format!("HTTP {status}"));
+    }
+
+    Ok(body)
+}

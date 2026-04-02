@@ -1,5 +1,32 @@
 import { create } from 'zustand';
-import { Bookmark, ConnectionStatus, TrackerBookmark, Transfer } from '../types';
+import { Bookmark, ConnectionStatus, MnemosyneBookmark, TrackerBookmark, Transfer } from '../types';
+
+const MNEMOSYNE_BOOKMARKS_STORAGE_KEY = 'mnemosyne-bookmarks';
+const HOTLINE_PREFERENCES_STORAGE_KEY = 'hotline-preferences';
+
+const DEFAULT_MNEMOSYNE_BOOKMARK: MnemosyneBookmark = {
+  id: 'default-mnemosyne-vespernet',
+  name: 'vespernet.net',
+  url: 'http://tracker.vespernet.net:8980',
+};
+
+function loadMnemosyneBookmarks(): MnemosyneBookmark[] {
+  const stored = localStorage.getItem(MNEMOSYNE_BOOKMARKS_STORAGE_KEY);
+  if (stored) {
+    return JSON.parse(stored) as MnemosyneBookmark[];
+  }
+
+  const hasExistingInstall = localStorage.getItem(HOTLINE_PREFERENCES_STORAGE_KEY) !== null;
+
+  if (hasExistingInstall) {
+    localStorage.setItem(MNEMOSYNE_BOOKMARKS_STORAGE_KEY, JSON.stringify([]));
+    return [];
+  }
+
+  const defaults: MnemosyneBookmark[] = [DEFAULT_MNEMOSYNE_BOOKMARK];
+  localStorage.setItem(MNEMOSYNE_BOOKMARKS_STORAGE_KEY, JSON.stringify(defaults));
+  return defaults;
+}
 
 interface ServerInfo {
   id: string;
@@ -22,8 +49,9 @@ type FileCache = Map<string, FileItem[]>;
 
 export interface Tab {
   id: string;
-  type: 'tracker' | 'server';
+  type: 'tracker' | 'server' | 'mnemosyne';
   serverId?: string; // Only for server tabs
+  mnemosyneId?: string; // Only for mnemosyne tabs
   title: string;
   unreadCount: number;
   initialFilePath?: string[]; // Navigate to this path in Files tab on connect
@@ -34,6 +62,7 @@ interface AppState {
   // Tracker bookmarks
   bookmarks: Bookmark[];
   trackers: TrackerBookmark[];
+  mnemosyneBookmarks: MnemosyneBookmark[];
 
   // Active servers
   activeServers: string[];
@@ -62,6 +91,10 @@ interface AppState {
 
   addTracker: (tracker: TrackerBookmark) => void;
   removeTracker: (id: string) => void;
+
+  addMnemosyneBookmark: (bookmark: MnemosyneBookmark) => void;
+  removeMnemosyneBookmark: (id: string) => void;
+  updateMnemosyneBookmark: (id: string, updates: Partial<MnemosyneBookmark>) => void;
 
   setFocusedServer: (serverId: string | null) => void; // Deprecated
   addActiveServer: (serverId: string, info: ServerInfo) => void;
@@ -94,6 +127,7 @@ interface AppState {
 export const useAppStore = create<AppState>((set) => ({
   bookmarks: [],
   trackers: [],
+  mnemosyneBookmarks: loadMnemosyneBookmarks(),
   activeServers: [],
   serverInfo: new Map(),
   focusedServer: null,
@@ -134,13 +168,34 @@ export const useAppStore = create<AppState>((set) => ({
     trackers: state.trackers.filter((t) => t.id !== id),
   })),
 
+  addMnemosyneBookmark: (bookmark) => set((state) => {
+    const updated = [...state.mnemosyneBookmarks, bookmark];
+    localStorage.setItem(MNEMOSYNE_BOOKMARKS_STORAGE_KEY, JSON.stringify(updated));
+    return { mnemosyneBookmarks: updated };
+  }),
+
+  removeMnemosyneBookmark: (id) => set((state) => {
+    const updated = state.mnemosyneBookmarks.filter((b) => b.id !== id);
+    localStorage.setItem(MNEMOSYNE_BOOKMARKS_STORAGE_KEY, JSON.stringify(updated));
+    return { mnemosyneBookmarks: updated };
+  }),
+
+  updateMnemosyneBookmark: (id, updates) => set((state) => {
+    const updated = state.mnemosyneBookmarks.map((b) =>
+      b.id === id ? { ...b, ...updates } : b
+    );
+    localStorage.setItem(MNEMOSYNE_BOOKMARKS_STORAGE_KEY, JSON.stringify(updated));
+    return { mnemosyneBookmarks: updated };
+  }),
+
   setFocusedServer: (serverId) => set({ focusedServer: serverId }), // Deprecated
 
   // Tab actions
   addTab: (tab) => set((state) => {
-    // Check if tab already exists (by serverId for server tabs, or by id)
-    const existingTab = state.tabs.find(t => 
+    // Check if tab already exists (by serverId for server tabs, mnemosyneId for mnemosyne tabs, or by id)
+    const existingTab = state.tabs.find(t =>
       (tab.type === 'server' && t.type === 'server' && t.serverId === tab.serverId) ||
+      (tab.type === 'mnemosyne' && t.type === 'mnemosyne' && t.mnemosyneId === tab.mnemosyneId) ||
       t.id === tab.id
     );
     if (existingTab) {

@@ -156,3 +156,56 @@ export type ConnectionStatus =
   | 'logging-in'
   | 'logged-in'
   | 'failed';
+
+// Mnemosyne search types
+
+export interface MnemosyneBookmark {
+  id: string;
+  name: string;
+  url: string; // Base URL of the Mnemosyne instance (e.g. http://mnemosyne.example.com:8980)
+}
+
+export interface MnemosyneSearchResult {
+  type: 'msgboard' | 'news' | 'file';
+  server_id: string;
+  server_name: string;
+  server_address: string;
+  score: number;
+  data: MnemosyneMsgboardData | MnemosyneNewsData | MnemosyneFileData;
+}
+
+export interface MnemosyneMsgboardData {
+  post_id: number;
+  nick: string;
+  body: string;
+  timestamp: string;
+}
+
+export interface MnemosyneNewsData {
+  path: string;
+  article_id: number;
+  title: string;
+  poster: string;
+  body: string;
+  date: string;
+}
+
+export interface MnemosyneFileData {
+  path: string;
+  name: string;
+  size: number;
+  type: string;
+  comment: string;
+}
+
+export interface MnemosyneSearchResponse {
+  total: number;
+  results: MnemosyneSearchResult[];
+}
+
+export interface MnemosyneHealthResponse {
+  status: string;
+  version: string;
+  uptime_seconds: number;
+  database: string;
+}

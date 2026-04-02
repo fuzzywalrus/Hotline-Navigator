@@ -18,7 +18,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: blob: asset: https://hlwiki.com; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://api.github.com",
+      "csp": "default-src 'self'; img-src 'self' data: blob: asset: https://hlwiki.com; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://api.github.com http: https:",
       "assetProtocol": {
         "scope": ["$APPDATA/**", "$DOWNLOAD/**", "$HOME/Downloads/**"]
       }

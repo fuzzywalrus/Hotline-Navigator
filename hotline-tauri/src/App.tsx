@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from './stores/appStore';
 import TrackerWindow from './components/tracker/TrackerWindow';
 import ServerWindow from './components/server/ServerWindow';
+import MnemosyneWindow from './components/mnemosyne/MnemosyneWindow';
 import TabBar from './components/tabs/TabBar';
 import { useDarkMode } from './hooks/useDarkMode';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -35,7 +36,7 @@ function App() {
       action: () => {
         if (activeTabId && tabs.length > 1) {
           const activeTab = tabs.find(t => t.id === activeTabId);
-          // Don't close tracker tabs
+          // Don't close tracker tabs; allow closing server and mnemosyne tabs
           if (activeTab?.type !== 'tracker') {
             removeTab(activeTabId);
           }
@@ -94,6 +95,9 @@ function App() {
             }`}
             >
               {tab.type === 'tracker' && <TrackerWindow />}
+              {tab.type === 'mnemosyne' && tab.mnemosyneId && (
+                <MnemosyneWindow mnemosyneId={tab.mnemosyneId} />
+              )}
               {tab.type === 'server' && tab.serverId && (() => {
                 const server = serverInfo.get(tab.serverId);
                 return server ? (
