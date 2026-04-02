@@ -19,7 +19,7 @@ interface UpdateViewProps {
 }
 
 export default function UpdateView({ onClose }: UpdateViewProps) {
-  const [currentVersion, setCurrentVersion] = useState<string>('0.2.2');
+  const [currentVersion, setCurrentVersion] = useState<string>('0.2.3');
   const [isChecking, setIsChecking] = useState(false);
   const [update, setUpdate] = useState<UpdateRelease | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +27,7 @@ export default function UpdateView({ onClose }: UpdateViewProps) {
 
   useEffect(() => {
     getVersion().then(setCurrentVersion).catch(() => {
-      setCurrentVersion('0.2.2');
+      setCurrentVersion('0.2.3');
     });
   }, []);
 

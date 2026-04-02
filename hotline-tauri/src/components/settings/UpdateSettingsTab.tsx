@@ -15,7 +15,7 @@ interface UpdateRelease {
 }
 
 export default function UpdateSettingsTab() {
-  const [currentVersion, setCurrentVersion] = useState<string>('0.2.2');
+  const [currentVersion, setCurrentVersion] = useState<string>('0.2.3');
   const [isChecking, setIsChecking] = useState(false);
   const [update, setUpdate] = useState<UpdateRelease | null>(null);
   const [error, setError] = useState<string | null>(null);
