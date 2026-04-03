@@ -137,6 +137,8 @@ Default trackers (all on port 5498):
 | `default-tracker-hltracker` | Featured Servers | `hltracker.com` |
 | `default-tracker-mainecyber` | Maine Cyber | `tracked.mainecyber.com` |
 | `default-tracker-preterhuman` | Preterhuman | `tracker.preterhuman.net` |
+| `default-tracker-bigredh` | Big Red H | `track.bigredh.com` |
+| `default-tracker-vespernet` | Vespernet | `tracker.vespernet.net` |
 
 Default servers:
 | ID | Name | Address | Port | TLS | HOPE |
