@@ -7,21 +7,17 @@ import BookmarkList from './BookmarkList';
 import ConnectDialog from './ConnectDialog';
 import SettingsView from '../settings/SettingsView';
 import NotificationLog from '../notifications/NotificationLog';
-import SearchFeaturePrompt from './SearchFeaturePrompt';
+import AnnouncementManager from '../announcements/AnnouncementManager';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import type { Bookmark } from '../../types';
-
-const SEARCH_PROMPT_SEEN_KEY = 'mnemosyne-search-prompt-seen';
-const SEARCH_BOOKMARK_URL = 'http://tracker.vespernet.net:8980';
 
 export default function TrackerWindow() {
   const [showConnect, setShowConnect] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showNotificationLog, setShowNotificationLog] = useState(false);
-  const [showSearchPrompt, setShowSearchPrompt] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
-  const { bookmarks, setBookmarks, addActiveServer, addTab, mnemosyneBookmarks, addMnemosyneBookmark } = useAppStore();
+  const { bookmarks, setBookmarks, addActiveServer, addTab, mnemosyneBookmarks } = useAppStore();
   const autoConnectRan = useRef(false);
 
   // Load bookmarks from disk on mount - replace entire array to avoid duplicates
@@ -119,51 +115,6 @@ export default function TrackerWindow() {
       setTimeout(() => setShowSettings(true), 50);
     });
     return () => { unlisten.then(fn => fn()).catch(() => {}); };
-  }, []);
-
-  useEffect(() => {
-    const hasExistingInstall = localStorage.getItem('hotline-preferences') !== null;
-    const hasSeenPrompt = localStorage.getItem(SEARCH_PROMPT_SEEN_KEY) === 'true';
-    const hasSearchBookmark = mnemosyneBookmarks.length > 0;
-
-    if (!hasExistingInstall || hasSeenPrompt || hasSearchBookmark) {
-      return;
-    }
-
-    setShowSearchPrompt(true);
-  }, [mnemosyneBookmarks]);
-
-  const dismissSearchPrompt = () => {
-    localStorage.setItem(SEARCH_PROMPT_SEEN_KEY, 'true');
-    setShowSearchPrompt(false);
-  };
-
-  const acceptSearchPrompt = () => {
-    const hasSearchBookmark = useAppStore
-      .getState()
-      .mnemosyneBookmarks
-      .some((bookmark) => bookmark.url === SEARCH_BOOKMARK_URL);
-
-    if (!hasSearchBookmark) {
-      addMnemosyneBookmark({
-        id: 'default-mnemosyne-vespernet',
-        name: 'vespernet.net',
-        url: SEARCH_BOOKMARK_URL,
-      });
-    }
-
-    localStorage.setItem(SEARCH_PROMPT_SEEN_KEY, 'true');
-    setShowSearchPrompt(false);
-  };
-
-  useEffect(() => {
-    window.__triggerSearchFeaturePrompt = () => {
-      setShowSearchPrompt(true);
-    };
-
-    return () => {
-      delete window.__triggerSearchFeaturePrompt;
-    };
   }, []);
 
   return (
@@ -293,12 +244,7 @@ export default function TrackerWindow() {
       
       {/* Notification log */}
       {showNotificationLog && <NotificationLog onClose={() => setShowNotificationLog(false)} />}
-      {showSearchPrompt && (
-        <SearchFeaturePrompt
-          onAccept={acceptSearchPrompt}
-          onClose={dismissSearchPrompt}
-        />
-      )}
+      <AnnouncementManager />
 
     </div>
   );

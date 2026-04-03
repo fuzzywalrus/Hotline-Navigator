@@ -1,11 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
 
-interface SearchFeaturePromptProps {
+interface FeatureAnnouncementProps {
+  title: string;
+  body: string;
+  acceptLabel: string;
+  dismissLabel?: string;
   onAccept: () => void;
   onClose: () => void;
 }
 
-export default function SearchFeaturePrompt({ onAccept, onClose }: SearchFeaturePromptProps) {
+export default function FeatureAnnouncement({
+  title,
+  body,
+  acceptLabel,
+  dismissLabel = 'Not Now',
+  onAccept,
+  onClose,
+}: FeatureAnnouncementProps) {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -48,16 +59,13 @@ export default function SearchFeaturePrompt({ onAccept, onClose }: SearchFeature
       >
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Enable Server Search
+            {title}
           </h2>
         </div>
 
-        <div className="px-6 py-4 space-y-3">
+        <div className="px-6 py-4">
           <p className="text-sm text-gray-700 dark:text-gray-300">
-            Hotline Navigator can now search servers through Mnemosyne indexes.
-          </p>
-          <p className="text-sm text-gray-700 dark:text-gray-300">
-            Add <span className="font-mono">tracker.vespernet.net</span> to enable search. This is a new feature that servers can choose to opt into.
+            {body}
           </p>
         </div>
 
@@ -66,13 +74,13 @@ export default function SearchFeaturePrompt({ onAccept, onClose }: SearchFeature
             onClick={handleClose}
             className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           >
-            Not Now
+            {dismissLabel}
           </button>
           <button
             onClick={handleAccept}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors"
           >
-            Add Search
+            {acceptLabel}
           </button>
         </div>
       </div>

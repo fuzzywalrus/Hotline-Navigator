@@ -4,8 +4,8 @@ use crate::protocol::{types::Bookmark, HotlineClient};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::RwLock;
 
@@ -47,33 +47,90 @@ impl AppState {
         let mut bookmarks: Vec<Bookmark> = if !path.exists() {
             Vec::new()
         } else {
-            let data = fs::read_to_string(path)
-                .map_err(|e| format!("Failed to read bookmarks: {}", e))?;
+            let data =
+                fs::read_to_string(path).map_err(|e| format!("Failed to read bookmarks: {}", e))?;
 
             serde_json::from_str::<Vec<Bookmark>>(&data)
                 .map_err(|e| format!("Failed to parse bookmarks: {}", e))?
         };
 
-        use crate::protocol::constants::{DEFAULT_SERVER_PORT, DEFAULT_TLS_PORT, DEFAULT_TRACKER_PORT};
+        use crate::protocol::constants::{
+            DEFAULT_SERVER_PORT, DEFAULT_TLS_PORT, DEFAULT_TRACKER_PORT,
+        };
         use crate::protocol::types::BookmarkType;
 
         let mut needs_save = false;
 
         // Define default trackers: (id, name, address, port)
         let default_trackers = vec![
-            ("default-tracker-hltracker", "Featured Servers", "hltracker.com", DEFAULT_TRACKER_PORT),
-            ("default-tracker-mainecyber", "Maine Cyber", "tracked.mainecyber.com", DEFAULT_TRACKER_PORT),
-            ("default-tracker-preterhuman", "Preterhuman", "tracker.preterhuman.net", DEFAULT_TRACKER_PORT),
+            (
+                "default-tracker-hltracker",
+                "Featured Servers",
+                "hltracker.com",
+                DEFAULT_TRACKER_PORT,
+            ),
+            (
+                "default-tracker-mainecyber",
+                "Maine Cyber",
+                "tracked.mainecyber.com",
+                DEFAULT_TRACKER_PORT,
+            ),
+            (
+                "default-tracker-preterhuman",
+                "Preterhuman",
+                "tracker.preterhuman.net",
+                DEFAULT_TRACKER_PORT,
+            ),
+            (
+                "default-tracker-bigredh",
+                "Big Red H",
+                "track.bigredh.com",
+                DEFAULT_TRACKER_PORT,
+            ),
+            (
+                "default-tracker-vespernet",
+                "Vespernet",
+                "tracker.vespernet.net",
+                DEFAULT_TRACKER_PORT,
+            ),
         ];
 
-        // Define default servers: (id, name, address, port, tls)
+        // Define default servers: (id, name, address, port, tls, hope)
         let default_servers = vec![
-            ("default-server-bigredh", "Hotline Central Hub", "server.bigredh.com", DEFAULT_SERVER_PORT, false),
-            ("default-server-system7", "System7 Today", "hotline.system7today.com", DEFAULT_SERVER_PORT, false),
-            ("default-server-macdomain", "MacDomain", "62.116.228.143", DEFAULT_SERVER_PORT, false),
-            ("default-server-applearchive", "Apple Media Archive & Hotline Navigator", "hotline.semihosted.xyz", DEFAULT_TLS_PORT, true),
+            (
+                "default-server-bigredh",
+                "Hotline Central Hub",
+                "server.bigredh.com",
+                DEFAULT_SERVER_PORT,
+                false,
+                false,
+            ),
+            (
+                "default-server-system7",
+                "System7 Today",
+                "hotline.system7today.com",
+                DEFAULT_SERVER_PORT,
+                false,
+                false,
+            ),
+            (
+                "default-server-macdomain",
+                "MacDomain",
+                "62.116.228.143",
+                DEFAULT_SERVER_PORT,
+                false,
+                false,
+            ),
+            (
+                "default-server-applearchive",
+                "Apple Media Archive & Hotline Navigator",
+                "hotline.semihosted.xyz",
+                DEFAULT_TLS_PORT,
+                true,
+                true,
+            ),
         ];
-        
+
         // Fix any existing default trackers that lost their type
         for bookmark in bookmarks.iter_mut() {
             for (id, name, address, port) in &default_trackers {
@@ -87,10 +144,10 @@ impl AppState {
                 }
             }
         }
-        
-        // Fix any existing default servers that lost their type or need TLS update
+
+        // Fix any existing default servers that lost their type or need TLS/HOPE updates
         for bookmark in bookmarks.iter_mut() {
-            for (id, name, address, _port, tls) in &default_servers {
+            for (id, name, address, _port, tls, hope) in &default_servers {
                 if bookmark.id == *id || (bookmark.address == *address) {
                     if !matches!(bookmark.bookmark_type, Some(BookmarkType::Server)) {
                         bookmark.bookmark_type = Some(BookmarkType::Server);
@@ -101,13 +158,21 @@ impl AppState {
                     // Update TLS setting if it changed
                     if bookmark.tls != *tls {
                         bookmark.tls = *tls;
-                        bookmark.port = if *tls { DEFAULT_TLS_PORT } else { DEFAULT_SERVER_PORT };
+                        bookmark.port = if *tls {
+                            DEFAULT_TLS_PORT
+                        } else {
+                            DEFAULT_SERVER_PORT
+                        };
+                        needs_save = true;
+                    }
+                    if bookmark.hope != *hope {
+                        bookmark.hope = *hope;
                         needs_save = true;
                     }
                 }
             }
         }
-        
+
         // Only add defaults on first load (empty bookmarks file)
         if bookmarks.is_empty() {
             // Add default trackers
@@ -129,7 +194,7 @@ impl AppState {
             }
 
             // Add default servers
-            for (id, name, address, port, tls) in &default_servers {
+            for (id, name, address, port, tls, hope) in &default_servers {
                 let server = Bookmark {
                     id: id.to_string(),
                     name: name.to_string(),
@@ -140,20 +205,19 @@ impl AppState {
                     icon: None,
                     auto_connect: false,
                     tls: *tls,
-                    hope: false,
+                    hope: *hope,
                     bookmark_type: Some(BookmarkType::Server),
                 };
                 bookmarks.push(server);
             }
             needs_save = true;
         }
-        
+
         // Save if we made any changes
         if needs_save {
             let json = serde_json::to_string_pretty(&bookmarks)
                 .map_err(|e| format!("Failed to serialize bookmarks: {}", e))?;
-            fs::write(path, json)
-                .map_err(|e| format!("Failed to write bookmarks: {}", e))?;
+            fs::write(path, json).map_err(|e| format!("Failed to write bookmarks: {}", e))?;
         }
 
         Ok(bookmarks)
@@ -176,9 +240,19 @@ impl AppState {
         println!("Cancelling in-flight connection (was generation {})", gen);
     }
 
-    pub async fn connect_server(&self, bookmark: Bookmark, username: String, user_icon_id: u16, auto_detect_tls: bool, allow_legacy_tls: bool) -> Result<crate::commands::ConnectResult, String> {
+    pub async fn connect_server(
+        &self,
+        bookmark: Bookmark,
+        username: String,
+        user_icon_id: u16,
+        auto_detect_tls: bool,
+        allow_legacy_tls: bool,
+    ) -> Result<crate::commands::ConnectResult, String> {
         // Don't allow connecting to trackers - they use a different protocol
-        if matches!(bookmark.bookmark_type, Some(crate::protocol::types::BookmarkType::Tracker)) {
+        if matches!(
+            bookmark.bookmark_type,
+            Some(crate::protocol::types::BookmarkType::Tracker)
+        ) {
             return Err("Cannot connect to tracker. Trackers are used to browse servers, not to connect directly.".to_string());
         }
 
@@ -205,19 +279,23 @@ impl AppState {
         // server and caused the real connection to be rejected.
         let (client, final_tls, final_port) = if auto_detect_tls && !bookmark.tls {
             let tls_port = bookmark.port + 100;
-            println!("Auto-detect TLS: trying {}:{} (TLS)...", bookmark.address, tls_port);
+            println!(
+                "Auto-detect TLS: trying {}:{} (TLS)...",
+                bookmark.address, tls_port
+            );
 
             let mut tls_bookmark = bookmark.clone();
             tls_bookmark.tls = true;
             tls_bookmark.port = tls_port;
 
             let tls_client = HotlineClient::new(tls_bookmark, allow_legacy_tls);
-            tls_client.set_user_info(username.clone(), user_icon_id).await;
+            tls_client
+                .set_user_info(username.clone(), user_icon_id)
+                .await;
 
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                tls_client.connect(),
-            ).await {
+            match tokio::time::timeout(std::time::Duration::from_secs(5), tls_client.connect())
+                .await
+            {
                 Ok(Ok(())) => {
                     check_cancelled()?;
                     println!("Auto-detect TLS: connected via TLS on port {}", tls_port);
@@ -225,7 +303,10 @@ impl AppState {
                 }
                 Ok(Err(e)) => {
                     check_cancelled()?;
-                    println!("Auto-detect TLS: TLS failed ({}), falling back to plain on port {}", e, bookmark.port);
+                    println!(
+                        "Auto-detect TLS: TLS failed ({}), falling back to plain on port {}",
+                        e, bookmark.port
+                    );
                     let client = HotlineClient::new(bookmark.clone(), allow_legacy_tls);
                     client.set_user_info(username, user_icon_id).await;
                     check_cancelled()?;
@@ -234,7 +315,10 @@ impl AppState {
                 }
                 Err(_) => {
                     check_cancelled()?;
-                    println!("Auto-detect TLS: timed out, falling back to plain on port {}", bookmark.port);
+                    println!(
+                        "Auto-detect TLS: timed out, falling back to plain on port {}",
+                        bookmark.port
+                    );
                     let client = HotlineClient::new(bookmark.clone(), allow_legacy_tls);
                     client.set_user_info(username, user_icon_id).await;
                     check_cancelled()?;
@@ -276,15 +360,26 @@ impl AppState {
                 use crate::protocol::client::HotlineEvent;
 
                 match event {
-                    HotlineEvent::ChatMessage { user_id, user_name, message } => {
+                    HotlineEvent::ChatMessage {
+                        user_id,
+                        user_name,
+                        message,
+                    } => {
                         let payload = serde_json::json!({
                             "userId": user_id,
                             "userName": user_name,
                             "message": message,
                         });
-                        let _ = app_handle.emit(&format!("chat-message-{}", server_id_clone), payload);
+                        let _ =
+                            app_handle.emit(&format!("chat-message-{}", server_id_clone), payload);
                     }
-                    HotlineEvent::UserJoined { user_id, user_name, icon, flags, color } => {
+                    HotlineEvent::UserJoined {
+                        user_id,
+                        user_name,
+                        icon,
+                        flags,
+                        color,
+                    } => {
                         let payload = serde_json::json!({
                             "userId": user_id,
                             "userName": user_name,
@@ -292,7 +387,8 @@ impl AppState {
                             "flags": flags,
                             "color": color,
                         });
-                        let _ = app_handle.emit(&format!("user-joined-{}", server_id_clone), payload);
+                        let _ =
+                            app_handle.emit(&format!("user-joined-{}", server_id_clone), payload);
                     }
                     HotlineEvent::UserLeft { user_id } => {
                         let payload = serde_json::json!({
@@ -300,7 +396,13 @@ impl AppState {
                         });
                         let _ = app_handle.emit(&format!("user-left-{}", server_id_clone), payload);
                     }
-                    HotlineEvent::UserChanged { user_id, user_name, icon, flags, color } => {
+                    HotlineEvent::UserChanged {
+                        user_id,
+                        user_name,
+                        icon,
+                        flags,
+                        color,
+                    } => {
                         let payload = serde_json::json!({
                             "userId": user_id,
                             "userName": user_name,
@@ -308,31 +410,37 @@ impl AppState {
                             "flags": flags,
                             "color": color,
                         });
-                        let _ = app_handle.emit(&format!("user-changed-{}", server_id_clone), payload);
+                        let _ =
+                            app_handle.emit(&format!("user-changed-{}", server_id_clone), payload);
                     }
                     HotlineEvent::DisconnectMessage(msg) => {
                         let payload = serde_json::json!({
                             "message": msg,
                         });
-                        let _ = app_handle.emit(&format!("disconnect-message-{}", server_id_clone), payload);
+                        let _ = app_handle
+                            .emit(&format!("disconnect-message-{}", server_id_clone), payload);
                     }
                     HotlineEvent::ServerMessage(msg) => {
                         println!("Server broadcast message: {}", msg);
                         let payload = serde_json::json!({
                             "message": msg,
                         });
-                        let _ = app_handle.emit(&format!("broadcast-message-{}", server_id_clone), payload);
+                        let _ = app_handle
+                            .emit(&format!("broadcast-message-{}", server_id_clone), payload);
                     }
                     HotlineEvent::AgreementRequired(agreement) => {
-                        println!("State: Received AgreementRequired event, agreement length: {}", agreement.len());
-                        
+                        println!(
+                            "State: Received AgreementRequired event, agreement length: {}",
+                            agreement.len()
+                        );
+
                         // Store agreement in pending_agreements
                         {
                             let mut pending = state_clone.write().await;
                             pending.insert(server_id_clone.clone(), agreement.clone());
                             println!("State: Stored agreement for server {}", server_id_clone);
                         }
-                        
+
                         let payload = serde_json::json!({
                             "agreement": agreement,
                         });
@@ -360,33 +468,54 @@ impl AppState {
                         let payload = serde_json::json!({
                             "message": message,
                         });
-                        let _ = app_handle.emit(&format!("message-board-post-{}", server_id_clone), payload);
+                        let _ = app_handle
+                            .emit(&format!("message-board-post-{}", server_id_clone), payload);
                     }
                     HotlineEvent::PrivateMessage { user_id, message } => {
                         let payload = serde_json::json!({
                             "userId": user_id,
                             "message": message,
                         });
-                        let _ = app_handle.emit(&format!("private-message-{}", server_id_clone), payload);
+                        let _ = app_handle
+                            .emit(&format!("private-message-{}", server_id_clone), payload);
                     }
-                    HotlineEvent::ChatInvite { chat_id, user_id, user_name } => {
+                    HotlineEvent::ChatInvite {
+                        chat_id,
+                        user_id,
+                        user_name,
+                    } => {
                         let payload = serde_json::json!({
                             "chatId": chat_id,
                             "userId": user_id,
                             "userName": user_name,
                         });
-                        let _ = app_handle.emit(&format!("chat-invite-{}", server_id_clone), payload);
+                        let _ =
+                            app_handle.emit(&format!("chat-invite-{}", server_id_clone), payload);
                     }
-                    HotlineEvent::PrivateChatMessage { chat_id, user_id, user_name, message } => {
+                    HotlineEvent::PrivateChatMessage {
+                        chat_id,
+                        user_id,
+                        user_name,
+                        message,
+                    } => {
                         let payload = serde_json::json!({
                             "chatId": chat_id,
                             "userId": user_id,
                             "userName": user_name,
                             "message": message,
                         });
-                        let _ = app_handle.emit(&format!("private-chat-message-{}", server_id_clone), payload);
+                        let _ = app_handle.emit(
+                            &format!("private-chat-message-{}", server_id_clone),
+                            payload,
+                        );
                     }
-                    HotlineEvent::ChatUserJoined { chat_id, user_id, user_name, icon, flags } => {
+                    HotlineEvent::ChatUserJoined {
+                        chat_id,
+                        user_id,
+                        user_name,
+                        icon,
+                        flags,
+                    } => {
                         let payload = serde_json::json!({
                             "chatId": chat_id,
                             "userId": user_id,
@@ -394,42 +523,48 @@ impl AppState {
                             "icon": icon,
                             "flags": flags,
                         });
-                        let _ = app_handle.emit(&format!("chat-user-joined-{}", server_id_clone), payload);
+                        let _ = app_handle
+                            .emit(&format!("chat-user-joined-{}", server_id_clone), payload);
                     }
                     HotlineEvent::ChatUserLeft { chat_id, user_id } => {
                         let payload = serde_json::json!({
                             "chatId": chat_id,
                             "userId": user_id,
                         });
-                        let _ = app_handle.emit(&format!("chat-user-left-{}", server_id_clone), payload);
+                        let _ = app_handle
+                            .emit(&format!("chat-user-left-{}", server_id_clone), payload);
                     }
                     HotlineEvent::ChatSubjectChanged { chat_id, subject } => {
                         let payload = serde_json::json!({
                             "chatId": chat_id,
                             "subject": subject,
                         });
-                        let _ = app_handle.emit(&format!("chat-subject-{}", server_id_clone), payload);
+                        let _ =
+                            app_handle.emit(&format!("chat-subject-{}", server_id_clone), payload);
                     }
                     HotlineEvent::ServerBannerUpdate { banner_type, url } => {
                         let payload = serde_json::json!({
                             "bannerType": banner_type,
                             "url": url,
                         });
-                        let _ = app_handle.emit(&format!("server-banner-{}", server_id_clone), payload);
+                        let _ =
+                            app_handle.emit(&format!("server-banner-{}", server_id_clone), payload);
                     }
                     HotlineEvent::ProtocolLog { level, message } => {
                         let payload = serde_json::json!({
                             "level": level,
                             "message": message,
                         });
-                        let _ = app_handle.emit(&format!("protocol-log-{}", server_id_clone), payload);
+                        let _ =
+                            app_handle.emit(&format!("protocol-log-{}", server_id_clone), payload);
                     }
                     HotlineEvent::StatusChanged(status) => {
                         let payload = serde_json::json!({
                             "status": status,
                         });
-                        let _ = app_handle.emit(&format!("status-changed-{}", server_id_clone), payload);
-                        
+                        let _ = app_handle
+                            .emit(&format!("status-changed-{}", server_id_clone), payload);
+
                         // Emit user access permissions when we're logged in
                         // This ensures we only emit after login is complete and user_access is set
                         if matches!(status, crate::protocol::types::ConnectionStatus::LoggedIn) {
@@ -439,7 +574,10 @@ impl AppState {
                                 let access_payload = serde_json::json!({
                                     "access": user_access,
                                 });
-                                let _ = app_handle.emit(&format!("user-access-{}", server_id_clone), access_payload);
+                                let _ = app_handle.emit(
+                                    &format!("user-access-{}", server_id_clone),
+                                    access_payload,
+                                );
                             }
                         }
                     }
@@ -467,7 +605,11 @@ impl AppState {
         }
     }
 
-    pub async fn update_user_info_all_servers(&self, username: &str, icon_id: u16) -> Result<(), String> {
+    pub async fn update_user_info_all_servers(
+        &self,
+        username: &str,
+        icon_id: u16,
+    ) -> Result<(), String> {
         let clients = self.clients.read().await;
         let mut errors = Vec::new();
 
@@ -494,7 +636,12 @@ impl AppState {
         }
     }
 
-    pub async fn send_private_message(&self, server_id: &str, user_id: u16, message: String) -> Result<(), String> {
+    pub async fn send_private_message(
+        &self,
+        server_id: &str,
+        user_id: u16,
+        message: String,
+    ) -> Result<(), String> {
         let clients = self.clients.read().await;
 
         if let Some(client) = clients.get(server_id) {
@@ -513,7 +660,12 @@ impl AppState {
         }
     }
 
-    pub async fn create_folder(&self, server_id: &str, path: Vec<String>, name: String) -> Result<(), String> {
+    pub async fn create_folder(
+        &self,
+        server_id: &str,
+        path: Vec<String>,
+        name: String,
+    ) -> Result<(), String> {
         let clients = self.clients.read().await;
         if let Some(client) = clients.get(server_id) {
             client.create_folder(path, name).await
@@ -522,7 +674,12 @@ impl AppState {
         }
     }
 
-    pub async fn create_news_category(&self, server_id: &str, path: Vec<String>, name: String) -> Result<(), String> {
+    pub async fn create_news_category(
+        &self,
+        server_id: &str,
+        path: Vec<String>,
+        name: String,
+    ) -> Result<(), String> {
         let clients = self.clients.read().await;
         if let Some(client) = clients.get(server_id) {
             client.create_news_category(path, name).await
@@ -531,7 +688,12 @@ impl AppState {
         }
     }
 
-    pub async fn create_news_folder(&self, server_id: &str, path: Vec<String>, name: String) -> Result<(), String> {
+    pub async fn create_news_folder(
+        &self,
+        server_id: &str,
+        path: Vec<String>,
+        name: String,
+    ) -> Result<(), String> {
         let clients = self.clients.read().await;
         if let Some(client) = clients.get(server_id) {
             client.create_news_folder(path, name).await
@@ -549,10 +711,18 @@ impl AppState {
         }
     }
 
-    pub async fn delete_news_article(&self, server_id: &str, path: Vec<String>, article_id: u32, recursive: bool) -> Result<(), String> {
+    pub async fn delete_news_article(
+        &self,
+        server_id: &str,
+        path: Vec<String>,
+        article_id: u32,
+        recursive: bool,
+    ) -> Result<(), String> {
         let clients = self.clients.read().await;
         if let Some(client) = clients.get(server_id) {
-            client.delete_news_article(path, article_id, recursive).await
+            client
+                .delete_news_article(path, article_id, recursive)
+                .await
         } else {
             Err("Server not connected".to_string())
         }
@@ -584,26 +754,37 @@ impl AppState {
         if let Some(client) = clients.get(server_id) {
             // Get reference number and transfer size
             let (reference_number, transfer_size) = client.download_banner().await?;
-            
-            println!("Banner download info - reference: {}, transferSize: {}", reference_number, transfer_size);
+
+            println!(
+                "Banner download info - reference: {}, transferSize: {}",
+                reference_number, transfer_size
+            );
 
             // Download banner as raw image data (not FILP format)
-            let file_data = client.download_banner_raw(reference_number, transfer_size).await?;
+            let file_data = client
+                .download_banner_raw(reference_number, transfer_size)
+                .await?;
 
-            println!("Banner download complete, {} bytes received", file_data.len());
+            println!(
+                "Banner download complete, {} bytes received",
+                file_data.len()
+            );
 
             // Save banner to app data directory
-            let banner_path = self.bookmarks_path.parent()
+            let banner_path = self
+                .bookmarks_path
+                .parent()
                 .ok_or("Failed to get app data directory".to_string())?
                 .join(format!("banner-{}.png", server_id));
-            
+
             std::fs::write(&banner_path, &file_data)
                 .map_err(|e| format!("Failed to save banner: {}", e))?;
 
             println!("Banner saved to: {:?}", banner_path);
 
             // Return path as string
-            banner_path.to_str()
+            banner_path
+                .to_str()
                 .ok_or("Failed to convert banner path to string".to_string())
                 .map(|s| s.to_string())
         } else {
@@ -641,16 +822,31 @@ impl AppState {
         }
     }
 
-    pub async fn download_file(&self, server_id: &str, path: Vec<String>, file_name: String, file_size: u64, download_folder: Option<String>) -> Result<String, String> {
+    pub async fn download_file(
+        &self,
+        server_id: &str,
+        path: Vec<String>,
+        file_name: String,
+        file_size: u64,
+        download_folder: Option<String>,
+    ) -> Result<String, String> {
         let clients = self.clients.read().await;
 
         if let Some(client) = clients.get(server_id) {
             // Get reference number from server and server-reported file size
-            let (reference_number, server_file_size) = client.download_file(path, file_name.clone()).await?;
+            let (reference_number, server_file_size) =
+                client.download_file(path, file_name.clone()).await?;
 
-            println!("Got reference number {}, starting file transfer...", reference_number);
+            println!(
+                "Got reference number {}, starting file transfer...",
+                reference_number
+            );
             if let Some(server_size) = server_file_size {
-                println!("Server reports file size: {} bytes ({:.2} MB)", server_size, server_size as f64 / 1_000_000.0);
+                println!(
+                    "Server reports file size: {} bytes ({:.2} MB)",
+                    server_size,
+                    server_size as f64 / 1_000_000.0
+                );
             }
 
             // Prefer server-reported file size over file list size, but fall back to file list size if server reports 0
@@ -658,11 +854,17 @@ impl AppState {
                 if server_size > 0 {
                     server_size
                 } else {
-                    println!("Server reported file size is 0, using file list size: {} bytes", file_size);
+                    println!(
+                        "Server reported file size is 0, using file list size: {} bytes",
+                        file_size
+                    );
                     file_size
                 }
             } else {
-                println!("Server did not report file size, using file list size: {} bytes", file_size);
+                println!(
+                    "Server did not report file size, using file list size: {} bytes",
+                    file_size
+                );
                 file_size
             };
 
@@ -670,20 +872,23 @@ impl AppState {
             let app_handle = self.app_handle.clone();
             let server_id_clone = server_id.to_string();
             let file_name_clone = file_name.clone();
-            let file_data = client.perform_file_transfer(
-                reference_number,
-                effective_file_size,
-                move |bytes_read, total_bytes| {
-                    let progress = (bytes_read as f64 / total_bytes as f64 * 100.0) as u32;
-                    let payload = serde_json::json!({
-                        "fileName": file_name_clone,
-                        "bytesRead": bytes_read,
-                        "totalBytes": total_bytes,
-                        "progress": progress,
-                    });
-                    let _ = app_handle.emit(&format!("download-progress-{}", server_id_clone), payload);
-                }
-            ).await?;
+            let file_data = client
+                .perform_file_transfer(
+                    reference_number,
+                    effective_file_size,
+                    move |bytes_read, total_bytes| {
+                        let progress = (bytes_read as f64 / total_bytes as f64 * 100.0) as u32;
+                        let payload = serde_json::json!({
+                            "fileName": file_name_clone,
+                            "bytesRead": bytes_read,
+                            "totalBytes": total_bytes,
+                            "progress": progress,
+                        });
+                        let _ = app_handle
+                            .emit(&format!("download-progress-{}", server_id_clone), payload);
+                    },
+                )
+                .await?;
 
             println!("File transfer complete, {} bytes received", file_data.len());
 
@@ -740,22 +945,26 @@ impl AppState {
             let sanitized_name = file_name
                 .chars()
                 .map(|c| {
-                    if c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') {
+                    if c.is_control()
+                        || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
+                    {
                         '_'
                     } else {
                         c
                     }
                 })
                 .collect::<String>();
-            
+
             // Create full file path
             let file_path = downloads_dir.join(&sanitized_name);
 
-            println!("Saving file to: {:?} (original name: {:?})", file_path, file_name);
+            println!(
+                "Saving file to: {:?} (original name: {:?})",
+                file_path, file_name
+            );
 
             // Save file to disk
-            fs::write(&file_path, file_data)
-                .map_err(|e| format!("Failed to write file: {}", e))?;
+            fs::write(&file_path, file_data).map_err(|e| format!("Failed to write file: {}", e))?;
 
             println!("File saved successfully to {:?}", file_path);
 
@@ -770,7 +979,10 @@ impl AppState {
         Ok(bookmarks.clone())
     }
 
-    pub async fn get_server_info(&self, server_id: &str) -> Result<crate::protocol::types::ServerInfo, String> {
+    pub async fn get_server_info(
+        &self,
+        server_id: &str,
+    ) -> Result<crate::protocol::types::ServerInfo, String> {
         let clients = self.clients.read().await;
         if let Some(client) = clients.get(server_id) {
             client.get_server_info().await
@@ -788,7 +1000,12 @@ impl AppState {
         }
     }
 
-    pub async fn delete_file(&self, server_id: &str, path: Vec<String>, file_name: String) -> Result<(), String> {
+    pub async fn delete_file(
+        &self,
+        server_id: &str,
+        path: Vec<String>,
+        file_name: String,
+    ) -> Result<(), String> {
         let clients = self.clients.read().await;
         if let Some(client) = clients.get(server_id) {
             client.delete_file(path, file_name).await
@@ -797,7 +1014,13 @@ impl AppState {
         }
     }
 
-    pub async fn move_file(&self, server_id: &str, path: Vec<String>, file_name: String, new_path: Vec<String>) -> Result<(), String> {
+    pub async fn move_file(
+        &self,
+        server_id: &str,
+        path: Vec<String>,
+        file_name: String,
+        new_path: Vec<String>,
+    ) -> Result<(), String> {
         let clients = self.clients.read().await;
         if let Some(client) = clients.get(server_id) {
             client.move_file(path, file_name, new_path).await
@@ -806,7 +1029,12 @@ impl AppState {
         }
     }
 
-    pub async fn get_file_info(&self, server_id: &str, path: Vec<String>, file_name: String) -> Result<crate::protocol::client::files::FileInfoDetails, String> {
+    pub async fn get_file_info(
+        &self,
+        server_id: &str,
+        path: Vec<String>,
+        file_name: String,
+    ) -> Result<crate::protocol::client::files::FileInfoDetails, String> {
         let clients = self.clients.read().await;
         if let Some(client) = clients.get(server_id) {
             client.get_file_info(path, file_name).await
@@ -815,10 +1043,19 @@ impl AppState {
         }
     }
 
-    pub async fn set_file_info(&self, server_id: &str, path: Vec<String>, file_name: String, new_name: Option<String>, comment: Option<String>) -> Result<(), String> {
+    pub async fn set_file_info(
+        &self,
+        server_id: &str,
+        path: Vec<String>,
+        file_name: String,
+        new_name: Option<String>,
+        comment: Option<String>,
+    ) -> Result<(), String> {
         let clients = self.clients.read().await;
         if let Some(client) = clients.get(server_id) {
-            client.set_file_info(path, file_name, new_name, comment).await
+            client
+                .set_file_info(path, file_name, new_name, comment)
+                .await
         } else {
             Err("Server not connected".to_string())
         }
@@ -833,7 +1070,12 @@ impl AppState {
         }
     }
 
-    pub async fn disconnect_user(&self, server_id: &str, user_id: u16, options: Option<u16>) -> Result<(), String> {
+    pub async fn disconnect_user(
+        &self,
+        server_id: &str,
+        user_id: u16,
+        options: Option<u16>,
+    ) -> Result<(), String> {
         let clients = self.clients.read().await;
         if let Some(client) = clients.get(server_id) {
             client.disconnect_user(user_id, options).await
@@ -851,7 +1093,12 @@ impl AppState {
         }
     }
 
-    pub async fn invite_to_chat(&self, server_id: &str, chat_id: u32, user_id: u16) -> Result<(), String> {
+    pub async fn invite_to_chat(
+        &self,
+        server_id: &str,
+        chat_id: u32,
+        user_id: u16,
+    ) -> Result<(), String> {
         let clients = self.clients.read().await;
         if let Some(client) = clients.get(server_id) {
             client.invite_to_chat(chat_id, user_id).await
@@ -869,7 +1116,11 @@ impl AppState {
         }
     }
 
-    pub async fn join_chat(&self, server_id: &str, chat_id: u32) -> Result<(String, Vec<(u16, String, u16, u16)>), String> {
+    pub async fn join_chat(
+        &self,
+        server_id: &str,
+        chat_id: u32,
+    ) -> Result<(String, Vec<(u16, String, u16, u16)>), String> {
         let clients = self.clients.read().await;
         if let Some(client) = clients.get(server_id) {
             client.join_chat(chat_id).await
@@ -887,7 +1138,12 @@ impl AppState {
         }
     }
 
-    pub async fn set_chat_subject(&self, server_id: &str, chat_id: u32, subject: String) -> Result<(), String> {
+    pub async fn set_chat_subject(
+        &self,
+        server_id: &str,
+        chat_id: u32,
+        subject: String,
+    ) -> Result<(), String> {
         let clients = self.clients.read().await;
         if let Some(client) = clients.get(server_id) {
             client.set_chat_subject(chat_id, subject).await
@@ -896,7 +1152,12 @@ impl AppState {
         }
     }
 
-    pub async fn send_private_chat_message(&self, server_id: &str, chat_id: u32, message: String) -> Result<(), String> {
+    pub async fn send_private_chat_message(
+        &self,
+        server_id: &str,
+        chat_id: u32,
+        message: String,
+    ) -> Result<(), String> {
         let clients = self.clients.read().await;
         if let Some(client) = clients.get(server_id) {
             client.send_private_chat_message(chat_id, message).await
@@ -933,15 +1194,17 @@ impl AppState {
 
     pub async fn reorder_bookmarks(&self, new_bookmarks: Vec<Bookmark>) -> Result<(), String> {
         let mut bookmarks = self.bookmarks.write().await;
-        
+
         // Validate that all bookmarks exist (prevent data loss)
-        let existing_ids: std::collections::HashSet<String> = bookmarks.iter().map(|b| b.id.clone()).collect();
-        let new_ids: std::collections::HashSet<String> = new_bookmarks.iter().map(|b| b.id.clone()).collect();
-        
+        let existing_ids: std::collections::HashSet<String> =
+            bookmarks.iter().map(|b| b.id.clone()).collect();
+        let new_ids: std::collections::HashSet<String> =
+            new_bookmarks.iter().map(|b| b.id.clone()).collect();
+
         if existing_ids != new_ids {
             return Err("Bookmark reorder failed: bookmark count or IDs don't match".to_string());
         }
-        
+
         *bookmarks = new_bookmarks;
 
         // Persist to disk
@@ -951,24 +1214,81 @@ impl AppState {
     }
 
     pub async fn add_default_bookmarks(&self) -> Result<Vec<Bookmark>, String> {
-        use crate::protocol::constants::{DEFAULT_SERVER_PORT, DEFAULT_TLS_PORT, DEFAULT_TRACKER_PORT};
+        use crate::protocol::constants::{
+            DEFAULT_SERVER_PORT, DEFAULT_TLS_PORT, DEFAULT_TRACKER_PORT,
+        };
         use crate::protocol::types::BookmarkType;
 
         let mut bookmarks = self.bookmarks.write().await;
 
         // Define default trackers: (id, name, address, port)
         let default_trackers = vec![
-            ("default-tracker-hltracker", "Featured Servers", "hltracker.com", DEFAULT_TRACKER_PORT),
-            ("default-tracker-mainecyber", "Maine Cyber", "tracked.mainecyber.com", DEFAULT_TRACKER_PORT),
-            ("default-tracker-preterhuman", "Preterhuman", "tracker.preterhuman.net", DEFAULT_TRACKER_PORT),
+            (
+                "default-tracker-hltracker",
+                "Featured Servers",
+                "hltracker.com",
+                DEFAULT_TRACKER_PORT,
+            ),
+            (
+                "default-tracker-mainecyber",
+                "Maine Cyber",
+                "tracked.mainecyber.com",
+                DEFAULT_TRACKER_PORT,
+            ),
+            (
+                "default-tracker-preterhuman",
+                "Preterhuman",
+                "tracker.preterhuman.net",
+                DEFAULT_TRACKER_PORT,
+            ),
+            (
+                "default-tracker-bigredh",
+                "Big Red H",
+                "track.bigredh.com",
+                DEFAULT_TRACKER_PORT,
+            ),
+            (
+                "default-tracker-vespernet",
+                "Vespernet",
+                "tracker.vespernet.net",
+                DEFAULT_TRACKER_PORT,
+            ),
         ];
 
-        // Define default servers: (id, name, address, port, tls)
+        // Define default servers: (id, name, address, port, tls, hope)
         let default_servers = vec![
-            ("default-server-bigredh", "Hotline Central Hub", "server.bigredh.com", DEFAULT_SERVER_PORT, false),
-            ("default-server-system7", "System7 Today", "hotline.system7today.com", DEFAULT_SERVER_PORT, false),
-            ("default-server-macdomain", "MacDomain", "62.116.228.143", DEFAULT_SERVER_PORT, false),
-            ("default-server-applearchive", "Apple Media Archive & Hotline Navigator", "hotline.semihosted.xyz", DEFAULT_TLS_PORT, true),
+            (
+                "default-server-bigredh",
+                "Hotline Central Hub",
+                "server.bigredh.com",
+                DEFAULT_SERVER_PORT,
+                false,
+                false,
+            ),
+            (
+                "default-server-system7",
+                "System7 Today",
+                "hotline.system7today.com",
+                DEFAULT_SERVER_PORT,
+                false,
+                false,
+            ),
+            (
+                "default-server-macdomain",
+                "MacDomain",
+                "62.116.228.143",
+                DEFAULT_SERVER_PORT,
+                false,
+                false,
+            ),
+            (
+                "default-server-applearchive",
+                "Apple Media Archive & Hotline Navigator",
+                "hotline.semihosted.xyz",
+                DEFAULT_TLS_PORT,
+                true,
+                true,
+            ),
         ];
 
         let mut added_count = 0;
@@ -977,8 +1297,8 @@ impl AppState {
         for (id, name, address, port) in &default_trackers {
             let has_tracker = bookmarks.iter().any(|b: &Bookmark| {
                 b.address == *address
-                && b.port == *port
-                && matches!(b.bookmark_type, Some(BookmarkType::Tracker))
+                    && b.port == *port
+                    && matches!(b.bookmark_type, Some(BookmarkType::Tracker))
             });
 
             if !has_tracker {
@@ -1001,10 +1321,9 @@ impl AppState {
         }
 
         // Add missing default servers
-        for (id, name, address, port, tls) in &default_servers {
+        for (id, name, address, port, tls, hope) in &default_servers {
             let has_server = bookmarks.iter().any(|b: &Bookmark| {
-                b.address == *address
-                && matches!(b.bookmark_type, Some(BookmarkType::Server))
+                b.address == *address && matches!(b.bookmark_type, Some(BookmarkType::Server))
             });
 
             if !has_server {
@@ -1018,24 +1337,28 @@ impl AppState {
                     icon: None,
                     auto_connect: false,
                     tls: *tls,
-                    hope: false,
+                    hope: *hope,
                     bookmark_type: Some(BookmarkType::Server),
                 };
                 bookmarks.push(server);
                 added_count += 1;
             }
         }
-        
+
         if added_count > 0 {
             // Persist to disk
             self.save_bookmarks_to_disk(&bookmarks)?;
         }
-        
+
         let result = bookmarks.clone();
         Ok(result)
     }
 
-    pub async fn get_news_categories(&self, server_id: &str, path: Vec<String>) -> Result<Vec<crate::protocol::types::NewsCategory>, String> {
+    pub async fn get_news_categories(
+        &self,
+        server_id: &str,
+        path: Vec<String>,
+    ) -> Result<Vec<crate::protocol::types::NewsCategory>, String> {
         let clients = self.clients.read().await;
 
         if let Some(client) = clients.get(server_id) {
@@ -1045,7 +1368,11 @@ impl AppState {
         }
     }
 
-    pub async fn get_news_articles(&self, server_id: &str, path: Vec<String>) -> Result<Vec<crate::protocol::types::NewsArticle>, String> {
+    pub async fn get_news_articles(
+        &self,
+        server_id: &str,
+        path: Vec<String>,
+    ) -> Result<Vec<crate::protocol::types::NewsArticle>, String> {
         let clients = self.clients.read().await;
 
         if let Some(client) = clients.get(server_id) {
@@ -1055,7 +1382,12 @@ impl AppState {
         }
     }
 
-    pub async fn get_news_article_data(&self, server_id: &str, article_id: u32, path: Vec<String>) -> Result<String, String> {
+    pub async fn get_news_article_data(
+        &self,
+        server_id: &str,
+        article_id: u32,
+        path: Vec<String>,
+    ) -> Result<String, String> {
         let clients = self.clients.read().await;
 
         if let Some(client) = clients.get(server_id) {
@@ -1065,7 +1397,14 @@ impl AppState {
         }
     }
 
-    pub async fn post_news_article(&self, server_id: &str, title: String, text: String, path: Vec<String>, parent_id: u32) -> Result<(), String> {
+    pub async fn post_news_article(
+        &self,
+        server_id: &str,
+        title: String,
+        text: String,
+        path: Vec<String>,
+        parent_id: u32,
+    ) -> Result<(), String> {
         let clients = self.clients.read().await;
 
         if let Some(client) = clients.get(server_id) {
@@ -1090,21 +1429,24 @@ impl AppState {
             let file_name_clone = file_name.clone();
             let _total_bytes = file_data.len() as u64;
 
-            client.upload_file(
-                path,
-                file_name,
-                file_data,
-                move |bytes_sent, total_bytes| {
-                    let progress = (bytes_sent as f64 / total_bytes as f64 * 100.0) as u32;
-                    let payload = serde_json::json!({
-                        "fileName": file_name_clone,
-                        "bytesSent": bytes_sent,
-                        "totalBytes": total_bytes,
-                        "progress": progress,
-                    });
-                    let _ = app_handle.emit(&format!("upload-progress-{}", server_id_clone), payload);
-                }
-            ).await?;
+            client
+                .upload_file(
+                    path,
+                    file_name,
+                    file_data,
+                    move |bytes_sent, total_bytes| {
+                        let progress = (bytes_sent as f64 / total_bytes as f64 * 100.0) as u32;
+                        let payload = serde_json::json!({
+                            "fileName": file_name_clone,
+                            "bytesSent": bytes_sent,
+                            "totalBytes": total_bytes,
+                            "progress": progress,
+                        });
+                        let _ = app_handle
+                            .emit(&format!("upload-progress-{}", server_id_clone), payload);
+                    },
+                )
+                .await?;
 
             Ok(())
         } else {

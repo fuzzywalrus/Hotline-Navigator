@@ -139,14 +139,14 @@ Default trackers (all on port 5498):
 | `default-tracker-preterhuman` | Preterhuman | `tracker.preterhuman.net` |
 
 Default servers:
-| ID | Name | Address | Port | TLS |
-|----|------|---------|------|-----|
-| `default-server-bigredh` | Hotline Central Hub | `server.bigredh.com` | 5500 | false |
-| `default-server-system7` | System7 Today | `hotline.system7today.com` | 5500 | false |
-| `default-server-macdomain` | MacDomain | `62.116.228.143` | 5500 | false |
-| `default-server-applearchive` | Apple Media Archive & Hotline Navigator | `hotline.semihosted.xyz` | 5600 | true |
+| ID | Name | Address | Port | TLS | HOPE |
+|----|------|---------|------|-----|------|
+| `default-server-bigredh` | Hotline Central Hub | `server.bigredh.com` | 5500 | false | false |
+| `default-server-system7` | System7 Today | `hotline.system7today.com` | 5500 | false | false |
+| `default-server-macdomain` | MacDomain | `62.116.228.143` | 5500 | false | false |
+| `default-server-applearchive` | Apple Media Archive & Hotline Navigator | `hotline.semihosted.xyz` | 5600 | true | true |
 
-All default bookmarks use login `"guest"`, no password, no icon, `auto_connect: false`, and `hope: false`.
+All default bookmarks use login `"guest"`, no password, no icon, and `auto_connect: false`.
 
 #### Scenario: First launch populates defaults
 
@@ -180,6 +180,7 @@ Migrations:
 1. **Fix missing bookmark_type for default trackers**: If a bookmark matches a default tracker by address and port but lacks `bookmark_type: Tracker`, set it to `Tracker` and update its ID and name to the canonical defaults
 2. **Fix missing bookmark_type for default servers**: If a bookmark matches a default server by address but lacks `bookmark_type: Server`, set it to `Server` and update its ID and name
 3. **Update TLS settings for default servers**: If a default server's TLS setting has changed in the code (e.g., a server moved from plain to TLS), update the bookmark's `tls` flag and port accordingly
+4. **Update HOPE settings for default servers**: If a default server's HOPE setting has changed in the code, update the bookmark's `hope` flag accordingly
 
 If any migration changes were made, the system SHALL persist the updated bookmarks to disk.
 
@@ -192,6 +193,11 @@ If any migration changes were made, the system SHALL persist the updated bookmar
 
 - **WHEN** the code changes a default server from `tls: false` to `tls: true`, and an existing bookmark matches that server by address
 - **THEN** the system SHALL update the bookmark's `tls` flag and port (to `DEFAULT_TLS_PORT` or `DEFAULT_SERVER_PORT`) and persist the change
+
+#### Scenario: Default server HOPE setting updated
+
+- **WHEN** the code changes a default server from `hope: false` to `hope: true`, and an existing bookmark matches that server by address
+- **THEN** the system SHALL update the bookmark's `hope` flag and persist the change
 
 #### Scenario: No migrations needed
 
