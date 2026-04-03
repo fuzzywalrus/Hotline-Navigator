@@ -130,7 +130,7 @@ The client SHALL allow opening a private message dialog by clicking a user in th
 #### Scenario: Click user with private messaging disabled
 
 - **WHEN** the user clicks on a user entry in the user list and private messaging is disabled
-- **THEN** a notification informs the user that private messaging is disabled
+- **THEN** no private message dialog is opened
 
 ### Requirement: Tab Unread Count for Private Messages
 

@@ -203,6 +203,13 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
         users: number;
         name?: string | null;
         description?: string | null;
+        supportsTls?: boolean;
+        supportsHope?: boolean;
+        tlsPort?: number;
+        serverSoftware?: string;
+        tags?: string;
+        maxUsers?: number;
+        countryCode?: string;
       }
       
       const servers = await invoke<TrackerServer[]>('fetch_tracker_servers', {
@@ -218,6 +225,13 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
         address: server.address,
         port: server.port,
         users: server.users,
+        supportsTls: server.supportsTls,
+        supportsHope: server.supportsHope,
+        tlsPort: server.tlsPort,
+        serverSoftware: server.serverSoftware,
+        tags: server.tags,
+        maxUsers: server.maxUsers,
+        countryCode: server.countryCode,
       }));
       
       setTrackerServers((prev) => {
@@ -302,15 +316,19 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
   const handleConnectToTrackerServer = async (trackerId: string, server: ServerBookmark) => {
     // Create a bookmark from the tracker server and connect
     // Make sure it's explicitly marked as a server (not tracker)
+    // If v3 metadata indicates TLS support with a dedicated port, use it directly
+    const useTls = server.supportsTls && server.tlsPort;
     const bookmark: Bookmark = {
       id: `${trackerId}-${server.id}`,
       name: server.name,
       address: server.address,
-      port: server.port,
+      port: useTls ? server.tlsPort! : server.port,
       login: 'guest',
       password: undefined,
       icon: undefined,
       autoConnect: false,
+      tls: useTls ? true : undefined,
+      hope: server.supportsHope || undefined,
       type: 'server', // Explicitly set as server
     };
     
@@ -644,9 +662,26 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
                           {server.name}
                         </span>
 
+                        {/* v3 metadata badges */}
+                        {server.supportsTls && (
+                          <span className="text-[10px] px-1 py-0.5 rounded bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 flex-shrink-0" title="TLS encrypted connections available">
+                            TLS
+                          </span>
+                        )}
+                        {server.supportsHope && (
+                          <span className="text-[10px] px-1 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 flex-shrink-0" title="HOPE secure login available">
+                            HOPE
+                          </span>
+                        )}
+                        {server.tags && !isMobile && (
+                          <span className="text-[10px] px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 flex-shrink-0 truncate max-w-[120px]" title={`Tags: ${server.tags}`}>
+                            {server.tags}
+                          </span>
+                        )}
+
                         {/* Server description if available */}
                         {server.description && !isMobile && (
-                          <span className="text-xs text-gray-500 dark:text-gray-400 min-w-0 flex-shrink truncate">
+                          <span className="text-xs text-gray-500 dark:text-gray-400 min-w-0 flex-shrink truncate" title={server.serverSoftware || undefined}>
                             {server.description}
                           </span>
                         )}

@@ -80,7 +80,7 @@ The client SHALL open a private message dialog when the user clicks on a user en
 #### Scenario: Click user with messaging disabled
 
 - **WHEN** the user clicks a user entry in the user list and enablePrivateMessaging is false
-- **THEN** a notification informs the user that private messaging is disabled
+- **THEN** no private message dialog is opened
 
 
 ### Requirement: Right-Click Context Menu
@@ -159,7 +159,7 @@ An admin user SHALL be able to broadcast a message to all connected users using 
 
 ### Requirement: Access Privileges Bitmap
 
-The server SHALL assign the client an access privileges bitmap (FieldType::UserAccess, type 116) as an 8-byte (64-bit) value during login. The bitmap is included in the login reply. Each bit controls a specific permission. Bits are indexed from the most significant bit (MSB = bit 0). The client SHALL store this value and use it to gate UI operations.
+The server SHALL assign the client an access privileges bitmap (FieldType::UserAccess) as an 8-byte (64-bit) value during login. The bitmap is included in the login reply. Bits are indexed from the most significant bit (MSB = bit 0), so bit `N` is tested as `(access >> (63 - N)) & 1`. The client stores this value and currently uses selected bits to gate some UI operations such as Disconnect User and Broadcast.
 
 Key permission bits:
 - Bit 0: Can Delete Files
@@ -173,20 +173,36 @@ Key permission bits:
 - Bit 8: Can Move Folders
 - Bit 9: Can Read Chat
 - Bit 10: Can Send Chat
-- Bit 11: Can Open/Create Private Chat
-- Bit 12: Reserved
-- Bit 13: Can Read News
-- Bit 14: Can Post News
-- Bit 15: Can Disconnect Users
-- Bit 16: Cannot Be Disconnected
-- Bit 17: Can Get User Info
-- Bit 18: Can Upload Anywhere
-- Bit 19: Can Use Any Name
-- Bit 20: Can't Be Banned
-- Bit 21: Can Read Users
-- Bit 22: Can Modify Users
-- Bit 23: Reserved
-- Bit 24: Can Broadcast
+- Bit 11: Can Initiate Private Chat
+- Bit 12: Close Chat (documented, not implemented in official clients)
+- Bit 13: Show in List (documented, not implemented in official clients)
+- Bit 14: Can Create Users
+- Bit 15: Can Delete Users
+- Bit 16: Can Read Users
+- Bit 17: Can Modify Users
+- Bit 18: Change Own Password (documented, not implemented in official clients)
+- Bit 19: Send Private Message (documented, not implemented in official clients)
+- Bit 20: Can Read News
+- Bit 21: Can Post News
+- Bit 22: Can Disconnect Users
+- Bit 23: Cannot Be Disconnected
+- Bit 24: Can Get User Info
+- Bit 25: Can Upload Anywhere
+- Bit 26: Can Use Any Name
+- Bit 27: Don't Show Agreement
+- Bit 28: Can Comment Files
+- Bit 29: Can Comment Folders
+- Bit 30: Can View Drop Boxes
+- Bit 31: Can Make Aliases
+- Bit 32: Can Broadcast
+- Bit 33: Can Delete News Articles
+- Bit 34: Can Create News Categories
+- Bit 35: Can Delete News Categories
+- Bit 36: Can Create News Bundles
+- Bit 37: Can Delete News Bundles
+- Bit 38: Can Upload Folders
+- Bit 39: Can Download Folders
+- Bit 40: Can Send Message (instant/private messaging)
 
 #### Scenario: Access privileges stored on login
 
@@ -198,7 +214,7 @@ Key permission bits:
 
 - **WHEN** the user attempts an operation (e.g., broadcast, disconnect user)
 - **THEN** the client checks the corresponding bit in the access bitmap
-- **THEN** if the bit is not set, the UI element for that operation is hidden or disabled
+- **THEN** if the bit is not set, the UI element for that operation is hidden or disabled when that operation is one of the currently gated actions
 
 #### Scenario: Access value requested after connection
 

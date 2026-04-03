@@ -593,9 +593,10 @@ pub async fn read_preview_file(path: String, app: tauri::AppHandle) -> Result<Pr
 pub async fn fetch_tracker_servers(
     address: String,
     port: Option<u16>,
+    search: Option<String>,
 ) -> Result<Vec<crate::protocol::types::TrackerServer>, String> {
-    println!("Command: fetch_tracker_servers from {}:{}", address, port.unwrap_or(5498));
-    TrackerClient::fetch_servers(&address, port).await
+    println!("Command: fetch_tracker_servers from {}:{} (search: {:?})", address, port.unwrap_or(5498), search);
+    TrackerClient::fetch_servers(&address, port, search).await
 }
 
 #[tauri::command]

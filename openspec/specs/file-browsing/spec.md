@@ -46,29 +46,29 @@ The system SHALL allow the user to navigate into subfolders by clicking on a fol
 - **THEN** the system SHALL request the file listing for the parent directory and display the results
 
 
-### Requirement: File info dialog
+### Requirement: Basic file info dialog
 
-The system SHALL retrieve detailed file information from the server using TransactionType::GetFileInfo. The returned information SHALL include creator, modifier dates, comments, size, and type.
+The current file info dialog SHALL display metadata already available in the client: name, kind, size, creator, path, and a generated `hotline://` URL when server address information is available. The current UI does not invoke TransactionType::GetFileInfo when opening the dialog.
 
 #### Scenario: View file info
 
 - **WHEN** the user requests info for a specific file entry
-- **THEN** the system SHALL send a GetFileInfo transaction and display the returned creator, modifier dates, comments, size, and type in a dialog
+- **THEN** the system SHALL open a dialog showing the cached metadata for that file entry
 
 
-### Requirement: Update file info
+### Requirement: Rename file via SetFileInfo
 
-The system SHALL allow updating a file's name and comment on the server using TransactionType::SetFileInfo.
+The system SHALL allow renaming a file or folder from the file browser using TransactionType::SetFileInfo. In the current UI, rename is exposed from the file context menu, not from the info dialog, and comment editing is not exposed.
 
 #### Scenario: Rename a file
 
-- **WHEN** the user changes the file name in the file info dialog and confirms
+- **WHEN** the user chooses Rename from the file context menu and confirms a new name
 - **THEN** the system SHALL send a SetFileInfo transaction with the new name and refresh the file listing
 
-#### Scenario: Update a file comment
+#### Scenario: File comments are not editable in the current UI
 
-- **WHEN** the user changes the comment field in the file info dialog and confirms
-- **THEN** the system SHALL send a SetFileInfo transaction with the updated comment
+- **WHEN** the user opens the file info dialog or rename flow
+- **THEN** the current UI SHALL NOT provide a comment-editing field
 
 
 ### Requirement: Search files across cached directories

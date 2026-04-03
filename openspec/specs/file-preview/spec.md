@@ -1,12 +1,12 @@
 ## Purpose
 
-Defines in-app file preview for images, audio, and text files without requiring a full download.
+Defines in-app file preview for images, audio, and text files. The current implementation downloads the selected file through the normal transfer path, then reads the downloaded local file back into an inline preview.
 
 ## Requirements
 
 ### Requirement: Preview image files in-app
 
-The system SHALL display image files of supported formats (PNG, JPG, GIF, WebP) directly within the application without requiring a full download to external storage.
+The system SHALL display image files of supported formats (PNG, JPG, GIF, BMP, TIFF, WebP, SVG) directly within the application after downloading the selected file to local storage.
 
 #### Scenario: Preview a PNG image
 
@@ -21,7 +21,7 @@ The system SHALL display image files of supported formats (PNG, JPG, GIF, WebP) 
 
 ### Requirement: Preview audio files in-app
 
-The system SHALL allow playback of audio files in supported formats (MP3, WAV, FLAC) directly within the application.
+The system SHALL allow playback of audio files in supported formats (MP3, WAV, OGG/OGA, FLAC, M4A, AAC) directly within the application.
 
 #### Scenario: Play an MP3 file
 
@@ -81,17 +81,17 @@ Text files SHALL be returned as UTF-8 strings. Binary files (images, audio) SHAL
 
 ### Requirement: Navigate between preview images
 
-The system SHALL allow the user to navigate to the previous or next image file in the current directory listing while in preview mode.
+The system SHALL allow the user to navigate to the previous or next previewable file in the current directory listing while in preview mode.
 
-#### Scenario: Navigate to next image
+#### Scenario: Navigate to next previewable file
 
-- **WHEN** the user is previewing an image and requests the next image
-- **THEN** the system SHALL display the next image file in the directory listing
+- **WHEN** the user is previewing a supported file and requests the next item
+- **THEN** the system SHALL display the next previewable file in the current directory listing
 
-#### Scenario: Navigate to previous image
+#### Scenario: Navigate to previous previewable file
 
-- **WHEN** the user is previewing an image and requests the previous image
-- **THEN** the system SHALL display the previous image file in the directory listing
+- **WHEN** the user is previewing a supported file and requests the previous item
+- **THEN** the system SHALL display the previous previewable file in the current directory listing
 
 
 ### Requirement: Error handling for preview
@@ -111,7 +111,7 @@ The system SHALL handle missing or corrupt files gracefully during preview.
 
 ### Requirement: Preview caching
 
-The system SHALL cache previewed file content so that repeated views of the same file do not require re-reading from disk.
+The system SHALL cache previewed file content in memory within the current file browser session so that repeated views of the same file do not require another download or disk read.
 
 #### Scenario: View a previously previewed file
 
@@ -134,11 +134,11 @@ The system SHALL only allow previewing files located within permitted directorie
 - **THEN** the system SHALL reject the request and display an error indicating the path is not allowed
 
 
-### Requirement: Read timeout for preview
+### Requirement: Preview file reads use direct local I/O
 
-The system SHALL enforce a 10-second timeout when reading a file for preview. If reading exceeds this timeout, the preview SHALL fail.
+The system SHALL read the downloaded preview file directly from local storage using synchronous file I/O after validating that the path is within an allowed directory. The current implementation does not apply a separate preview-read timeout.
 
-#### Scenario: File read exceeds timeout
+#### Scenario: Preview file is read from an allowed path
 
-- **WHEN** reading a file for preview takes longer than 10 seconds
-- **THEN** the system SHALL abort the read and display a timeout error to the user
+- **WHEN** the user previews a file that has been downloaded to an allowed directory
+- **THEN** the system SHALL read the file from disk, detect its MIME type, and return either UTF-8 text or base64-encoded binary content

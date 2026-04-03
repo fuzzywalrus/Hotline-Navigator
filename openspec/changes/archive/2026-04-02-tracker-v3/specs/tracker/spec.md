@@ -1,8 +1,4 @@
-## Purpose
-
-Defines tracker server discovery via the HTRK protocol (v1 and v3), including version-negotiated handshake, v3 listing requests with search/pagination, v3 server record parsing with IPv4/IPv6/hostname addresses and TLV metadata, v1 fallback batch parsing, encoding, filtering, and UI metadata display.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Tracker Connection via HTRK Protocol
 

@@ -60,12 +60,12 @@ The FILP stream SHALL wrap file data in typed forks. Each fork has a 16-byte hea
 
 ### Requirement: Transfer progress tracking
 
-The system SHALL track and display progress for each file transfer, including percentage complete and transfer speed. Each transfer SHALL have one of the following states: active, completed, failed, or cancelled.
+The system SHALL track and display progress for each file transfer, including bytes transferred and percentage complete. The current transfer list implementation uses the states active, completed, and failed.
 
 #### Scenario: Display progress during download
 
 - **WHEN** a download is in progress
-- **THEN** the system SHALL display the current percentage complete and the transfer speed
+- **THEN** the system SHALL display the current percentage complete and transferred byte counts
 
 #### Scenario: Transfer completes successfully
 
@@ -119,7 +119,7 @@ When the main server connection uses TLS, the transfer connection SHALL also use
 
 ### Requirement: Transfer list UI
 
-The system SHALL display a list of all file transfers across all connected servers. The user SHALL be able to view active, completed, failed, and cancelled transfers, and clear completed transfers from the list.
+The system SHALL display a list of file transfers across connected servers. The current UI shows active, completed, and failed transfers. The control labeled "Clear Completed" removes all non-active transfers from the list.
 
 #### Scenario: View all transfers
 
@@ -129,19 +129,19 @@ The system SHALL display a list of all file transfers across all connected serve
 #### Scenario: Clear completed transfers
 
 - **WHEN** the user requests to clear completed transfers
-- **THEN** the system SHALL remove all transfers in the completed state from the list
+- **THEN** the system SHALL remove all non-active transfers from the list
 
 
-### Requirement: Cancel in-progress transfers
+### Requirement: Remove transfer rows from the list
 
-The system SHALL allow the user to cancel any transfer that is currently in the active state.
+The transfer list SHALL provide a remove control for visible transfer rows. In the current implementation, removing an active transfer only removes the row from the client-side list; it does not abort the underlying HTXF transfer connection.
 
-#### Scenario: Cancel a download
+#### Scenario: Remove an active download row
 
-- **WHEN** the user cancels an active download
-- **THEN** the system SHALL close the transfer connection and mark the transfer state as cancelled
+- **WHEN** the user clicks the remove control for an active download
+- **THEN** the transfer row SHALL be removed from the list without signalling cancellation to the backend transfer
 
-#### Scenario: Cancel an upload
+#### Scenario: Remove an inactive transfer row
 
-- **WHEN** the user cancels an active upload
-- **THEN** the system SHALL close the transfer connection and mark the transfer state as cancelled
+- **WHEN** the user clicks the remove control for a completed or failed transfer
+- **THEN** the transfer row SHALL be removed from the list

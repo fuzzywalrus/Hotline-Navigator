@@ -44,9 +44,9 @@ Each message board post SHALL be a line of text. Posts are separated by newline 
 - **THEN** the system SHALL display each line as a separate post in chronological order
 
 
-### Requirement: Markdown rendering in post display
+### Requirement: MarkdownText rendering in post display
 
-The system SHALL render message board posts using Markdown formatting when the user has enabled Markdown rendering in preferences.
+The system SHALL render message board posts through the shared `MarkdownText` component. The current implementation does not gate message-board Markdown rendering on a separate preference toggle.
 
 #### Scenario: Render a post containing Markdown syntax
 
@@ -59,36 +59,38 @@ The system SHALL render message board posts using Markdown formatting when the u
 - **THEN** the system SHALL display the post as plain text
 
 
-### Requirement: Auto-scroll to latest posts
+### Requirement: Manual board scrolling
 
-The system SHALL automatically scroll the message board view to show the most recent posts when the board is loaded or when a new post is submitted.
+The message board view SHALL use the browser's normal scroll container behavior. The current implementation does not apply automatic scrolling when posts load or after a post is submitted.
 
-#### Scenario: Auto-scroll on initial load
+#### Scenario: Initial board load
 
 - **WHEN** the message board finishes loading posts
-- **THEN** the system SHALL scroll the view so the latest posts are visible
+- **THEN** the scroll position SHALL remain under normal container/browser control
 
-#### Scenario: Auto-scroll after posting
+#### Scenario: Post submitted successfully
 
 - **WHEN** the user successfully submits a new post
-- **THEN** the system SHALL scroll the view so the newly posted message is visible
+- **THEN** the board contents SHALL refresh without an explicit auto-scroll step
 
 
 ### Requirement: Access privilege enforcement
 
-The system SHALL enforce server access privileges for message board operations. Reading the board and posting to the board each require the appropriate privilege granted by the server.
+The system SHALL rely on server-side enforcement for message board privileges. The current UI attempts fetch and post operations when requested and surfaces any access-denied errors returned by the backend or server.
 
 #### Scenario: User lacks read privilege
 
 - **WHEN** the user does not have the privilege to read the message board
-- **THEN** the system SHALL NOT send a GetMessageBoard transaction and SHALL indicate that access is denied
+- **THEN** the system MAY still send a GetMessageBoard transaction
+- **THEN** any access-denied failure returned by the backend or server SHALL be surfaced to the user
 
 #### Scenario: User lacks post privilege
 
 - **WHEN** the user does not have the privilege to post to the message board
-- **THEN** the system SHALL disable the post submission control and indicate that posting is not permitted
+- **THEN** the post submission UI remains available
+- **THEN** any access-denied failure returned by the backend or server SHALL be surfaced to the user
 
 #### Scenario: User has both read and post privileges
 
 - **WHEN** the user has privileges to both read and post to the message board
-- **THEN** the system SHALL allow fetching posts and enable the post submission control
+- **THEN** the fetch and post operations SHALL succeed when sent

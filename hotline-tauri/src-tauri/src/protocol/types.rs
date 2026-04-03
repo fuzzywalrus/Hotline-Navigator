@@ -36,6 +36,26 @@ pub struct TrackerServer {
     pub users: u16,
     pub name: Option<String>,
     pub description: Option<String>,
+    #[serde(rename = "supportsTls", skip_serializing_if = "Option::is_none")]
+    pub supports_tls: Option<bool>,
+    #[serde(rename = "supportsHope", skip_serializing_if = "Option::is_none")]
+    pub supports_hope: Option<bool>,
+    #[serde(rename = "tlsPort", skip_serializing_if = "Option::is_none")]
+    pub tls_port: Option<u16>,
+    #[serde(rename = "serverSoftware", skip_serializing_if = "Option::is_none")]
+    pub server_software: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<String>,
+    #[serde(rename = "maxUsers", skip_serializing_if = "Option::is_none")]
+    pub max_users: Option<u16>,
+    #[serde(rename = "countryCode", skip_serializing_if = "Option::is_none")]
+    pub country_code: Option<String>,
+    #[serde(rename = "bannerUrl", skip_serializing_if = "Option::is_none")]
+    pub banner_url: Option<String>,
+    #[serde(rename = "iconUrl", skip_serializing_if = "Option::is_none")]
+    pub icon_url: Option<String>,
+    #[serde(rename = "addressType", skip_serializing_if = "Option::is_none")]
+    pub address_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

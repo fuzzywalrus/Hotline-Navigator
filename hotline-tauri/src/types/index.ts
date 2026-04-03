@@ -32,6 +32,13 @@ export interface ServerBookmark {
   address: string;
   port: number;
   users: number;
+  supportsTls?: boolean;
+  supportsHope?: boolean;
+  tlsPort?: number;
+  serverSoftware?: string;
+  tags?: string;
+  maxUsers?: number;
+  countryCode?: string;
 }
 
 export interface User {
