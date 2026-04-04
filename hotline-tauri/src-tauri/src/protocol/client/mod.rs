@@ -737,7 +737,7 @@ impl HotlineClient {
 
             auth_tx.add_field(TransactionField::from_u16(FieldType::UserIconId, user_icon_id));
             auth_tx.add_field(TransactionField::from_string(FieldType::UserName, &username));
-            auth_tx.add_field(TransactionField::from_u32(FieldType::VersionNumber, 255));
+            auth_tx.add_field(TransactionField::from_u16(FieldType::VersionNumber, 255));
             auth_tx.add_field(TransactionField::from_u16(FieldType::Capabilities, CAPABILITY_LARGE_FILES));
 
             println!("Sending HOPE authenticated login...");
@@ -801,7 +801,7 @@ impl HotlineClient {
             ));
             login_tx.add_field(TransactionField::from_u16(FieldType::UserIconId, user_icon_id));
             login_tx.add_field(TransactionField::from_string(FieldType::UserName, &username));
-            login_tx.add_field(TransactionField::from_u32(FieldType::VersionNumber, 255));
+            login_tx.add_field(TransactionField::from_u16(FieldType::VersionNumber, 255));
             login_tx.add_field(TransactionField::from_u16(FieldType::Capabilities, CAPABILITY_LARGE_FILES));
 
             println!("Sending login...");
