@@ -41,11 +41,15 @@ impl HotlineClient {
         Ok(())
     }
 
-    pub async fn send_set_client_user_info(&self, username: &str, icon_id: u16) -> Result<(), String> {
+    pub async fn send_set_client_user_info(&self, username: &str, icon_id: u16, color: Option<u32>) -> Result<(), String> {
         let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::SetClientUserInfo);
         transaction.add_field(TransactionField::from_string(FieldType::UserName, username));
         transaction.add_field(TransactionField::from_u16(FieldType::UserIconId, icon_id));
         transaction.add_field(TransactionField::from_u16(FieldType::Options, 0));
+
+        if let Some(c) = color {
+            transaction.add_field(TransactionField::from_u32(FieldType::NickColor, c));
+        }
 
         self.send_transaction(&transaction).await?;
 
@@ -115,8 +119,8 @@ impl HotlineClient {
         self.send_transaction(&transaction).await
     }
 
-    /// Join a private chat room. Returns the subject and user list.
-    pub async fn join_chat(&self, chat_id: u32) -> Result<(String, Vec<(u16, String, u16, u16)>), String> {
+    /// Join a private chat room. Returns the subject and user list (id, name, icon, flags, color).
+    pub async fn join_chat(&self, chat_id: u32) -> Result<(String, Vec<(u16, String, u16, u16, Option<u32>)>), String> {
         let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::JoinChat);
         transaction.add_field(TransactionField::from_u32(FieldType::ChatId, chat_id));
 
@@ -145,10 +149,10 @@ impl HotlineClient {
                     .unwrap_or_default();
 
                 // Parse user list from UserNameWithInfo fields
-                let users: Vec<(u16, String, u16, u16)> = reply.fields.iter()
+                let users: Vec<(u16, String, u16, u16, Option<u32>)> = reply.fields.iter()
                     .filter(|f| f.field_type == FieldType::UserNameWithInfo)
                     .filter_map(|f| {
-                        Self::parse_user_info(&f.data).ok().map(|(id, name, icon, flags, _color)| (id, name, icon, flags))
+                        Self::parse_user_info(&f.data).ok()
                     })
                     .collect();
 

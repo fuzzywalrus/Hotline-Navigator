@@ -831,15 +831,15 @@ export function useServerEvents({
       }
     );
 
-    const unlistenUserJoined = listen<{ chatId: number; userId: number; userName: string; icon: number; flags: number }>(
+    const unlistenUserJoined = listen<{ chatId: number; userId: number; userName: string; icon: number; flags: number; color?: string | null }>(
       `chat-user-joined-${serverId}`,
       (event) => {
-        const { chatId, userId, userName, icon, flags } = event.payload;
-        log('Chat', 'Chat user joined', { chatId, userId, userName, icon, flags });
+        const { chatId, userId, userName, icon, flags, color } = event.payload;
+        log('Chat', 'Chat user joined', { chatId, userId, userName, icon, flags, color });
         setPrivateChatRooms((prev) => prev.map((room) => {
           if (room.chatId !== chatId) return room;
           if (room.users.some((u) => u.id === userId)) return room;
-          return { ...room, users: [...room.users, { id: userId, name: userName, icon, flags }] };
+          return { ...room, users: [...room.users, { id: userId, name: userName, icon, flags, color: color ?? undefined }] };
         }));
       }
     );

@@ -104,7 +104,7 @@ pub enum HotlineEvent {
     DisconnectMessage(String),
     ChatInvite { chat_id: u32, user_id: u16, user_name: String },
     PrivateChatMessage { chat_id: u32, user_id: u16, user_name: String, message: String },
-    ChatUserJoined { chat_id: u32, user_id: u16, user_name: String, icon: u16, flags: u16 },
+    ChatUserJoined { chat_id: u32, user_id: u16, user_name: String, icon: u16, flags: u16, color: Option<String> },
     ChatUserLeft { chat_id: u32, user_id: u16 },
     ChatSubjectChanged { chat_id: u32, subject: String },
     ServerBannerUpdate { banner_type: Option<u16>, url: Option<String> },
@@ -113,7 +113,7 @@ pub enum HotlineEvent {
 }
 
 /// Convert a 0x00RRGGBB u32 color to a CSS hex string like "#RRGGBB"
-fn color_u32_to_css(c: u32) -> String {
+pub fn color_u32_to_css(c: u32) -> String {
     format!("#{:02X}{:02X}{:02X}", (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF)
 }
 
@@ -1353,8 +1353,12 @@ impl HotlineClient {
                     .get_field(FieldType::UserFlags)
                     .and_then(|f| f.to_u16().ok())
                     .unwrap_or(0);
+                let color = transaction
+                    .get_field(FieldType::NickColor)
+                    .and_then(|f| f.to_u32().ok())
+                    .and_then(|c| if c == 0xFFFFFFFF { None } else { Some(color_u32_to_css(c)) });
 
-                let _ = event_tx.send(HotlineEvent::ChatUserJoined { chat_id, user_id, user_name, icon, flags });
+                let _ = event_tx.send(HotlineEvent::ChatUserJoined { chat_id, user_id, user_name, icon, flags, color });
             }
             TransactionType::NotifyChatOfUserDelete => {
                 let chat_id = transaction

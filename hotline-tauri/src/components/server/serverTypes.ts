@@ -53,7 +53,7 @@ export interface NewsArticle {
 export interface PrivateChatRoom {
   chatId: number;
   subject: string;
-  users: { id: number; name: string; icon: number; flags: number }[];
+  users: { id: number; name: string; icon: number; flags: number; color?: string }[];
   messages: ChatMessage[];
 }
 

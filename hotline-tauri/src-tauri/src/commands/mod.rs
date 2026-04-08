@@ -49,6 +49,8 @@ pub struct ChatUser {
     pub name: String,
     pub icon: u16,
     pub flags: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,9 +95,10 @@ pub async fn disconnect_from_server(
 pub async fn update_user_info(
     username: String,
     icon_id: u16,
+    color: Option<u32>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    state.update_user_info_all_servers(&username, icon_id).await
+    state.update_user_info_all_servers(&username, icon_id, color).await
 }
 
 #[tauri::command]
@@ -714,7 +717,11 @@ pub async fn join_chat(
     let (subject, users) = state.join_chat(&server_id, chat_id).await?;
     Ok(JoinChatResult {
         subject,
-        users: users.into_iter().map(|(id, name, icon, flags)| ChatUser { id, name, icon, flags }).collect(),
+        users: users.into_iter().map(|(id, name, icon, flags, color)| {
+            use crate::protocol::client::color_u32_to_css;
+            let color = color.and_then(|c| if c == 0xFFFFFFFF { None } else { Some(color_u32_to_css(c)) });
+            ChatUser { id, name, icon, flags, color }
+        }).collect(),
     })
 }
 

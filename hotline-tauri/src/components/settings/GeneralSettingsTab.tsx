@@ -37,7 +37,7 @@ export default function GeneralSettingsTab() {
     const newUsername = localUsername.trim() || 'guest';
     setUsername(newUsername);
     try {
-      await invoke('update_user_info', { username: newUsername, iconId: usePreferencesStore.getState().userIconId });
+      await invoke('update_user_info', { username: newUsername, iconId: usePreferencesStore.getState().userIconId, color: null });
     } catch {
       // Silently ignore - no servers connected or update failed on some
     }

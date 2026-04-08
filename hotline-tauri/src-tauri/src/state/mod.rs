@@ -386,13 +386,14 @@ impl AppState {
                         });
                         let _ = app_handle.emit(&format!("private-chat-message-{}", server_id_clone), payload);
                     }
-                    HotlineEvent::ChatUserJoined { chat_id, user_id, user_name, icon, flags } => {
+                    HotlineEvent::ChatUserJoined { chat_id, user_id, user_name, icon, flags, color } => {
                         let payload = serde_json::json!({
                             "chatId": chat_id,
                             "userId": user_id,
                             "userName": user_name,
                             "icon": icon,
                             "flags": flags,
+                            "color": color,
                         });
                         let _ = app_handle.emit(&format!("chat-user-joined-{}", server_id_clone), payload);
                     }
@@ -467,12 +468,12 @@ impl AppState {
         }
     }
 
-    pub async fn update_user_info_all_servers(&self, username: &str, icon_id: u16) -> Result<(), String> {
+    pub async fn update_user_info_all_servers(&self, username: &str, icon_id: u16, color: Option<u32>) -> Result<(), String> {
         let clients = self.clients.read().await;
         let mut errors = Vec::new();
 
         for (server_id, client) in clients.iter() {
-            if let Err(e) = client.send_set_client_user_info(username, icon_id).await {
+            if let Err(e) = client.send_set_client_user_info(username, icon_id, color).await {
                 errors.push(format!("{}: {}", server_id, e));
             }
         }
@@ -869,7 +870,7 @@ impl AppState {
         }
     }
 
-    pub async fn join_chat(&self, server_id: &str, chat_id: u32) -> Result<(String, Vec<(u16, String, u16, u16)>), String> {
+    pub async fn join_chat(&self, server_id: &str, chat_id: u32) -> Result<(String, Vec<(u16, String, u16, u16, Option<u32>)>), String> {
         let clients = self.clients.read().await;
         if let Some(client) = clients.get(server_id) {
             client.join_chat(chat_id).await

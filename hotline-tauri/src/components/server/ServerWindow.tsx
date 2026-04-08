@@ -510,7 +510,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
         action: async () => {
           try {
             const chatId = await invoke<number>('invite_to_new_chat', { serverId, userId: user.userId });
-            const result = await invoke<{ subject: string; users: { id: number; name: string; icon: number; flags: number }[] }>('join_chat', { serverId, chatId });
+            const result = await invoke<{ subject: string; users: { id: number; name: string; icon: number; flags: number; color?: string }[] }>('join_chat', { serverId, chatId });
             setPrivateChatRooms((prev) => [
               ...prev,
               { chatId, subject: result.subject, users: result.users, messages: [] },
@@ -666,7 +666,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
   const handleAcceptChatInvite = async (chatId: number) => {
     log('Chat', 'Accepting chat invite', { chatId });
     try {
-      const result = await invoke<{ subject: string; users: { id: number; name: string; icon: number; flags: number }[] }>('join_chat', { serverId, chatId });
+      const result = await invoke<{ subject: string; users: { id: number; name: string; icon: number; flags: number; color?: string }[] }>('join_chat', { serverId, chatId });
       log('Chat', 'Joined chat', { chatId, subject: result.subject, users: result.users });
       setPrivateChatRooms((prev) => [
         ...prev,
