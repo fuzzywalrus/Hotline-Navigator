@@ -1,0 +1,277 @@
+name: 'Build (Self-Hosted)'
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: self-hosted-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─── Lint & Test ─────────────────────────────────────────────────
+  check:
+    runs-on: [self-hosted, macOS, ARM64]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: hotline-tauri/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: hotline-tauri
+        run: npm ci
+
+      - name: TypeScript typecheck
+        working-directory: hotline-tauri
+        run: npm run typecheck
+
+      - name: ESLint
+        working-directory: hotline-tauri
+        run: npm run lint
+
+      - name: Vitest
+        working-directory: hotline-tauri
+        run: npm test
+
+      - name: Cargo clippy
+        working-directory: hotline-tauri/src-tauri
+        run: cargo clippy -- -D warnings
+
+      - name: Cargo test
+        working-directory: hotline-tauri/src-tauri
+        run: cargo test
+
+  # ─── macOS Universal Binary ────────────────────────────────────────
+  build-macos:
+    needs: check
+    runs-on: [self-hosted, macOS, ARM64]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: hotline-tauri/package-lock.json
+
+      - name: Add x86_64 Rust target
+        run: rustup target add x86_64-apple-darwin
+
+      - name: Install frontend dependencies
+        working-directory: hotline-tauri
+        run: npm ci
+
+      - name: Import Apple certificate
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}
+        run: |
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security import certificate.p12 \
+            -k build.keychain \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          rm certificate.p12
+
+      - name: Build macOS universal binary
+        working-directory: hotline-tauri
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.APPLE_TEAM_ID || '' }}
+        run: npx tauri build --target universal-apple-darwin
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hotline-navigator-macOS-universal
+          path: |
+            hotline-tauri/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            hotline-tauri/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app
+            hotline-tauri/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            hotline-tauri/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            hotline-tauri/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cleanup keychain
+        if: always()
+        run: security delete-keychain build.keychain 2>/dev/null || true
+
+  # ─── iOS / iPadOS (Unsigned) ───────────────────────────────────────
+  build-ios:
+    needs: check
+    runs-on: [self-hosted, macOS, ARM64]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: hotline-tauri/package-lock.json
+
+      - name: Add iOS Rust target
+        run: rustup target add aarch64-apple-ios
+
+      - name: Install frontend dependencies
+        working-directory: hotline-tauri
+        run: npm ci
+
+      - name: Build iOS app (unsigned)
+        working-directory: hotline-tauri
+        run: npx tauri ios build -- -allowProvisioningUpdates CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+
+      - name: Package unsigned IPA
+        run: |
+          # Find the .app bundle from the build
+          APP_PATH=$(find hotline-tauri/src-tauri/gen/apple/build -name "*.app" -type d | grep -v "\.dSYM" | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: Could not find .app bundle"
+            exit 1
+          fi
+          echo "Found app at: $APP_PATH"
+          # Create IPA structure
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -r hotline-navigator-unsigned.ipa Payload
+          rm -rf Payload
+
+      - name: Upload iOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hotline-navigator-iOS-unsigned
+          path: hotline-navigator-unsigned.ipa
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: hotline-navigator-unsigned.ipa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── Linux x86_64 (Docker) ────────────────────────────────────────
+  build-linux-x64:
+    needs: check
+    runs-on: [self-hosted, macOS, ARM64]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Linux x64 Docker image
+        run: docker build --platform linux/amd64 -t hotline-linux-builder-amd64 -f Dockerfile.linux-build .
+
+      - name: Run Linux x64 build
+        run: |
+          mkdir -p linux-x64-output
+          docker run --rm --platform linux/amd64 \
+            -v "$(pwd)/linux-x64-output:/output" \
+            hotline-linux-builder-amd64 \
+            sh -c "cd hotline-tauri && npx tauri build 2>&1 && cp -r src-tauri/target/release/bundle/deb /output/ && cp -r src-tauri/target/release/bundle/appimage /output/"
+
+      - name: Upload Linux x64 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hotline-navigator-Linux-x64
+          path: |
+            linux-x64-output/deb/*.deb
+            linux-x64-output/appimage/*.AppImage
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            linux-x64-output/deb/*.deb
+            linux-x64-output/appimage/*.AppImage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── Linux aarch64 (Docker) ───────────────────────────────────────
+  build-linux-arm64:
+    needs: check
+    runs-on: [self-hosted, macOS, ARM64]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Linux arm64 Docker image
+        run: docker build --platform linux/arm64 -t hotline-linux-builder-arm64 -f Dockerfile.linux-build .
+
+      - name: Run Linux arm64 build
+        run: |
+          mkdir -p linux-arm64-output
+          docker run --rm --platform linux/arm64 \
+            -v "$(pwd)/linux-arm64-output:/output" \
+            hotline-linux-builder-arm64 \
+            sh -c "cd hotline-tauri && npx tauri build 2>&1 && cp -r src-tauri/target/release/bundle/deb /output/ && cp -r src-tauri/target/release/bundle/appimage /output/"
+
+      - name: Upload Linux arm64 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hotline-navigator-Linux-arm64
+          path: |
+            linux-arm64-output/deb/*.deb
+            linux-arm64-output/appimage/*.AppImage
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            linux-arm64-output/deb/*.deb
+            linux-arm64-output/appimage/*.AppImage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
