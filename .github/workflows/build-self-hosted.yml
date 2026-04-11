@@ -82,16 +82,28 @@ jobs:
           KEYCHAIN_PASSWORD: ${{ github.run_id }}
         run: |
           echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          # Create temporary keychain
           security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-          security default-keychain -s build.keychain
+          security set-keychain-settings -lut 21600 build.keychain
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          # Import certificate + private key
           security import certificate.p12 \
             -k build.keychain \
             -P "$APPLE_CERTIFICATE_PASSWORD" \
-            -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          # Allow codesign to use the private key without GUI prompt
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
             -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          # Add build.keychain to the search list ALONGSIDE login.keychain
+          # (don't replace — codesign needs login.keychain to find the Apple
+          # intermediate CA certificates for chain validation)
+          security list-keychains -d user -s build.keychain $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s build.keychain
           rm certificate.p12
+          # Verify identity is accessible
+          security find-identity -v -p codesigning build.keychain
 
       - name: Build macOS universal binary (signed + notarized)
         working-directory: hotline-tauri
