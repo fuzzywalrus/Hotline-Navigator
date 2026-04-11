@@ -213,7 +213,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build Linux x64 Docker image
-        run: docker build --platform linux/amd64 -t hotline-linux-builder-amd64 -f Dockerfile.linux-build .
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            --load \
+            -t hotline-linux-builder-amd64 \
+            -f Dockerfile.linux-build .
 
       - name: Run Linux x64 build
         run: |
@@ -256,7 +261,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build Linux arm64 Docker image
-        run: docker build --platform linux/arm64 -t hotline-linux-builder-arm64 -f Dockerfile.linux-build .
+        run: |
+          docker buildx build \
+            --platform linux/arm64 \
+            --load \
+            -t hotline-linux-builder-arm64 \
+            -f Dockerfile.linux-build .
 
       - name: Run Linux arm64 build
         run: |

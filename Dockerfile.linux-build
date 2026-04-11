@@ -18,7 +18,7 @@
 #     -v $(pwd)/hotline-tauri/src-tauri/target:/app/hotline-tauri/src-tauri/target \
 #     hotline-linux-builder-arm64
 
-FROM ubuntu:22.04
+FROM --platform=$TARGETPLATFORM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
