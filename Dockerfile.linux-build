@@ -36,6 +36,7 @@ RUN apt-get update && apt-get install -y \
     file \
     build-essential \
     pkg-config \
+    xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Rust (stable)

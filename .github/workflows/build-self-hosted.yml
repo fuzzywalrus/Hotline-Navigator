@@ -153,24 +153,36 @@ jobs:
         working-directory: hotline-tauri
         run: npm ci
 
-      - name: Build iOS app (unsigned, for sideloading)
+      - name: Build iOS app (unsigned archive, for sideloading)
         working-directory: hotline-tauri
-        run: npx tauri ios build --export-method debugging
+        # `tauri ios build --export-method debugging` fails at export because
+        # we have no Apple account/profile configured. Instead we catch the
+        # expected export failure and package the .app directly from the
+        # archive into a sideload-ready IPA.
+        run: npx tauri ios build --export-method debugging || true
 
-      - name: Package unsigned IPA
+      - name: Package unsigned IPA from archive
         run: |
-          # Find the .app bundle from the build
-          APP_PATH=$(find hotline-tauri/src-tauri/gen/apple/build -name "*.app" -type d | grep -v "\.dSYM" | head -1)
-          if [ -z "$APP_PATH" ]; then
-            echo "Error: Could not find .app bundle"
+          # Find the .xcarchive produced by tauri ios build
+          ARCHIVE=$(find hotline-tauri/src-tauri/gen/apple/build -name "*.xcarchive" -type d | head -1)
+          if [ -z "$ARCHIVE" ]; then
+            echo "Error: No .xcarchive found"
+            find hotline-tauri/src-tauri/gen/apple/build -maxdepth 3 -type d
             exit 1
           fi
-          echo "Found app at: $APP_PATH"
-          # Create IPA structure
+          echo "Found archive at: $ARCHIVE"
+          APP_PATH="$ARCHIVE/Products/Applications"
+          APP=$(find "$APP_PATH" -name "*.app" -type d -maxdepth 1 | head -1)
+          if [ -z "$APP" ]; then
+            echo "Error: No .app inside archive"
+            exit 1
+          fi
+          echo "Found app at: $APP"
           mkdir -p Payload
-          cp -R "$APP_PATH" Payload/
-          zip -r hotline-navigator-unsigned.ipa Payload
+          cp -R "$APP" Payload/
+          zip -qr hotline-navigator-unsigned.ipa Payload
           rm -rf Payload
+          ls -lh hotline-navigator-unsigned.ipa
 
       - name: Upload iOS artifacts
         uses: actions/upload-artifact@v4
