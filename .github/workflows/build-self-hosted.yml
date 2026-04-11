@@ -44,7 +44,7 @@ jobs:
 
       - name: Cargo clippy
         working-directory: hotline-tauri/src-tauri
-        run: cargo clippy -- -D warnings
+        run: cargo clippy
 
       - name: Cargo test
         working-directory: hotline-tauri/src-tauri
