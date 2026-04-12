@@ -236,6 +236,7 @@ jobs:
         run: |
           mkdir -p linux-x64-output
           docker run --rm --platform linux/amd64 \
+            -e APPIMAGE_EXTRACT_AND_RUN=1 \
             -v "$(pwd)/linux-x64-output:/output" \
             hotline-linux-builder-amd64 \
             sh -c "cd hotline-tauri && npx tauri build 2>&1 && cp -r src-tauri/target/release/bundle/deb /output/ && cp -r src-tauri/target/release/bundle/appimage /output/"
@@ -284,6 +285,7 @@ jobs:
         run: |
           mkdir -p linux-arm64-output
           docker run --rm --platform linux/arm64 \
+            -e APPIMAGE_EXTRACT_AND_RUN=1 \
             -v "$(pwd)/linux-arm64-output:/output" \
             hotline-linux-builder-arm64 \
             sh -c "cd hotline-tauri && npx tauri build 2>&1 && cp -r src-tauri/target/release/bundle/deb /output/ && cp -r src-tauri/target/release/bundle/appimage /output/"
