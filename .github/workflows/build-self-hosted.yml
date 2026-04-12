@@ -239,7 +239,7 @@ jobs:
             -e APPIMAGE_EXTRACT_AND_RUN=1 \
             -v "$(pwd)/linux-x64-output:/output" \
             hotline-linux-builder-amd64 \
-            sh -c "cd hotline-tauri && npx tauri build 2>&1 && cp -r src-tauri/target/release/bundle/deb /output/ && cp -r src-tauri/target/release/bundle/appimage /output/"
+            sh -c "cd hotline-tauri && npx tauri build --bundles deb 2>&1 && cp -r src-tauri/target/release/bundle/deb /output/"
 
       - name: Upload Linux x64 artifacts
         uses: actions/upload-artifact@v4
@@ -247,7 +247,6 @@ jobs:
           name: hotline-navigator-Linux-x64
           path: |
             linux-x64-output/deb/*.deb
-            linux-x64-output/appimage/*.AppImage
           retention-days: 7
           if-no-files-found: error
 
@@ -258,7 +257,6 @@ jobs:
           draft: true
           files: |
             linux-x64-output/deb/*.deb
-            linux-x64-output/appimage/*.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
