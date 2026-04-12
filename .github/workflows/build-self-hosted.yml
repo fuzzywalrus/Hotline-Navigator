@@ -343,6 +343,9 @@ jobs:
             -validity 10000 -storepass hotline123 -keypass hotline123 \
             -dname "CN=Hotline Navigator,O=Greg Gant,C=US"
 
+      - name: Add NDK toolchain to PATH
+        run: echo "/Users/greg/Library/Android/sdk/ndk/30.0.14904198/toolchains/llvm/prebuilt/darwin-x86_64/bin" >> $GITHUB_PATH
+
       - name: Build Android APK
         working-directory: hotline-tauri
         env:
