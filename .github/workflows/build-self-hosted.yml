@@ -310,3 +310,64 @@ jobs:
             linux-arm64-output/appimage/*.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── Android (unsigned APK for sideloading) ────────────────────────
+  build-android:
+    needs: check
+    runs-on: [self-hosted, macOS, ARM64]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: hotline-tauri/package-lock.json
+
+      - name: Add Android Rust targets
+        run: |
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
+
+      - name: Install frontend dependencies
+        working-directory: hotline-tauri
+        run: npm ci
+
+      - name: Generate sideload signing keystore
+        run: |
+          keytool -genkey -v \
+            -keystore hotline-tauri/src-tauri/gen/android/keystore.jks \
+            -alias hotline -keyalg RSA -keysize 2048 \
+            -validity 10000 -storepass hotline123 -keypass hotline123 \
+            -dname "CN=Hotline Navigator,O=Greg Gant,C=US"
+
+      - name: Build Android APK
+        working-directory: hotline-tauri
+        env:
+          ANDROID_HOME: /Users/greg/Library/Android/sdk
+          NDK_HOME: /Users/greg/Library/Android/sdk/ndk/30.0.14904198
+          JAVA_HOME: /opt/homebrew/Cellar/openjdk@17/17.0.18/libexec/openjdk.jdk/Contents/Home
+        run: npx tauri android build
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hotline-navigator-Android-universal
+          path: |
+            hotline-tauri/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            hotline-tauri/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
