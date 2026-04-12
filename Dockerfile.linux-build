@@ -21,6 +21,8 @@
 FROM --platform=$TARGETPLATFORM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
+# Required for linuxdeploy/AppImage tools inside Docker (no FUSE available)
+ENV APPIMAGE_EXTRACT_AND_RUN=1
 
 # System dependencies
 # Note: libappindicator3-dev is deprecated and conflicts with libayatana-appindicator3-dev
@@ -37,6 +39,7 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     pkg-config \
     xdg-utils \
+    libfuse2 \
     && rm -rf /var/lib/apt/lists/*
 
 # Rust (stable)
