@@ -1,0 +1,374 @@
+name: 'Build (Self-Hosted)'
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: self-hosted-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─── Lint & Test ─────────────────────────────────────────────────
+  check:
+    runs-on: [self-hosted, macOS, ARM64]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: hotline-tauri/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: hotline-tauri
+        run: npm ci
+
+      - name: TypeScript typecheck
+        working-directory: hotline-tauri
+        run: npm run typecheck
+
+      - name: ESLint
+        working-directory: hotline-tauri
+        run: npm run lint
+
+      - name: Vitest
+        working-directory: hotline-tauri
+        run: npm test
+
+      - name: Cargo clippy
+        working-directory: hotline-tauri/src-tauri
+        run: cargo clippy
+
+      - name: Cargo test
+        working-directory: hotline-tauri/src-tauri
+        run: cargo test
+
+  # ─── macOS Universal Binary ────────────────────────────────────────
+  build-macos:
+    needs: check
+    runs-on: [self-hosted, macOS, ARM64]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: hotline-tauri/package-lock.json
+
+      - name: Add x86_64 Rust target
+        run: rustup target add x86_64-apple-darwin
+
+      - name: Install frontend dependencies
+        working-directory: hotline-tauri
+        run: npm ci
+
+      - name: Import Apple certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}
+        run: |
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          # Create temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -lut 21600 build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          # Import certificate + private key
+          security import certificate.p12 \
+            -k build.keychain \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          # Allow codesign to use the private key without GUI prompt
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          # Add build.keychain to the search list ALONGSIDE login.keychain
+          # (don't replace — codesign needs login.keychain to find the Apple
+          # intermediate CA certificates for chain validation)
+          security list-keychains -d user -s build.keychain $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s build.keychain
+          rm certificate.p12
+          # Verify identity is accessible
+          security find-identity -v -p codesigning build.keychain
+
+      - name: Build macOS universal binary (signed + notarized)
+        working-directory: hotline-tauri
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npx tauri build --target universal-apple-darwin
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hotline-navigator-macOS-universal
+          path: |
+            hotline-tauri/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            hotline-tauri/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app
+            hotline-tauri/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            hotline-tauri/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            hotline-tauri/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cleanup keychain
+        if: always()
+        run: security delete-keychain build.keychain 2>/dev/null || true
+
+  # ─── iOS / iPadOS (Unsigned) ───────────────────────────────────────
+  build-ios:
+    needs: check
+    runs-on: [self-hosted, macOS, ARM64]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: hotline-tauri/package-lock.json
+
+      - name: Add iOS Rust target
+        run: rustup target add aarch64-apple-ios
+
+      - name: Install frontend dependencies
+        working-directory: hotline-tauri
+        run: npm ci
+
+      - name: Build iOS app (unsigned archive, for sideloading)
+        working-directory: hotline-tauri
+        # `tauri ios build --export-method debugging` fails at export because
+        # we have no Apple account/profile configured. Instead we catch the
+        # expected export failure and package the .app directly from the
+        # archive into a sideload-ready IPA.
+        run: npx tauri ios build --export-method debugging || true
+
+      - name: Package unsigned IPA from archive
+        run: |
+          # Find the .xcarchive produced by tauri ios build
+          ARCHIVE=$(find hotline-tauri/src-tauri/gen/apple/build -name "*.xcarchive" -type d | head -1)
+          if [ -z "$ARCHIVE" ]; then
+            echo "Error: No .xcarchive found"
+            find hotline-tauri/src-tauri/gen/apple/build -maxdepth 3 -type d
+            exit 1
+          fi
+          echo "Found archive at: $ARCHIVE"
+          APP_PATH="$ARCHIVE/Products/Applications"
+          APP=$(find "$APP_PATH" -name "*.app" -type d -maxdepth 1 | head -1)
+          if [ -z "$APP" ]; then
+            echo "Error: No .app inside archive"
+            exit 1
+          fi
+          echo "Found app at: $APP"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qr hotline-navigator-unsigned.ipa Payload
+          rm -rf Payload
+          ls -lh hotline-navigator-unsigned.ipa
+
+      - name: Upload iOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hotline-navigator-iOS-unsigned
+          path: hotline-navigator-unsigned.ipa
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: hotline-navigator-unsigned.ipa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── Linux x86_64 (Docker) ────────────────────────────────────────
+  build-linux-x64:
+    needs: check
+    runs-on: [self-hosted, macOS, ARM64]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Linux x64 Docker image
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            --load \
+            -t hotline-linux-builder-amd64 \
+            -f Dockerfile.linux-build .
+
+      - name: Run Linux x64 build
+        run: |
+          mkdir -p linux-x64-output
+          docker run --rm --platform linux/amd64 \
+            -e APPIMAGE_EXTRACT_AND_RUN=1 \
+            -v "$(pwd)/linux-x64-output:/output" \
+            hotline-linux-builder-amd64 \
+            sh -c "cd hotline-tauri && npx tauri build --bundles deb 2>&1 && cp -r src-tauri/target/release/bundle/deb /output/"
+
+      - name: Upload Linux x64 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hotline-navigator-Linux-x64
+          path: |
+            linux-x64-output/deb/*.deb
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            linux-x64-output/deb/*.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── Linux aarch64 (Docker) ───────────────────────────────────────
+  build-linux-arm64:
+    needs: check
+    runs-on: [self-hosted, macOS, ARM64]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Linux arm64 Docker image
+        run: |
+          docker buildx build \
+            --platform linux/arm64 \
+            --load \
+            -t hotline-linux-builder-arm64 \
+            -f Dockerfile.linux-build .
+
+      - name: Run Linux arm64 build
+        run: |
+          mkdir -p linux-arm64-output
+          docker run --rm --platform linux/arm64 \
+            -e APPIMAGE_EXTRACT_AND_RUN=1 \
+            -v "$(pwd)/linux-arm64-output:/output" \
+            hotline-linux-builder-arm64 \
+            sh -c "cd hotline-tauri && npx tauri build 2>&1 && cp -r src-tauri/target/release/bundle/deb /output/ && cp -r src-tauri/target/release/bundle/appimage /output/"
+
+      - name: Upload Linux arm64 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hotline-navigator-Linux-arm64
+          path: |
+            linux-arm64-output/deb/*.deb
+            linux-arm64-output/appimage/*.AppImage
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            linux-arm64-output/deb/*.deb
+            linux-arm64-output/appimage/*.AppImage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── Android (unsigned APK for sideloading) ────────────────────────
+  build-android:
+    needs: check
+    runs-on: [self-hosted, macOS, ARM64]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: hotline-tauri/package-lock.json
+
+      - name: Add Android Rust targets
+        run: |
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
+
+      - name: Install frontend dependencies
+        working-directory: hotline-tauri
+        run: npm ci
+
+      - name: Generate sideload signing keystore
+        run: |
+          keytool -genkey -v \
+            -keystore hotline-tauri/src-tauri/gen/android/keystore.jks \
+            -alias hotline -keyalg RSA -keysize 2048 \
+            -validity 10000 -storepass hotline123 -keypass hotline123 \
+            -dname "CN=Hotline Navigator,O=Greg Gant,C=US"
+
+      - name: Add NDK toolchain to PATH
+        run: echo "/Users/greg/Library/Android/sdk/ndk/30.0.14904198/toolchains/llvm/prebuilt/darwin-x86_64/bin" >> $GITHUB_PATH
+
+      - name: Build Android APK
+        working-directory: hotline-tauri
+        env:
+          ANDROID_HOME: /Users/greg/Library/Android/sdk
+          NDK_HOME: /Users/greg/Library/Android/sdk/ndk/30.0.14904198
+          JAVA_HOME: /opt/homebrew/Cellar/openjdk@17/17.0.18/libexec/openjdk.jdk/Contents/Home
+        run: npx tauri android build
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hotline-navigator-Android-universal
+          path: |
+            hotline-tauri/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            hotline-tauri/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -24,9 +24,11 @@ function containsMarkdown(text: string): boolean {
 }
 
 function openUrl(url: string) {
-  (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
-    ? import('@tauri-apps/plugin-opener').then(({ openUrl }) => openUrl(url))
-    : window.open(url, '_blank');
+  if ((window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__) {
+    import('@tauri-apps/plugin-opener').then(({ openUrl }) => openUrl(url));
+  } else {
+    window.open(url, '_blank');
+  }
 }
 
 interface MarkdownTextProps {
