@@ -92,6 +92,11 @@ impl HopeWriter {
         Self { inner, cipher: None }
     }
 
+    /// Extract the inner write half, consuming this writer.
+    pub fn into_inner(self) -> BoxedWrite {
+        self.inner
+    }
+
     /// Activate transport encryption with the given key material.
     pub fn activate_encryption(
         &mut self,
@@ -165,6 +170,11 @@ pub struct HopeReader {
 impl HopeReader {
     pub fn new(inner: BoxedRead) -> Self {
         Self { inner, cipher: None }
+    }
+
+    /// Extract the inner read half, consuming this reader.
+    pub fn into_inner(self) -> BoxedRead {
+        self.inner
     }
 
     /// Activate transport encryption with the given key material.

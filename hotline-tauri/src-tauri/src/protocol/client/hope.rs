@@ -6,13 +6,17 @@
 use hmac::{Hmac, Mac};
 use md5::Md5;
 use sha1::{Digest, Sha1};
+use sha2::Sha256;
+use hkdf::Hkdf;
 
 type HmacSha1 = Hmac<Sha1>;
+type HmacSha256 = Hmac<Sha256>;
 type HmacMd5 = Hmac<Md5>;
 
 /// MAC algorithms supported by HOPE, listed strongest to weakest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MacAlgorithm {
+    HmacSha256,
     HmacSha1,
     Sha1,
     HmacMd5,
@@ -24,6 +28,7 @@ impl MacAlgorithm {
     /// The wire name used in HOPE negotiation.
     pub fn name(&self) -> &'static str {
         match self {
+            Self::HmacSha256 => "HMAC-SHA256",
             Self::HmacSha1 => "HMAC-SHA1",
             Self::Sha1 => "SHA1",
             Self::HmacMd5 => "HMAC-MD5",
@@ -35,6 +40,7 @@ impl MacAlgorithm {
     /// Parse an algorithm name from wire bytes (case-insensitive).
     pub fn from_name(name: &str) -> Option<Self> {
         match name.to_ascii_uppercase().as_str() {
+            "HMAC-SHA256" => Some(Self::HmacSha256),
             "HMAC-SHA1" => Some(Self::HmacSha1),
             "SHA1" => Some(Self::Sha1),
             "HMAC-MD5" => Some(Self::HmacMd5),
@@ -58,6 +64,12 @@ impl MacAlgorithm {
 /// - For INVERSE: returns `key` with each byte bitwise-NOT'd.
 pub fn compute_mac(algorithm: MacAlgorithm, key: &[u8], message: &[u8]) -> Vec<u8> {
     match algorithm {
+        MacAlgorithm::HmacSha256 => {
+            let mut mac = HmacSha256::new_from_slice(key)
+                .expect("HMAC-SHA256 accepts any key length");
+            mac.update(message);
+            mac.finalize().into_bytes().to_vec()
+        }
         MacAlgorithm::HmacSha1 => {
             let mut mac = HmacSha1::new_from_slice(key)
                 .expect("HMAC-SHA1 accepts any key length");
@@ -154,12 +166,7 @@ pub fn decode_cipher_selection(data: &[u8]) -> Result<String, String> {
     }
     let name = std::str::from_utf8(&data[3..3 + name_len])
         .map_err(|_| "Cipher name is not valid UTF-8".to_string())?;
-    // Normalize RC4 variants
-    let normalized = match name.to_ascii_uppercase().as_str() {
-        "RC4" | "RC4-128" | "ARCFOUR" => "RC4".to_string(),
-        other => other.to_string(),
-    };
-    Ok(normalized)
+    Ok(normalize_cipher_name(name))
 }
 
 /// Result of HOPE negotiation (steps 1+2), used to drive step 3 and key derivation.
@@ -167,8 +174,10 @@ pub struct HopeNegotiation {
     pub session_key: [u8; 64],
     pub mac_algorithm: MacAlgorithm,
     pub mac_login: bool, // true if login should be MAC'd (server's login field was non-empty)
-    pub server_cipher: String,  // "NONE", "RC4", "BLOWFISH"
+    pub server_cipher: String,  // "NONE", "RC4", "CHACHA20-POLY1305"
     pub client_cipher: String,
+    pub server_cipher_mode: String, // "AEAD" or "STREAM" (from server reply)
+    pub client_cipher_mode: String,
     pub server_compression: String,
     pub client_compression: String,
 }
@@ -176,6 +185,7 @@ pub struct HopeNegotiation {
 /// The preferred algorithm list we send to servers.
 /// Ordered strongest → weakest. INVERSE is always last (required fallback).
 pub const PREFERRED_MAC_ALGORITHMS: &[MacAlgorithm] = &[
+    MacAlgorithm::HmacSha256,
     MacAlgorithm::HmacSha1,
     MacAlgorithm::Sha1,
     MacAlgorithm::HmacMd5,
@@ -184,7 +194,28 @@ pub const PREFERRED_MAC_ALGORITHMS: &[MacAlgorithm] = &[
 ];
 
 /// Ciphers we support for transport encryption.
-pub const SUPPORTED_CIPHERS: &[&str] = &["RC4"];
+pub const SUPPORTED_CIPHERS: &[&str] = &["CHACHA20-POLY1305", "RC4"];
+
+/// Normalize a cipher name from the server to a canonical form.
+pub fn normalize_cipher_name(name: &str) -> String {
+    match name.to_ascii_uppercase().as_str() {
+        "RC4" | "RC4-128" | "ARCFOUR" => "RC4".to_string(),
+        "CHACHA20-POLY1305" | "CHACHA20POLY1305" | "CHACHA20" => "CHACHA20-POLY1305".to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// Expand key material to 256-bit (32 bytes) using HKDF-SHA256.
+///
+/// Used to derive ChaCha20-Poly1305 keys from MAC outputs that may be
+/// shorter than 32 bytes (e.g., 20-byte HMAC-SHA1 or 16-byte HMAC-MD5).
+pub fn expand_key_for_aead(ikm: &[u8], salt: &[u8], info: &str) -> [u8; 32] {
+    let hk = Hkdf::<Sha256>::new(Some(salt), ikm);
+    let mut okm = [0u8; 32];
+    hk.expand(info.as_bytes(), &mut okm)
+        .expect("32-byte output is a valid HKDF-SHA256 expansion length");
+    okm
+}
 
 #[cfg(test)]
 mod tests {
@@ -194,6 +225,12 @@ mod tests {
     fn test_inverse_mac() {
         let result = compute_mac(MacAlgorithm::Inverse, b"abc", b"ignored");
         assert_eq!(result, vec![!b'a', !b'b', !b'c']);
+    }
+
+    #[test]
+    fn test_hmac_sha256() {
+        let result = compute_mac(MacAlgorithm::HmacSha256, b"key", b"message");
+        assert_eq!(result.len(), 32); // SHA256 output
     }
 
     #[test]
@@ -245,5 +282,33 @@ mod tests {
             let parsed = MacAlgorithm::from_name(alg.name()).unwrap();
             assert_eq!(*alg, parsed);
         }
+    }
+
+    #[test]
+    fn test_hkdf_expand_key_for_aead() {
+        let key = expand_key_for_aead(b"test_ikm", b"test_salt", "hope-chacha-encode");
+        assert_eq!(key.len(), 32);
+        // Different info strings must produce different keys
+        let key2 = expand_key_for_aead(b"test_ikm", b"test_salt", "hope-chacha-decode");
+        assert_ne!(key, key2);
+    }
+
+    #[test]
+    fn test_hkdf_deterministic() {
+        let key1 = expand_key_for_aead(b"ikm", b"salt", "info");
+        let key2 = expand_key_for_aead(b"ikm", b"salt", "info");
+        assert_eq!(key1, key2);
+    }
+
+    #[test]
+    fn test_normalize_cipher_name() {
+        assert_eq!(normalize_cipher_name("RC4"), "RC4");
+        assert_eq!(normalize_cipher_name("RC4-128"), "RC4");
+        assert_eq!(normalize_cipher_name("ARCFOUR"), "RC4");
+        assert_eq!(normalize_cipher_name("CHACHA20-POLY1305"), "CHACHA20-POLY1305");
+        assert_eq!(normalize_cipher_name("CHACHA20POLY1305"), "CHACHA20-POLY1305");
+        assert_eq!(normalize_cipher_name("CHACHA20"), "CHACHA20-POLY1305");
+        assert_eq!(normalize_cipher_name("chacha20-poly1305"), "CHACHA20-POLY1305");
+        assert_eq!(normalize_cipher_name("NONE"), "NONE");
     }
 }

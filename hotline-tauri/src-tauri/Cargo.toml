@@ -32,7 +32,10 @@ openssl = { version = "0.10", features = ["vendored"] }
 tokio-openssl = "0.6"
 hmac = "0.12"
 sha1 = "0.10"
+sha2 = "0.10"
 md-5 = "0.10"
+chacha20poly1305 = "0.10"
+hkdf = "0.12"
 tauri-plugin-stronghold = "2"
 rust-argon2 = "2"
 

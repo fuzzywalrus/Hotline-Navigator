@@ -3,6 +3,7 @@
 mod chat;
 pub(crate) mod files;
 pub(crate) mod hope;
+mod hope_aead;
 mod hope_stream;
 mod news;
 pub(crate) mod users;
@@ -24,7 +25,56 @@ use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::task::JoinHandle;
 
+use hope_aead::{HopeAeadReader, HopeAeadWriter};
 use hope_stream::{HopeReader, HopeWriter};
+
+/// Transport reader: either RC4 stream (with optional encryption) or AEAD.
+enum TransportReader {
+    Stream(HopeReader),
+    Aead(HopeAeadReader),
+}
+
+impl TransportReader {
+    /// Read raw bytes (no decryption). Used for handshake.
+    async fn read_raw(&mut self, buf: &mut [u8]) -> Result<(), std::io::Error> {
+        match self {
+            Self::Stream(r) => r.read_raw(buf).await,
+            Self::Aead(r) => r.read_raw(buf).await,
+        }
+    }
+
+    /// Read and decode one transaction, decrypting if active.
+    async fn read_transaction(&mut self) -> Result<Transaction, String> {
+        match self {
+            Self::Stream(r) => r.read_transaction().await,
+            Self::Aead(r) => r.read_transaction().await,
+        }
+    }
+}
+
+/// Transport writer: either RC4 stream (with optional encryption) or AEAD.
+enum TransportWriter {
+    Stream(HopeWriter),
+    Aead(HopeAeadWriter),
+}
+
+impl TransportWriter {
+    /// Write raw bytes (no encryption). Used for handshake.
+    async fn write_raw(&mut self, data: &[u8]) -> Result<(), std::io::Error> {
+        match self {
+            Self::Stream(w) => w.write_raw(data).await,
+            Self::Aead(w) => w.write_raw(data).await,
+        }
+    }
+
+    /// Encode and send a transaction, encrypting if active.
+    async fn write_transaction(&mut self, transaction: &Transaction) -> Result<(), std::io::Error> {
+        match self {
+            Self::Stream(w) => w.write_transaction(transaction).await,
+            Self::Aead(w) => w.write_transaction(transaction).await,
+        }
+    }
+}
 
 // TLS support
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
@@ -132,8 +182,8 @@ pub struct HotlineClient {
     username: Arc<Mutex<String>>,
     user_icon_id: Arc<Mutex<u16>>,
     status: Arc<Mutex<ConnectionStatus>>,
-    hope_reader: Arc<Mutex<Option<HopeReader>>>,
-    hope_writer: Arc<Mutex<Option<HopeWriter>>>,
+    transport_reader: Arc<Mutex<Option<TransportReader>>>,
+    transport_writer: Arc<Mutex<Option<TransportWriter>>>,
     transaction_counter: Arc<AtomicU32>,
     running: Arc<AtomicBool>,
 
@@ -178,8 +228,8 @@ impl HotlineClient {
             username: Arc::new(Mutex::new("guest".to_string())),
             user_icon_id: Arc::new(Mutex::new(191)),
             status: Arc::new(Mutex::new(ConnectionStatus::Disconnected)),
-            hope_reader: Arc::new(Mutex::new(None)),
-            hope_writer: Arc::new(Mutex::new(None)),
+            transport_reader: Arc::new(Mutex::new(None)),
+            transport_writer: Arc::new(Mutex::new(None)),
             transaction_counter: Arc::new(AtomicU32::new(1)),
             file_list_paths: Arc::new(RwLock::new(HashMap::new())),
             server_info: Arc::new(Mutex::new(None)),
@@ -234,8 +284,8 @@ impl HotlineClient {
                 Ok(Ok(tls_stream)) => {
                     self.emit_protocol_log("info", "TLS 1.2+ handshake successful");
                     let (read_half, write_half) = tokio::io::split(tls_stream);
-                    *self.hope_reader.lock().await = Some(HopeReader::new(Box::new(read_half)));
-                    *self.hope_writer.lock().await = Some(HopeWriter::new(Box::new(write_half)));
+                    *self.transport_reader.lock().await = Some(TransportReader::Stream(HopeReader::new(Box::new(read_half))));
+                    *self.transport_writer.lock().await = Some(TransportWriter::Stream(HopeWriter::new(Box::new(write_half))));
                 }
                 modern_err if self.allow_legacy_tls => {
                     let reason = match &modern_err {
@@ -262,8 +312,8 @@ impl HotlineClient {
                         Ok(Ok(tls_stream)) => {
                             self.emit_protocol_log("info", "Legacy TLS handshake successful (TLS 1.0/1.1)");
                             let (read_half, write_half) = tokio::io::split(tls_stream);
-                            *self.hope_reader.lock().await = Some(HopeReader::new(Box::new(read_half)));
-                            *self.hope_writer.lock().await = Some(HopeWriter::new(Box::new(write_half)));
+                            *self.transport_reader.lock().await = Some(TransportReader::Stream(HopeReader::new(Box::new(read_half))));
+                            *self.transport_writer.lock().await = Some(TransportWriter::Stream(HopeWriter::new(Box::new(write_half))));
                         }
                         Ok(Err(e2)) => {
                             self.emit_protocol_log("error", format!("Legacy TLS handshake also failed: {}", e2));
@@ -294,8 +344,8 @@ impl HotlineClient {
         } else {
             self.emit_protocol_log("info", "Plain TCP connection established (no TLS)");
             let (read_half, write_half) = stream.into_split();
-            *self.hope_reader.lock().await = Some(HopeReader::new(Box::new(read_half)));
-            *self.hope_writer.lock().await = Some(HopeWriter::new(Box::new(write_half)));
+            *self.transport_reader.lock().await = Some(TransportReader::Stream(HopeReader::new(Box::new(read_half))));
+            *self.transport_writer.lock().await = Some(TransportWriter::Stream(HopeWriter::new(Box::new(write_half))));
         }
 
         Ok(())
@@ -463,7 +513,7 @@ impl HotlineClient {
 
         // Send handshake (raw — before any encryption)
         {
-            let mut write_guard = self.hope_writer.lock().await;
+            let mut write_guard = self.transport_writer.lock().await;
             let writer = write_guard
                 .as_mut()
                 .ok_or("Not connected".to_string())?;
@@ -476,7 +526,7 @@ impl HotlineClient {
         // Read response (8 bytes)
         let mut response = [0u8; 8];
         {
-            let mut read_guard = self.hope_reader.lock().await;
+            let mut read_guard = self.transport_reader.lock().await;
             let reader = read_guard
                 .as_mut()
                 .ok_or("Not connected".to_string())?;
@@ -506,7 +556,7 @@ impl HotlineClient {
     /// Read a single transaction from the connection (raw, pre-encryption).
     /// Used during login before the receive loop starts.
     async fn read_transaction_raw(&self) -> Result<Transaction, String> {
-        let mut read_guard = self.hope_reader.lock().await;
+        let mut read_guard = self.transport_reader.lock().await;
         let reader = read_guard.as_mut().ok_or("Not connected")?;
 
         // Read header
@@ -539,7 +589,7 @@ impl HotlineClient {
     /// Used during login before encryption is activated.
     async fn send_transaction_raw(&self, transaction: &Transaction) -> Result<(), String> {
         let encoded = transaction.encode();
-        let mut write_guard = self.hope_writer.lock().await;
+        let mut write_guard = self.transport_writer.lock().await;
         let writer = write_guard.as_mut().ok_or("Not connected")?;
         writer.write_raw(&encoded).await
             .map_err(|e| format!("Failed to send transaction: {}", e))
@@ -629,6 +679,16 @@ impl HotlineClient {
             .and_then(|f| hope::decode_cipher_selection(&f.data).ok())
             .unwrap_or_else(|| "NONE".to_string());
 
+        // Parse cipher mode fields (AEAD vs STREAM)
+        let server_cipher_mode = reply
+            .get_field(FieldType::HopeServerCipherMode)
+            .and_then(|f| std::str::from_utf8(&f.data).ok().map(|s| s.to_ascii_uppercase()))
+            .unwrap_or_else(|| "STREAM".to_string());
+        let client_cipher_mode = reply
+            .get_field(FieldType::HopeClientCipherMode)
+            .and_then(|f| std::str::from_utf8(&f.data).ok().map(|s| s.to_ascii_uppercase()))
+            .unwrap_or_else(|| "STREAM".to_string());
+
         let server_compression = reply
             .get_field(FieldType::HopeServerCompression)
             .and_then(|f| hope::decode_cipher_selection(&f.data).ok())
@@ -638,15 +698,25 @@ impl HotlineClient {
             .and_then(|f| hope::decode_cipher_selection(&f.data).ok())
             .unwrap_or_else(|| "NONE".to_string());
 
-        println!("HOPE negotiation: MAC={:?}, mac_login={}, server_cipher={}, client_cipher={}",
-            selected_mac, mac_login, server_cipher, client_cipher);
+        println!("HOPE negotiation: MAC={:?}, mac_login={}, server_cipher={} ({}), client_cipher={} ({}), session_key[0..4]={:02X?}",
+            selected_mac, mac_login, server_cipher, server_cipher_mode, client_cipher, client_cipher_mode, &session_key[..4]);
         self.emit_protocol_log(
             "info",
             format!(
-                "HOPE negotiated: mac={:?}, mac_login={}, server_cipher={}, client_cipher={}",
-                selected_mac, mac_login, server_cipher, client_cipher
+                "HOPE negotiated: mac={:?}, mac_login={}, server_cipher={} ({}), client_cipher={} ({})",
+                selected_mac, mac_login, server_cipher, server_cipher_mode, client_cipher, client_cipher_mode
             ),
         );
+
+        // Reject INVERSE MAC + AEAD combination — INVERSE cannot produce
+        // cryptographic key material suitable for HKDF.
+        if selected_mac == hope::MacAlgorithm::Inverse
+            && (server_cipher_mode == "AEAD" || client_cipher_mode == "AEAD")
+        {
+            println!("HOPE: rejecting INVERSE MAC + AEAD combination");
+            self.emit_protocol_log("warn", "HOPE: INVERSE MAC is incompatible with AEAD mode, falling back");
+            return None;
+        }
 
         Some(hope::HopeNegotiation {
             session_key,
@@ -654,6 +724,8 @@ impl HotlineClient {
             mac_login,
             server_cipher,
             client_cipher,
+            server_cipher_mode,
+            client_cipher_mode,
             server_compression,
             client_compression,
         })
@@ -701,10 +773,17 @@ impl HotlineClient {
         };
 
         // ─── Send login ───
-        let hope_transport_active = hope_negotiation.as_ref().is_some_and(|negotiation| {
-            negotiation.mac_algorithm.supports_transport()
-                && (negotiation.server_cipher == "RC4" || negotiation.client_cipher == "RC4")
+        // Determine transport mode: AEAD (ChaCha20-Poly1305), RC4 stream, or auth-only
+        let hope_aead_active = hope_negotiation.as_ref().is_some_and(|n| {
+            n.mac_algorithm.supports_transport()
+                && (n.server_cipher == "CHACHA20-POLY1305" || n.client_cipher == "CHACHA20-POLY1305")
+                && (n.server_cipher_mode == "AEAD" || n.client_cipher_mode == "AEAD")
         });
+        let hope_rc4_active = !hope_aead_active && hope_negotiation.as_ref().is_some_and(|n| {
+            n.mac_algorithm.supports_transport()
+                && (n.server_cipher == "RC4" || n.client_cipher == "RC4")
+        });
+        let hope_transport_active = hope_aead_active || hope_rc4_active;
 
         let login_reply = if let Some(ref negotiation) = hope_negotiation {
             // HOPE authenticated login (step 3) is sent in the clear.
@@ -744,7 +823,69 @@ impl HotlineClient {
             self.emit_protocol_log("info", "Sending HOPE authenticated login");
             self.send_transaction_raw(&auth_tx).await?;
 
-            if hope_transport_active {
+            if hope_aead_active {
+                // ChaCha20-Poly1305 AEAD transport
+                let encode_key = hope::compute_mac(
+                    negotiation.mac_algorithm,
+                    password.as_bytes(),
+                    &password_mac,
+                );
+                let decode_key = hope::compute_mac(
+                    negotiation.mac_algorithm,
+                    password.as_bytes(),
+                    &encode_key,
+                );
+
+                println!("[HOPE-AEAD] Key derivation: mac={:?}, encode_key len={}, decode_key len={}",
+                    negotiation.mac_algorithm, encode_key.len(), decode_key.len());
+                println!("[HOPE-AEAD] encode_key[0..4]={:02X?}, decode_key[0..4]={:02X?}",
+                    &encode_key[..4.min(encode_key.len())], &decode_key[..4.min(decode_key.len())]);
+
+                // Expand to 256-bit keys using HKDF-SHA256
+                let encode_key_256 = hope::expand_key_for_aead(
+                    &encode_key, &negotiation.session_key, "hope-chacha-encode",
+                );
+                let decode_key_256 = hope::expand_key_for_aead(
+                    &decode_key, &negotiation.session_key, "hope-chacha-decode",
+                );
+
+                println!("[HOPE-AEAD] HKDF expanded: encode_key_256[0..4]={:02X?}, decode_key_256[0..4]={:02X?}",
+                    &encode_key_256[..4], &decode_key_256[..4]);
+
+                // Swap transport to AEAD: take the raw streams from HopeReader/HopeWriter
+                // and wrap them in HopeAeadReader/HopeAeadWriter.
+                // Server encrypts its outbound with encode_key_256 (we decrypt with it).
+                // Client encrypts its outbound with decode_key_256.
+                {
+                    let mut reader_guard = self.transport_reader.lock().await;
+                    if let Some(transport) = reader_guard.take() {
+                        let inner = match transport {
+                            TransportReader::Stream(r) => r.into_inner(),
+                            TransportReader::Aead(_) => unreachable!("AEAD already active"),
+                        };
+                        *reader_guard = Some(TransportReader::Aead(
+                            HopeAeadReader::new(inner, &encode_key_256),
+                        ));
+                    }
+                }
+                {
+                    let mut writer_guard = self.transport_writer.lock().await;
+                    if let Some(transport) = writer_guard.take() {
+                        let inner = match transport {
+                            TransportWriter::Stream(w) => w.into_inner(),
+                            TransportWriter::Aead(_) => unreachable!("AEAD already active"),
+                        };
+                        *writer_guard = Some(TransportWriter::Aead(
+                            HopeAeadWriter::new(inner, &decode_key_256),
+                        ));
+                    }
+                }
+
+                println!("HOPE transport encryption activated (ChaCha20-Poly1305 AEAD)");
+                self.emit_protocol_log("info", "HOPE transport encryption activated (ChaCha20-Poly1305 AEAD)");
+                self.read_transaction().await?
+            } else if hope_rc4_active {
+                // RC4 stream transport (existing behavior)
                 let encode_key = hope::compute_mac(
                     negotiation.mac_algorithm,
                     password.as_bytes(),
@@ -760,8 +901,8 @@ impl HotlineClient {
                 // encode_key and expects inbound packets encrypted with
                 // decode_key.
                 {
-                    let mut reader_guard = self.hope_reader.lock().await;
-                    if let Some(reader) = reader_guard.as_mut() {
+                    let mut reader_guard = self.transport_reader.lock().await;
+                    if let Some(TransportReader::Stream(reader)) = reader_guard.as_mut() {
                         reader.activate_encryption(
                             encode_key,
                             negotiation.session_key,
@@ -770,8 +911,8 @@ impl HotlineClient {
                     }
                 }
                 {
-                    let mut writer_guard = self.hope_writer.lock().await;
-                    if let Some(writer) = writer_guard.as_mut() {
+                    let mut writer_guard = self.transport_writer.lock().await;
+                    if let Some(TransportWriter::Stream(writer)) = writer_guard.as_mut() {
                         writer.activate_encryption(
                             decode_key,
                             negotiation.session_key,
@@ -881,7 +1022,11 @@ impl HotlineClient {
             server_name,
             server_version,
             large_files,
-            if hope_negotiation.is_some() { if hope_transport_active { "encrypted" } else { "auth only" } } else { "off" },
+            if hope_negotiation.is_some() {
+                if hope_aead_active { "AEAD (ChaCha20-Poly1305)" }
+                else if hope_rc4_active { "encrypted (RC4)" }
+                else { "auth only" }
+            } else { "off" },
         ));
 
         {
@@ -923,13 +1068,13 @@ impl HotlineClient {
 
         // Close both halves of the stream
         {
-            let mut read_guard = self.hope_reader.lock().await;
+            let mut read_guard = self.transport_reader.lock().await;
             if let Some(reader) = read_guard.take() {
                 drop(reader);
             }
         }
         {
-            let mut write_guard = self.hope_writer.lock().await;
+            let mut write_guard = self.transport_writer.lock().await;
             if let Some(writer) = write_guard.take() {
                 drop(writer);
             }
@@ -961,7 +1106,7 @@ impl HotlineClient {
     /// Read a single transaction through the HOPE reader (handles decryption if active).
     /// Used during login after encryption is activated.
     async fn read_transaction(&self) -> Result<Transaction, String> {
-        let mut read_guard = self.hope_reader.lock().await;
+        let mut read_guard = self.transport_reader.lock().await;
         let reader = read_guard.as_mut().ok_or("Not connected")?;
         reader.read_transaction().await
     }
@@ -969,7 +1114,7 @@ impl HotlineClient {
     /// Send a transaction through the HOPE writer (handles encryption if active).
     /// This is the primary method all sub-modules should use to send data.
     pub(crate) async fn send_transaction(&self, transaction: &Transaction) -> Result<(), String> {
-        let mut write_guard = self.hope_writer.lock().await;
+        let mut write_guard = self.transport_writer.lock().await;
         let writer = write_guard
             .as_mut()
             .ok_or("Not connected".to_string())?;
@@ -987,8 +1132,8 @@ impl HotlineClient {
 
         self.running.store(true, Ordering::SeqCst);
 
-        let hope_reader = self.hope_reader.clone();
-        let hope_writer = self.hope_writer.clone();
+        let hope_reader = self.transport_reader.clone();
+        let hope_writer = self.transport_writer.clone();
         let running = self.running.clone();
         let status = self.status.clone();
         let event_tx = self.event_tx.clone();
@@ -1418,7 +1563,7 @@ impl HotlineClient {
     async fn start_keepalive(&self) {
         println!("Starting keep-alive...");
 
-        let hope_writer = self.hope_writer.clone();
+        let hope_writer = self.transport_writer.clone();
         let running = self.running.clone();
         let transaction_counter = self.transaction_counter.clone();
 
@@ -1680,8 +1825,8 @@ mod tests {
             .await
             .expect("open_connection should succeed against a TLS1.2 server");
 
-        assert!(client.hope_reader.lock().await.is_some());
-        assert!(client.hope_writer.lock().await.is_some());
+        assert!(client.transport_reader.lock().await.is_some());
+        assert!(client.transport_writer.lock().await.is_some());
 
         server
             .join()
