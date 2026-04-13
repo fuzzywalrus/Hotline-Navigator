@@ -824,6 +824,13 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
                       </svg>
                     </span>
                   )}
+                  {bookmark.hope && (
+                    <span title="HOPE Secure Login">
+                      <svg className="w-3 h-3 text-blue-600 dark:text-blue-400 flex-shrink-0" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M8 0L2 3v4.5c0 3.87 2.56 7.49 6 8.5 3.44-1.01 6-4.63 6-8.5V3L8 0zm0 2.18l4 2.1V7.5c0 2.9-1.86 5.63-4 6.46-2.14-.83-4-3.56-4-6.46V4.28l4-2.1z"/>
+                      </svg>
+                    </span>
+                  )}
 
                   {/* Edit/Delete/Connect buttons on hover */}
                   <div 

@@ -1,6 +1,7 @@
 // File management functionality for Hotline client
 
 use super::{BoxedRead, BoxedWrite, FileInfo, HotlineClient};
+use super::hope_aead::{TransferReader, TransferWriter, HopeAeadStreamReader, HopeAeadStreamWriter};
 use crate::protocol::constants::{
     FieldType, TransactionType, FILE_TRANSFER_ID,
     HTXF_FLAG_LARGE_FILE, HTXF_FLAG_SIZE64,
@@ -13,9 +14,10 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 
-// Note: File transfers (HTXF) use their own separate TCP connections (port+1)
-// and are NOT encrypted by HOPE. Only the control-plane transactions go through
-// the HOPE-encrypted main connection via send_transaction().
+// Note: File transfers (HTXF) use their own separate TCP connections (port+1).
+// When the control connection uses AEAD (ChaCha20-Poly1305), file transfers are
+// also AEAD-encrypted with per-transfer derived keys. The HTXF handshake is
+// always plaintext; AEAD framing begins immediately after the handshake.
 
 /// Encode a UTF-8 folder name to bytes suitable for the Hotline FilePath field.
 /// Tries MacRoman encoding first (which is what the protocol uses natively).
@@ -274,6 +276,14 @@ impl HotlineClient {
             .flush()
             .await
             .map_err(|e| format!("Failed to flush handshake: {}", e))?;
+
+        // Wrap in AEAD if active (handshake was plaintext, AEAD starts now)
+        let mut transfer_read: TransferReader = if let Some(key) = self.derive_transfer_key(reference_number).await {
+            println!("[HOPE-AEAD-FT] Wrapping download in AEAD framing");
+            TransferReader::Aead(HopeAeadStreamReader::new(transfer_read, &key))
+        } else {
+            TransferReader::Plain(transfer_read)
+        };
 
         println!("File transfer handshake sent, waiting for response...");
 
@@ -655,6 +665,14 @@ impl HotlineClient {
             .await
             .map_err(|e| format!("Failed to flush handshake: {}", e))?;
 
+        // Wrap in AEAD if active (handshake was plaintext, AEAD starts now)
+        let mut transfer_read: TransferReader = if let Some(key) = self.derive_transfer_key(reference_number).await {
+            println!("[HOPE-AEAD-FT] Wrapping banner download in AEAD framing");
+            TransferReader::Aead(HopeAeadStreamReader::new(transfer_read, &key))
+        } else {
+            TransferReader::Plain(transfer_read)
+        };
+
         println!("Banner handshake sent, reading raw image data...");
 
         // Read raw data directly (no FILP header for banners)
@@ -862,6 +880,14 @@ impl HotlineClient {
             .flush()
             .await
             .map_err(|e| format!("Failed to flush handshake: {}", e))?;
+
+        // Wrap in AEAD if active (handshake was plaintext, AEAD starts now)
+        let mut transfer_write: TransferWriter = if let Some(key) = self.derive_transfer_key(reference_number).await {
+            println!("[HOPE-AEAD-FT] Wrapping upload in AEAD framing");
+            TransferWriter::Aead(HopeAeadStreamWriter::new(transfer_write, &key))
+        } else {
+            TransferWriter::Plain(transfer_write)
+        };
 
         println!("Upload handshake sent");
 

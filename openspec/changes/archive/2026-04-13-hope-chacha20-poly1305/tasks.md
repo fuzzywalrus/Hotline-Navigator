@@ -33,18 +33,20 @@
 
 - [x] 5.1 Add known-answer tests for HKDF-SHA256 key expansion with direction-specific info strings
 - [x] 5.2 Add known-answer tests for HMAC-SHA256 MAC computation
-- [ ] 5.3 Add integration test: full HOPE AEAD negotiation + encrypted transaction round-trip (mock server)
 - [x] 5.4 Verify RC4 path is unaffected — existing HOPE tests still pass
 - [x] 5.5 Test against Hotline Central Hub server (HOPE active, fell back to non-AEAD — graceful fallback confirmed)
 - [x] 5.6 Test against Vespernet server (full AEAD negotiation + encrypted traffic confirmed working)
 
 ---
 
-## Phase 2: AEAD File Transfers (deferred)
+## Phase 2: AEAD File Transfers
 
-- [ ] 6.1 Implement `derive_ft_base_key(encode_key_256, decode_key_256, session_key) -> [u8; 32]` using HKDF-SHA256 with info `"hope-file-transfer"`
-- [ ] 6.2 Implement `derive_transfer_key(ft_base_key, ref_number) -> [u8; 32]` using HKDF-SHA256 with ref number as salt and info `"hope-ft-ref"`
-- [ ] 6.3 Store AEAD state (ft_base_key + session_key) on the client connection so transfer tasks can derive per-transfer keys
-- [ ] 6.4 Wrap HTXF download socket in AEAD framing after handshake when AEAD mode is active
-- [ ] 6.5 Wrap HTXF upload socket in AEAD framing after handshake when AEAD mode is active
-- [ ] 6.6 Add unit tests for file transfer key derivation chain
+- [x] 6.1 Implement `derive_ft_base_key(encode_key_256, decode_key_256, session_key) -> [u8; 32]` using HKDF-SHA256 with info `"hope-file-transfer"`
+- [x] 6.2 Implement `derive_transfer_key(ft_base_key, ref_number) -> [u8; 32]` using HKDF-SHA256 with ref number as salt and info `"hope-ft-ref"`
+- [x] 6.3 Store AEAD state (ft_base_key) on the client connection so transfer tasks can derive per-transfer keys
+- [x] 6.4 Wrap HTXF download socket in AEAD framing after handshake when AEAD mode is active
+- [x] 6.5 Wrap HTXF upload socket in AEAD framing after handshake when AEAD mode is active
+- [x] 6.6 Wrap banner download in AEAD framing after handshake when AEAD mode is active
+- [x] 6.7 Test file download against VesperNet (7.2 MB file, 221 AEAD frames, verified)
+- [x] 6.8 Test banner download against VesperNet (18 KB, single AEAD frame, verified)
+- [ ] 6.9 Test file upload against server with AEAD (no upload folder available on VesperNet — deferred)

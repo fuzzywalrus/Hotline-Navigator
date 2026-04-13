@@ -1,9 +1,7 @@
 ## Purpose
 
 Defines the HOPE (Hotline One-time Password Extension) secure login protocol, including MAC-based authentication, RC4 transport encryption, and per-bookmark opt-in.
-
 ## Requirements
-
 ### Requirement: HOPE opt-in via bookmark
 
 HOPE (Hotline One-time Password Extension) MUST be opt-in on a per-bookmark basis via the `hope` boolean field. The system SHALL NOT auto-probe for HOPE support on unknown servers.
@@ -35,8 +33,8 @@ The client sends a Login transaction containing:
 - `HopeMacAlgorithm` field with the client's supported MAC algorithms (encoded as: `<u16:count> [<u8:len> <str:name>]+`)
 - `HopeAppId` field: `"HTLN"`
 - `HopeAppString` field: `"Hotline Navigator {version}"`
-- `HopeClientCipher` field with supported ciphers (currently `["RC4"]`)
-- `HopeServerCipher` field with supported ciphers (currently `["RC4"]`)
+- `HopeClientCipher` field with supported ciphers (`["CHACHA20-POLY1305", "RC4"]`)
+- `HopeServerCipher` field with supported ciphers (`["CHACHA20-POLY1305", "RC4"]`)
 
 **Step 2 (Server -> Client): Session Key + Algorithm Selection**
 The server replies with:
@@ -45,6 +43,8 @@ The server replies with:
 - `UserLogin` field: non-empty if the server wants the login to be MAC'd
 - `HopeServerCipher` field: the server's chosen cipher for its outbound traffic
 - `HopeClientCipher` field: the server's chosen cipher for the client's outbound traffic
+- `HopeServerCipherMode` / `HopeClientCipherMode` fields: `"AEAD"` when ChaCha20-Poly1305, `"STREAM"` when RC4
+- `HopeServerChecksum` / `HopeClientChecksum` fields: `"AEAD"` when ChaCha20-Poly1305
 - `HopeServerCompression` / `HopeClientCompression` fields (optional)
 
 **Step 3 (Client -> Server): Authenticated Login**
@@ -93,15 +93,21 @@ If the HOPE probe fails (server does not reply, replies with an error, or return
 
 The system SHALL support the following MAC algorithms for HOPE, listed in preference order (strongest to weakest):
 
-1. **HMAC-SHA1** -- HMAC using SHA-1 (output: 20 bytes)
-2. **SHA1** -- Bare `SHA1(key + message)` concatenation (output: 20 bytes)
-3. **HMAC-MD5** -- HMAC using MD5 (output: 16 bytes)
-4. **MD5** -- Bare `MD5(key + message)` concatenation (output: 16 bytes)
-5. **INVERSE** -- Returns each byte of the key bitwise-NOT'd (ignores message; authentication-only, cannot derive transport keys)
+1. **HMAC-SHA256** -- HMAC using SHA-256 (output: 32 bytes)
+2. **HMAC-SHA1** -- HMAC using SHA-1 (output: 20 bytes)
+3. **SHA1** -- Bare `SHA1(key + message)` concatenation (output: 20 bytes)
+4. **HMAC-MD5** -- HMAC using MD5 (output: 16 bytes)
+5. **MD5** -- Bare `MD5(key + message)` concatenation (output: 16 bytes)
+6. **INVERSE** -- Returns each byte of the key bitwise-NOT'd (ignores message; authentication-only, cannot derive transport keys or AEAD key material)
 
-The client sends all five algorithms in the identification. The server selects one.
+The client sends all six algorithms in the identification. The server selects one.
 
 Algorithm names are case-insensitive on the wire. The system SHALL parse them by uppercasing before matching.
+
+#### Scenario: Server selects HMAC-SHA256
+
+- **WHEN** the server selects `HMAC-SHA256` from the client's list
+- **THEN** the system SHALL use `hmac::Hmac<Sha256>` for MAC computation, producing 32-byte outputs
 
 #### Scenario: Server selects HMAC-SHA1
 
@@ -111,7 +117,7 @@ Algorithm names are case-insensitive on the wire. The system SHALL parse them by
 #### Scenario: Server selects INVERSE
 
 - **WHEN** the server selects `INVERSE`
-- **THEN** the system SHALL compute the MAC as `key.iter().map(|b| !b).collect()`, ignoring the message; transport encryption SHALL NOT be activated (INVERSE does not support key derivation)
+- **THEN** the system SHALL compute the MAC as `key.iter().map(|b| !b).collect()`, ignoring the message; transport encryption SHALL NOT be activated (INVERSE does not support key derivation); AEAD mode SHALL NOT be activated
 
 #### Scenario: Server selects unknown algorithm
 
@@ -202,9 +208,15 @@ The authenticated login (Step 3) SHALL be sent in plaintext. Transport encryptio
 
 ### Requirement: File transfers are not HOPE-encrypted
 
-File transfers (HTXF protocol on port+1) SHALL use separate TCP connections and SHALL NOT be encrypted by HOPE. Only the control-plane transactions on the main connection SHALL go through the HOPE-encrypted stream.
+File transfers (HTXF protocol on port+1) SHALL use separate TCP connections. When the control connection uses RC4 stream encryption or no HOPE transport, file transfers SHALL NOT be encrypted by HOPE. When the control connection uses AEAD mode (ChaCha20-Poly1305), file transfers SHALL use AEAD encryption as specified in the `hope-chacha20-poly1305` capability.
 
-#### Scenario: File download on HOPE-encrypted connection
+#### Scenario: File download on RC4 HOPE-encrypted connection
 
-- **WHEN** a file transfer is initiated on a server with active HOPE transport encryption
+- **WHEN** a file transfer is initiated on a server with active RC4 HOPE transport encryption
 - **THEN** the transfer control transactions (request/reply) SHALL go through the encrypted main connection, but the actual file data transfer on port+1 SHALL use a separate plain TCP (or TLS, if the bookmark has `tls: true`) connection without HOPE encryption
+
+#### Scenario: File download on AEAD HOPE-encrypted connection
+
+- **WHEN** a file transfer is initiated on a server with active AEAD HOPE transport encryption
+- **THEN** the transfer control transactions SHALL go through the encrypted main connection, and the file data transfer on port+1 SHALL use AEAD encryption with a per-transfer derived key
+

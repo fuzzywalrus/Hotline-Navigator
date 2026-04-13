@@ -1,9 +1,7 @@
 ## Purpose
 
 Defines file download and upload via the HTXF protocol, including the transfer handshake, FILP stream format, progress tracking, large file support, and TLS on transfer connections.
-
 ## Requirements
-
 ### Requirement: Download a file via HTXF protocol
 
 The system SHALL download files using a multi-step HTXF protocol:
@@ -11,7 +9,8 @@ The system SHALL download files using a multi-step HTXF protocol:
 1. Send a TransactionType::DownloadFile request to obtain a reference_number from the server.
 2. Open a separate TCP connection to the server on port+1 (one above the main connection port).
 3. Send a 16-byte HTXF handshake containing the magic bytes "HTXF", the reference number, a transfer size of 0, and flags.
-4. Receive the FILP stream containing the file data.
+4. If the control connection uses AEAD mode, derive a per-transfer ChaCha20-Poly1305 key and wrap the transfer socket in AEAD framing after the handshake.
+5. Receive the FILP stream containing the file data (through AEAD framing if applicable, otherwise plaintext).
 
 #### Scenario: Successful file download
 
@@ -23,6 +22,10 @@ The system SHALL download files using a multi-step HTXF protocol:
 - **WHEN** the transfer TCP connection cannot be established within 10 seconds
 - **THEN** the system SHALL mark the transfer as failed and report the timeout to the user
 
+#### Scenario: AEAD-encrypted file download
+
+- **WHEN** the user initiates a download on a connection with active AEAD transport
+- **THEN** the system SHALL send the HTXF handshake in plaintext, derive the per-transfer key using HKDF-SHA256 with the reference number as salt, and decrypt the incoming FILP stream using AEAD framing
 
 ### Requirement: Upload a file via HTXF protocol
 
@@ -31,13 +34,18 @@ The system SHALL upload files using the HTXF protocol:
 1. Send a TransactionType::UploadFile request with the reference number and file size.
 2. Open a separate TCP connection to the server on port+1.
 3. Send the 16-byte HTXF handshake with the magic bytes "HTXF", the reference number, the transfer size, and flags.
-4. Send the FILP stream containing the file data.
+4. If the control connection uses AEAD mode, derive a per-transfer ChaCha20-Poly1305 key and wrap the transfer socket in AEAD framing after the handshake.
+5. Send the FILP stream containing the file data (through AEAD framing if applicable, otherwise plaintext).
 
 #### Scenario: Successful file upload
 
 - **WHEN** the user initiates an upload for a local file
 - **THEN** the system SHALL request an upload reference, open a TCP connection to the transfer port, send the HTXF handshake with the file size, and transmit the FILP stream to the server
 
+#### Scenario: AEAD-encrypted file upload
+
+- **WHEN** the user initiates an upload on a connection with active AEAD transport
+- **THEN** the system SHALL send the HTXF handshake in plaintext, derive the per-transfer key using HKDF-SHA256 with the reference number as salt, and encrypt the outgoing FILP stream using AEAD framing
 
 ### Requirement: FILP stream structure
 
@@ -57,7 +65,6 @@ The FILP stream SHALL wrap file data in typed forks. Each fork has a 16-byte hea
 - **WHEN** the system sends a FILP stream during upload
 - **THEN** the system SHALL construct the stream with a DATA fork containing the file content and the appropriate 16-byte fork header
 
-
 ### Requirement: Transfer progress tracking
 
 The system SHALL track and display progress for each file transfer, including percentage complete and transfer speed. Each transfer SHALL have one of the following states: active, completed, failed, or cancelled.
@@ -76,7 +83,6 @@ The system SHALL track and display progress for each file transfer, including pe
 
 - **WHEN** a transfer encounters a network error or per-chunk data timeout
 - **THEN** the system SHALL mark the transfer state as failed and report the error
-
 
 ### Requirement: Large file support (greater than 4 GB)
 
@@ -101,7 +107,6 @@ The system SHALL support files larger than 4 GB through capability negotiation d
 - **WHEN** large file support is negotiated and the user downloads a file exceeding 4 GB
 - **THEN** the system SHALL use the extended handshake with HTXF_FLAG_LARGE_FILE and HTXF_FLAG_SIZE64 flags, and correctly parse 64-bit fork sizes from the FILP stream
 
-
 ### Requirement: TLS on transfer port
 
 When the main server connection uses TLS, the transfer connection SHALL also use TLS with the same TLS and legacy-TLS settings as the main connection.
@@ -115,7 +120,6 @@ When the main server connection uses TLS, the transfer connection SHALL also use
 
 - **WHEN** the main connection to the server is unencrypted
 - **THEN** the system SHALL establish the transfer TCP connection on port+1 as a plain TCP connection
-
 
 ### Requirement: Transfer list UI
 
@@ -131,7 +135,6 @@ The system SHALL display a list of all file transfers across all connected serve
 - **WHEN** the user requests to clear completed transfers
 - **THEN** the system SHALL remove all transfers in the completed state from the list
 
-
 ### Requirement: Cancel in-progress transfers
 
 The system SHALL allow the user to cancel any transfer that is currently in the active state.
@@ -145,3 +148,4 @@ The system SHALL allow the user to cancel any transfer that is currently in the 
 
 - **WHEN** the user cancels an active upload
 - **THEN** the system SHALL close the transfer connection and mark the transfer state as cancelled
+

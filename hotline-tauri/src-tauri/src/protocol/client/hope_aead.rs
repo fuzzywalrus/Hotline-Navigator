@@ -161,6 +161,203 @@ impl HopeAeadReader {
     }
 }
 
+// ─── Byte-level AEAD wrappers for file transfers ───
+//
+// File transfers use raw byte I/O (FILP headers, fork data), not transactions.
+// These wrappers buffer decrypted AEAD frames so callers can read/write bytes
+// as if they were using a plain stream.
+
+/// AEAD stream reader for file transfers.
+/// Reads AEAD frames from the inner stream, decrypts them, and buffers the
+/// plaintext so callers can read arbitrary byte ranges.
+pub struct HopeAeadStreamReader {
+    inner: BoxedRead,
+    cipher: ChaCha20Poly1305,
+    recv_counter: u64,
+    buffer: Vec<u8>,
+    buffer_offset: usize,
+}
+
+impl HopeAeadStreamReader {
+    pub fn new(inner: BoxedRead, key: &[u8; 32]) -> Self {
+        println!("[HOPE-AEAD-FT-R] File transfer reader created, key[0..4]={:02X?}", &key[..4]);
+        let cipher = ChaCha20Poly1305::new_from_slice(key)
+            .expect("32-byte key is valid for ChaCha20-Poly1305");
+        Self {
+            inner,
+            cipher,
+            recv_counter: 0,
+            buffer: Vec::new(),
+            buffer_offset: 0,
+        }
+    }
+
+    /// Read the next AEAD frame and buffer the decrypted plaintext.
+    async fn read_next_frame(&mut self) -> Result<(), std::io::Error> {
+        let mut len_buf = [0u8; 4];
+        self.inner.read_exact(&mut len_buf).await?;
+        let frame_len = u32::from_be_bytes(len_buf);
+
+        if frame_len > MAX_AEAD_FRAME_SIZE {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("AEAD frame too large: {} bytes", frame_len),
+            ));
+        }
+
+        if frame_len < 16 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("AEAD frame too small: {} bytes", frame_len),
+            ));
+        }
+
+        let mut ciphertext = vec![0u8; frame_len as usize];
+        self.inner.read_exact(&mut ciphertext).await?;
+
+        let nonce = build_nonce(DIRECTION_SERVER_TO_CLIENT, self.recv_counter);
+        self.buffer = self.cipher.decrypt(&nonce, ciphertext.as_ref())
+            .map_err(|_| {
+                println!("[HOPE-AEAD-FT-R] ERROR: tag verification failed! frame_len={}, counter={}", frame_len, self.recv_counter);
+                std::io::Error::new(std::io::ErrorKind::Other, "AEAD file transfer decryption failed")
+            })?;
+        self.buffer_offset = 0;
+        self.recv_counter += 1;
+
+        println!("[HOPE-AEAD-FT-R] Decrypted frame: {} bytes (counter={})", self.buffer.len(), self.recv_counter - 1);
+
+        Ok(())
+    }
+
+    /// Read exactly `buf.len()` bytes, reading and decrypting AEAD frames as needed.
+    pub async fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), std::io::Error> {
+        let mut filled = 0;
+        while filled < buf.len() {
+            let available = self.buffer.len() - self.buffer_offset;
+            if available > 0 {
+                let to_copy = std::cmp::min(available, buf.len() - filled);
+                buf[filled..filled + to_copy].copy_from_slice(
+                    &self.buffer[self.buffer_offset..self.buffer_offset + to_copy],
+                );
+                self.buffer_offset += to_copy;
+                filled += to_copy;
+            } else {
+                self.read_next_frame().await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Read up to `buf.len()` bytes, returning the number of bytes read.
+    /// Returns 0 if the underlying stream is closed.
+    pub async fn read(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
+        // If buffer is empty, try to read next frame
+        let available = self.buffer.len() - self.buffer_offset;
+        if available == 0 {
+            match self.read_next_frame().await {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(0),
+                Err(e) => return Err(e),
+            }
+        }
+
+        let available = self.buffer.len() - self.buffer_offset;
+        let to_copy = std::cmp::min(available, buf.len());
+        buf[..to_copy].copy_from_slice(
+            &self.buffer[self.buffer_offset..self.buffer_offset + to_copy],
+        );
+        self.buffer_offset += to_copy;
+        Ok(to_copy)
+    }
+}
+
+/// AEAD stream writer for file transfers.
+/// Seals data into AEAD frames before writing to the inner stream.
+pub struct HopeAeadStreamWriter {
+    inner: BoxedWrite,
+    cipher: ChaCha20Poly1305,
+    send_counter: u64,
+}
+
+impl HopeAeadStreamWriter {
+    pub fn new(inner: BoxedWrite, key: &[u8; 32]) -> Self {
+        println!("[HOPE-AEAD-FT-W] File transfer writer created, key[0..4]={:02X?}", &key[..4]);
+        let cipher = ChaCha20Poly1305::new_from_slice(key)
+            .expect("32-byte key is valid for ChaCha20-Poly1305");
+        Self {
+            inner,
+            cipher,
+            send_counter: 0,
+        }
+    }
+
+    /// Seal data as an AEAD frame and write it.
+    pub async fn write_all(&mut self, data: &[u8]) -> Result<(), std::io::Error> {
+        let nonce = build_nonce(DIRECTION_CLIENT_TO_SERVER, self.send_counter);
+        let ciphertext = self.cipher.encrypt(&nonce, data)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("AEAD seal failed: {}", e)))?;
+        self.send_counter += 1;
+
+        let len = ciphertext.len() as u32;
+        self.inner.write_all(&len.to_be_bytes()).await?;
+        self.inner.write_all(&ciphertext).await?;
+
+        println!("[HOPE-AEAD-FT-W] Sealed frame: {} bytes -> {} bytes (counter={})",
+            data.len(), ciphertext.len(), self.send_counter - 1);
+
+        Ok(())
+    }
+
+    pub async fn flush(&mut self) -> Result<(), std::io::Error> {
+        self.inner.flush().await
+    }
+}
+
+/// Transfer reader: either plain or AEAD-wrapped.
+/// Used by file transfer code to transparently handle encrypted transfers.
+pub enum TransferReader {
+    Plain(BoxedRead),
+    Aead(HopeAeadStreamReader),
+}
+
+impl TransferReader {
+    pub async fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), std::io::Error> {
+        match self {
+            Self::Plain(r) => r.read_exact(buf).await.map(|_| ()),
+            Self::Aead(r) => r.read_exact(buf).await,
+        }
+    }
+
+    pub async fn read(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
+        match self {
+            Self::Plain(r) => r.read(buf).await,
+            Self::Aead(r) => r.read(buf).await,
+        }
+    }
+}
+
+/// Transfer writer: either plain or AEAD-wrapped.
+pub enum TransferWriter {
+    Plain(BoxedWrite),
+    Aead(HopeAeadStreamWriter),
+}
+
+impl TransferWriter {
+    pub async fn write_all(&mut self, data: &[u8]) -> Result<(), std::io::Error> {
+        match self {
+            Self::Plain(w) => w.write_all(data).await,
+            Self::Aead(w) => w.write_all(data).await,
+        }
+    }
+
+    pub async fn flush(&mut self) -> Result<(), std::io::Error> {
+        match self {
+            Self::Plain(w) => w.flush().await,
+            Self::Aead(w) => w.flush().await,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -206,6 +206,9 @@ pub struct HotlineClient {
     // Large file support (negotiated during login)
     pub(crate) large_file_support: Arc<AtomicBool>,
 
+    // HOPE AEAD file transfer base key (set when AEAD transport is activated)
+    ft_base_key: Arc<Mutex<Option<[u8; 32]>>>,
+
     // Background tasks
     receive_task: Arc<Mutex<Option<JoinHandle<()>>>>,
     keepalive_task: Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -235,6 +238,7 @@ impl HotlineClient {
             server_info: Arc::new(Mutex::new(None)),
             user_access: Arc::new(Mutex::new(0)),
             large_file_support: Arc::new(AtomicBool::new(false)),
+            ft_base_key: Arc::new(Mutex::new(None)),
             running: Arc::new(AtomicBool::new(false)),
             event_tx,
             event_rx: Arc::new(Mutex::new(Some(event_rx))),
@@ -881,6 +885,11 @@ impl HotlineClient {
                     }
                 }
 
+                // Derive file transfer base key for AEAD-encrypted HTXF transfers
+                let ft_key = hope::derive_ft_base_key(&encode_key_256, &decode_key_256, &negotiation.session_key);
+                println!("[HOPE-AEAD] File transfer base key derived, ft_base_key[0..4]={:02X?}", &ft_key[..4]);
+                *self.ft_base_key.lock().await = Some(ft_key);
+
                 println!("HOPE transport encryption activated (ChaCha20-Poly1305 AEAD)");
                 self.emit_protocol_log("info", "HOPE transport encryption activated (ChaCha20-Poly1305 AEAD)");
                 self.read_transaction().await?
@@ -1089,6 +1098,7 @@ impl HotlineClient {
             let mut pending = self.pending_transactions.write().await;
             pending.clear();
         }
+        *self.ft_base_key.lock().await = None;
 
         let mut status = self.status.lock().await;
         *status = ConnectionStatus::Disconnected;
@@ -1101,6 +1111,18 @@ impl HotlineClient {
 
     pub async fn get_status(&self) -> ConnectionStatus {
         self.status.lock().await.clone()
+    }
+
+    /// Derive a per-transfer AEAD key for an HTXF file transfer.
+    /// Returns None if the connection is not using AEAD transport.
+    pub(crate) async fn derive_transfer_key(&self, reference_number: u32) -> Option<[u8; 32]> {
+        let ft_key = self.ft_base_key.lock().await;
+        ft_key.as_ref().map(|base_key| {
+            let key = hope::derive_transfer_key(base_key, reference_number);
+            println!("[HOPE-AEAD-FT] Derived transfer key for ref={}, key[0..4]={:02X?}",
+                reference_number, &key[..4]);
+            key
+        })
     }
 
     /// Read a single transaction through the HOPE reader (handles decryption if active).

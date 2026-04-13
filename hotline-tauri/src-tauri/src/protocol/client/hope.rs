@@ -205,6 +205,26 @@ pub fn normalize_cipher_name(name: &str) -> String {
     }
 }
 
+/// Derive the base key for AEAD file transfers.
+///
+/// `ikm` = encode_key_256 || decode_key_256 (64 bytes concatenated)
+/// `salt` = session_key (64 bytes)
+/// `info` = "hope-file-transfer"
+pub fn derive_ft_base_key(encode_key_256: &[u8; 32], decode_key_256: &[u8; 32], session_key: &[u8; 64]) -> [u8; 32] {
+    let mut ikm = Vec::with_capacity(64);
+    ikm.extend_from_slice(encode_key_256);
+    ikm.extend_from_slice(decode_key_256);
+    expand_key_for_aead(&ikm, session_key, "hope-file-transfer")
+}
+
+/// Derive a per-transfer key from the base key and reference number.
+///
+/// `ft_base_key` = output of `derive_ft_base_key`
+/// `ref_number` = 4-byte big-endian HTXF reference number
+pub fn derive_transfer_key(ft_base_key: &[u8; 32], ref_number: u32) -> [u8; 32] {
+    expand_key_for_aead(ft_base_key, &ref_number.to_be_bytes(), "hope-ft-ref")
+}
+
 /// Expand key material to 256-bit (32 bytes) using HKDF-SHA256.
 ///
 /// Used to derive ChaCha20-Poly1305 keys from MAC outputs that may be
