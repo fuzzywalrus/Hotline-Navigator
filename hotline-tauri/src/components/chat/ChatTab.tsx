@@ -148,31 +148,49 @@ export default function ChatTab({
             const isMention = msg.isMention || false;
             // Create unique key from userId, timestamp, message content, and index
             const uniqueKey = `${msg.userId}-${msg.timestamp.getTime()}-${msg.message.substring(0, 20)}-${index}`;
+
+            // Detect relay messages: userName is "Relay" and message is "Service | actualUser: text"
+            const relayMatch = msg.userName === 'Relay'
+              ? msg.message.match(/^(.+?)\s*\|\s*(.+?):\s(.*)$/s)
+              : null;
+
             return (
-              <div 
-                key={uniqueKey} 
+              <div
+                key={uniqueKey}
                 className={`text-sm ${
-                  isMention 
-                    ? 'bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-400 dark:border-yellow-500 pl-3 py-2 rounded-r my-1' 
+                  isMention
+                    ? 'bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-400 dark:border-yellow-500 pl-3 py-2 rounded-r my-1'
                     : ''
                 }`}
               >
                 {showTimestamps && (
                   <span className="text-xs text-gray-400 dark:text-gray-500 mr-1">{formatTime(msg.timestamp)}</span>
                 )}
-                <span
-                  className={`font-semibold ${
-                    isOwnMessage
-                      ? 'text-green-600 dark:text-green-400'
-                      : msg.isAdmin
-                        ? 'text-red-600 dark:text-red-400'
-                        : 'text-blue-600 dark:text-blue-400'
-                  }`}
-                >
-                  {msg.userName}:
-                </span>{' '}
+                {relayMatch ? (
+                  <>
+                    <span className="font-bold text-[#5865F2]">
+                      {msg.userName}: {relayMatch[1]}
+                    </span>
+                    <span className="text-gray-400 dark:text-gray-500"> | </span>
+                    <span className="font-bold text-sky-600 dark:text-sky-400">
+                      {relayMatch[2]}:
+                    </span>{' '}
+                  </>
+                ) : (
+                  <span
+                    className={`font-bold ${
+                      isOwnMessage
+                        ? 'text-green-600 dark:text-green-400'
+                        : msg.isAdmin
+                          ? 'text-red-600 dark:text-red-400'
+                          : 'text-sky-600 dark:text-sky-400'
+                    }`}
+                  >
+                    {msg.userName}:
+                  </span>
+                )}{' '}
                 <span className="text-gray-900 dark:text-gray-100">
-                  {clickableLinks ? <MarkdownText text={msg.message} /> : msg.message}
+                  {clickableLinks ? <MarkdownText text={relayMatch ? relayMatch[3] : msg.message} /> : (relayMatch ? relayMatch[3] : msg.message)}
                 </span>
               </div>
             );

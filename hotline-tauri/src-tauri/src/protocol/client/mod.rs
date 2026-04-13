@@ -1175,14 +1175,28 @@ impl HotlineClient {
                     .get_field(FieldType::UserId)
                     .and_then(|f| f.to_u16().ok())
                     .unwrap_or(0);
-                let user_name = transaction
+                let mut user_name = transaction
                     .get_field(FieldType::UserName)
                     .and_then(|f| f.to_string().ok())
                     .unwrap_or_default();
-                let message = transaction
+                let mut message = transaction
                     .get_field(FieldType::Data)
                     .and_then(|f| f.to_string().ok())
                     .unwrap_or_default();
+
+                // If the server didn't send a separate UserName field, parse it
+                // from the Data field. Hotline chat Data is typically formatted as
+                // "\r <nick>:  <message>" or "\n <nick>:  <message>".
+                if user_name.is_empty() {
+                    let trimmed = message.trim_start_matches(|c: char| c == '\r' || c == '\n');
+                    if let Some(colon_pos) = trimmed.find(':') {
+                        let candidate = trimmed[..colon_pos].trim();
+                        if !candidate.is_empty() {
+                            user_name = candidate.to_string();
+                            message = trimmed[colon_pos + 1..].trim_start().to_string();
+                        }
+                    }
+                }
 
                 // Check if this is a private chat room message (has ChatId field)
                 if let Some(chat_id_field) = transaction.get_field(FieldType::ChatId) {

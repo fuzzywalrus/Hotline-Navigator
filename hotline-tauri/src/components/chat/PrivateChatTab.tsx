@@ -104,7 +104,7 @@ export default function PrivateChatTab({ room, onSendMessage, onLeave, onSetSubj
       >
         {room.messages.map((msg, i) => (
           <div key={i} className="text-sm">
-            <span className="font-semibold text-gray-800 dark:text-gray-200">
+            <span className="font-bold text-gray-800 dark:text-gray-200">
               {msg.userName}
             </span>
             <span className="text-gray-500 dark:text-gray-400 text-xs ml-1">

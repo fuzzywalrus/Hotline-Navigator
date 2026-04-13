@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import MarkdownText from '../common/MarkdownText';
 
 interface UpdateRelease {
   tag_name: string;
@@ -172,8 +173,8 @@ export default function UpdateSettingsTab() {
               <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                 Release Notes
               </h4>
-              <div className="text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
-                {update.notes}
+              <div className="text-xs text-gray-600 dark:text-gray-400">
+                <MarkdownText text={update.notes} />
               </div>
             </div>
           )}
