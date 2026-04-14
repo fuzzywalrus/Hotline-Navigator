@@ -39,17 +39,15 @@ jobs:
         working-directory: hotline-tauri
         run: npm ci
 
-      - name: Build Windows (NSIS + MSI)
+      - name: Build Windows (NSIS installer)
         working-directory: hotline-tauri
-        run: npx tauri build
+        run: npx tauri build --bundles nsis
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: hotline-navigator-Windows-x64
-          path: |
-            hotline-tauri/src-tauri/target/release/bundle/nsis/*.exe
-            hotline-tauri/src-tauri/target/release/bundle/msi/*.msi
+          path: hotline-tauri/src-tauri/target/release/bundle/nsis/*.exe
           retention-days: 7
           if-no-files-found: error
 
@@ -58,8 +56,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          files: |
-            hotline-tauri/src-tauri/target/release/bundle/nsis/*.exe
-            hotline-tauri/src-tauri/target/release/bundle/msi/*.msi
+          files: hotline-tauri/src-tauri/target/release/bundle/nsis/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
