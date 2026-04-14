@@ -39,9 +39,10 @@ function InlineImage({ url }: { url: string }) {
 interface LinkifyProps {
   text: string;
   className?: string;
+  hideImageUrls?: boolean; // When true, hide the URL text when an inline image renders
 }
 
-export default function Linkify({ text, className }: LinkifyProps) {
+export default function Linkify({ text, className, hideImageUrls = false }: LinkifyProps) {
   const showInlineImages = usePreferencesStore((s) => s.showInlineImages);
   const parts = text.split(URL_REGEX);
 
@@ -50,7 +51,12 @@ export default function Linkify({ text, className }: LinkifyProps) {
       {parts.map((part, i) => {
         if (!URL_REGEX.test(part)) return part;
 
-        const isImage = showInlineImages && IMAGE_EXT_REGEX.test(part);
+        const isImage = (showInlineImages || hideImageUrls) && IMAGE_EXT_REGEX.test(part);
+
+        if (isImage && hideImageUrls) {
+          // Discord mode: show only the image, no URL text
+          return <InlineImage key={i} url={part} />;
+        }
 
         return (
           <span key={i}>

@@ -14,7 +14,7 @@ interface ChatHistoryMeta {
 }
 
 export default function GeneralSettingsTab() {
-  const { username, setUsername, enablePrivateMessaging, setEnablePrivateMessaging, darkMode, setDarkMode, downloadFolder, setDownloadFolder, showServerBanner, setShowServerBanner, clickableLinks, setClickableLinks, showInlineImages, setShowInlineImages, renderMarkdown, setRenderMarkdown, renderMarkdownAgreements, setRenderMarkdownAgreements, useRemoteIcons, setUseRemoteIcons, showRemoteBanners, setShowRemoteBanners, autoDetectTls, setAutoDetectTls, allowLegacyTls, setAllowLegacyTls, autoReconnect, setAutoReconnect, autoReconnectInterval, setAutoReconnectInterval, autoReconnectMaxRetries, setAutoReconnectMaxRetries, autoReconnectSliding, setAutoReconnectSliding, mentionPopup, setMentionPopup, mutedUsers, addMutedUser, removeMutedUser, watchWords, addWatchWord, removeWatchWord, enableChatHistory, setEnableChatHistory, showTimestamps, setShowTimestamps } = usePreferencesStore();
+  const { username, setUsername, enablePrivateMessaging, setEnablePrivateMessaging, darkMode, setDarkMode, downloadFolder, setDownloadFolder, showServerBanner, setShowServerBanner, clickableLinks, setClickableLinks, showInlineImages, setShowInlineImages, renderMarkdown, setRenderMarkdown, renderMarkdownAgreements, setRenderMarkdownAgreements, useRemoteIcons, setUseRemoteIcons, showRemoteBanners, setShowRemoteBanners, autoDetectTls, setAutoDetectTls, allowLegacyTls, setAllowLegacyTls, autoReconnect, setAutoReconnect, autoReconnectInterval, setAutoReconnectInterval, autoReconnectMaxRetries, setAutoReconnectMaxRetries, autoReconnectSliding, setAutoReconnectSliding, mentionPopup, setMentionPopup, mutedUsers, addMutedUser, removeMutedUser, watchWords, addWatchWord, removeWatchWord, enableChatHistory, setEnableChatHistory, showTimestamps, setShowTimestamps, chatDisplayMode, setChatDisplayMode } = usePreferencesStore();
   const { setBookmarks } = useAppStore();
   const isMobile = useIsMobile();
   const [localUsername, setLocalUsername] = useState(username);
@@ -138,31 +138,49 @@ export default function GeneralSettingsTab() {
         <div className="flex items-center justify-between mb-3">
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Chat Display Mode
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Retro displays chat like IRC. Discord groups messages by user with icons and timestamps.
+            </p>
+          </div>
+          <select
+            value={chatDisplayMode}
+            onChange={(e) => setChatDisplayMode(e.target.value as 'retro' | 'discord')}
+            className="ml-4 px-3 py-1.5 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white"
+          >
+            <option value="retro">Retro</option>
+            <option value="discord">Discord</option>
+          </select>
+        </div>
+        <div className={`flex items-center justify-between mb-3 ${chatDisplayMode === 'discord' ? 'opacity-50 pointer-events-none' : ''}`}>
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Show Timestamps
             </label>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              Display timestamps next to chat messages.
+              Display timestamps next to chat messages.{chatDisplayMode === 'discord' ? ' (always on in Discord mode)' : ''}
             </p>
           </div>
           <input
             type="checkbox"
-            checked={showTimestamps}
+            checked={chatDisplayMode === 'discord' ? true : showTimestamps}
             onChange={(e) => setShowTimestamps(e.target.checked)}
             className="ml-4 toggle toggle-primary"
           />
         </div>
-        <div className="flex items-center justify-between">
+        <div className={`flex items-center justify-between ${chatDisplayMode === 'discord' ? 'opacity-50 pointer-events-none' : ''}`}>
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Clickable Links
             </label>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              Make URLs in chat, board posts, news articles, and server agreements clickable.
+              Make URLs in chat, board posts, news articles, and server agreements clickable.{chatDisplayMode === 'discord' ? ' (always on in Discord mode)' : ''}
             </p>
           </div>
           <input
             type="checkbox"
-            checked={clickableLinks}
+            checked={chatDisplayMode === 'discord' ? true : clickableLinks}
             onChange={(e) => setClickableLinks(e.target.checked)}
             className="ml-4 toggle toggle-primary"
           />

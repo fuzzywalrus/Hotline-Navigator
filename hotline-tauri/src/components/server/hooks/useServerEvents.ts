@@ -130,8 +130,9 @@ export function useServerEvents({
         (u) => u.toLowerCase() === event.payload.userName.toLowerCase()
       );
 
-      // Look up sender's admin status from current users
-      const sender = usersRef.current.find(u => u.userId === event.payload.userId);
+      // Look up sender from current users — try by userId first, fall back to userName
+      const sender = usersRef.current.find(u => u.userId === event.payload.userId)
+        || usersRef.current.find(u => u.userName === event.payload.userName);
 
       // Check if message contains a mention of the current user or a watch word
       const isMention = !isMuted && (
@@ -145,17 +146,27 @@ export function useServerEvents({
       const rf = replayFilterRef.current;
       let isServerHistory = false;
 
-      // Lazy activation: start replay filter on first chat message if we have displayed messages
+      // Lazy activation: start replay filter on first chat message if the
+      // message matches something in our displayed history (indicating a server replay).
+      // If the first message doesn't match, go straight to live mode — no replay happening.
       if (rf.mode === 'idle') {
         const currentMessages = messagesRef.current;
         if (currentMessages.length > 0) {
           const tail = currentMessages.slice(-200).map(m => m.message.trim());
-          rf.mode = 'replay_filter';
-          rf.storedTail = tail;
-          rf.messageCount = 0;
-          rf.gapTimer = setTimeout(exitReplayFilter, 3000);
-          rf.safetyTimer = setTimeout(exitReplayFilter, 60000);
-          log('Chat', `Replay filter activated, ${tail.length} displayed messages to compare`);
+          const msgText = event.payload.message.trim();
+          const firstMatchesHistory = tail.some(stored => stored === msgText);
+
+          if (firstMatchesHistory) {
+            rf.mode = 'replay_filter';
+            rf.storedTail = tail;
+            rf.messageCount = 0;
+            rf.gapTimer = setTimeout(exitReplayFilter, 3000);
+            rf.safetyTimer = setTimeout(exitReplayFilter, 60000);
+            log('Chat', `Replay filter activated, ${tail.length} displayed messages to compare`);
+          } else {
+            rf.mode = 'live';
+            log('Chat', 'First message does not match history, skipping replay filter');
+          }
         }
       }
 
@@ -184,9 +195,16 @@ export function useServerEvents({
         if (rf.messageCount >= 200) exitReplayFilter();
       }
 
+      // Resolve icon: from user list, or fall back to own icon if it's our message
+      let iconId = sender?.iconId;
+      if (iconId == null && event.payload.userName.toLowerCase() === username.toLowerCase()) {
+        iconId = usePreferencesStore.getState().userIconId;
+      }
+
       const messageData = {
         ...event.payload,
         timestamp: new Date(),
+        iconId,
         isMention,
         isAdmin: sender?.isAdmin ?? false,
         isServerHistory,
@@ -202,6 +220,7 @@ export function useServerEvents({
           userName: messageData.userName,
           message: messageData.message,
           timestamp: messageData.timestamp.toISOString(),
+          iconId: messageData.iconId,
           isMention: messageData.isMention,
           isAdmin: messageData.isAdmin,
         });
@@ -396,15 +415,21 @@ export function useServerEvents({
           return updated;
         });
         
-        // Add leave message to chat (always show leave messages)
+        // Add leave message to chat (skip if last message is already a leave for this user)
         const leaveTime = new Date();
-        setMessages((prevMessages) => [...prevMessages, {
-          userId: event.payload.userId,
-          userName: userName,
-          message: `${userName} left`,
-          timestamp: leaveTime,
-          type: 'left',
-        }]);
+        setMessages((prevMessages) => {
+          const last = prevMessages[prevMessages.length - 1];
+          if (last?.type === 'left' && last?.userId === event.payload.userId) {
+            return prevMessages;
+          }
+          return [...prevMessages, {
+            userId: event.payload.userId,
+            userName: userName,
+            message: `${userName} left`,
+            timestamp: leaveTime,
+            type: 'left',
+          }];
+        });
 
         if (usePreferencesStore.getState().enableChatHistory) {
           useChatHistoryStore.getState().addMessage(serverId, serverName, {
@@ -463,15 +488,21 @@ export function useServerEvents({
             }];
             usersRef.current = updated;
             
-            // Show join message for new users (Swift client shows join messages unconditionally)
+            // Show join message for new users (skip if last message is already a join for this user)
             const joinTime = new Date();
-            setMessages((prevMessages) => [...prevMessages, {
-              userId: event.payload.userId,
-              userName: event.payload.userName,
-              message: `${event.payload.userName} joined`,
-              timestamp: joinTime,
-              type: 'joined',
-            }]);
+            setMessages((prevMessages) => {
+              const last = prevMessages[prevMessages.length - 1];
+              if (last?.type === 'joined' && last?.userId === event.payload.userId) {
+                return prevMessages; // Duplicate join, skip
+              }
+              return [...prevMessages, {
+                userId: event.payload.userId,
+                userName: event.payload.userName,
+                message: `${event.payload.userName} joined`,
+                timestamp: joinTime,
+                type: 'joined',
+              }];
+            });
 
             if (usePreferencesStore.getState().enableChatHistory) {
               useChatHistoryStore.getState().addMessage(serverId, serverName, {

@@ -5,6 +5,8 @@ export interface ChatMessage {
   userName: string;
   message: string;
   timestamp: Date;
+  iconId?: number;
+  type?: 'message' | 'agreement' | 'server' | 'joined' | 'left' | 'signOut';
   isMention?: boolean; // Indicates if this message mentions the current user
   isAdmin?: boolean; // Indicates if the sender is an admin
   isServerHistory?: boolean; // Message from server chat replay on reconnect
@@ -64,6 +66,7 @@ export interface StoredChatMessage {
   userName: string;
   message: string;
   timestamp: string; // ISO 8601
+  iconId?: number;
   isMention?: boolean;
   isAdmin?: boolean;
   type?: string; // 'joined' | 'left' etc.

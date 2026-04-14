@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import MarkdownText from '../common/MarkdownText';
+import DiscordChatRenderer from './DiscordChatRenderer';
 import { usePreferencesStore } from '../../stores/preferencesStore';
 
 interface ChatMessage {
@@ -7,6 +8,7 @@ interface ChatMessage {
   userName: string;
   message: string;
   timestamp: Date;
+  iconId?: number;
   type?: 'message' | 'agreement' | 'server' | 'joined' | 'left' | 'signOut';
   isMention?: boolean; // Indicates if this message mentions the current user
   isAdmin?: boolean;
@@ -48,7 +50,7 @@ export default function ChatTab({
   const isAtBottomRef = useRef(true);
   const [broadcastMode, setBroadcastMode] = useState(false);
   const [broadcastMessage, setBroadcastMessage] = useState('');
-  const { clickableLinks, showTimestamps } = usePreferencesStore();
+  const { clickableLinks, showTimestamps, chatDisplayMode } = usePreferencesStore();
 
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -100,6 +102,8 @@ export default function ChatTab({
           <div className="text-sm text-gray-500 dark:text-gray-400 text-center">
             Connected to {serverName}
           </div>
+        ) : chatDisplayMode === 'discord' ? (
+          <DiscordChatRenderer messages={messages} formatTime={formatTime} />
         ) : (
           messages.map((msg, index) => {
             // Show dividers when timestamps are enabled

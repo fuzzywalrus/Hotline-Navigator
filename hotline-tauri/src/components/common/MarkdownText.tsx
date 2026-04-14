@@ -36,14 +36,16 @@ interface MarkdownTextProps {
   className?: string;
   /** When true, wrap plain-text fallback in Linkify. Defaults to true. */
   linkify?: boolean;
+  /** When true, hide URL text for inline images (Discord mode). */
+  hideImageUrls?: boolean;
 }
 
-export default function MarkdownText({ text, className, linkify = true }: MarkdownTextProps) {
+export default function MarkdownText({ text, className, linkify = true, hideImageUrls = false }: MarkdownTextProps) {
   const renderMarkdown = usePreferencesStore((s) => s.renderMarkdown);
 
   // If the setting is off, or the text doesn't look like markdown, fall back
   if (!renderMarkdown || !containsMarkdown(text)) {
-    if (linkify) return <Linkify text={text} className={className} />;
+    if (linkify) return <Linkify text={text} className={className} hideImageUrls={hideImageUrls} />;
     return <span className={className}>{text}</span>;
   }
 

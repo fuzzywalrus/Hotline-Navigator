@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
 export type DarkModePreference = 'system' | 'light' | 'dark';
+export type ChatDisplayMode = 'retro' | 'discord';
 
 interface PreferencesState {
   username: string;
@@ -50,6 +51,10 @@ interface PreferencesState {
   setEnableChatHistory: (enabled: boolean) => void;
   showTimestamps: boolean;
   setShowTimestamps: (enabled: boolean) => void;
+
+  // Chat display mode
+  chatDisplayMode: ChatDisplayMode;
+  setChatDisplayMode: (mode: ChatDisplayMode) => void;
 
   // Connection preferences
   autoDetectTls: boolean;
@@ -153,6 +158,10 @@ export const usePreferencesStore = create<PreferencesState>()(
       setEnableChatHistory: (enableChatHistory) => set({ enableChatHistory }),
       showTimestamps: true,
       setShowTimestamps: (showTimestamps) => set({ showTimestamps }),
+
+      // Chat display mode
+      chatDisplayMode: 'discord' as ChatDisplayMode,
+      setChatDisplayMode: (chatDisplayMode) => set({ chatDisplayMode }),
 
       // Connection preferences
       autoDetectTls: false,

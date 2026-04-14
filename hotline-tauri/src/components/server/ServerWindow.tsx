@@ -122,6 +122,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
           userName: m.userName,
           message: m.message,
           timestamp: new Date(m.timestamp),
+          iconId: m.iconId,
           isMention: m.isMention,
           isAdmin: m.isAdmin,
           type: m.type as any,
