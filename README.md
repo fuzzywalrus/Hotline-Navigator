@@ -9,7 +9,7 @@ A modern, cross-platform Hotline client built with **Tauri**, React, and Rust. T
 
 This port is divergent from the original Swift/macOS Hotline client and is not a direct port, rather a recreation of it in Tauri using React and Rust, the source code providing valuable information about the protocol and how to implement it.
 
-![Hotline Navigator Screenshot](doc-media/main-screen.png)
+![Hotline Navigator Screenshot](doc-media/v0.2.5-dark-mode-discord.png)
 
 ## What the hell is Hotline?
 
@@ -42,6 +42,8 @@ This is a **Tauri-based Hotline client** that provides a modern, cross-platform 
 - **Modern Stack**: React + TypeScript frontend, Rust backend
 - **Full Protocol Support**: Chat, file sharing, news, message boards, and more
 - **Native Performance**: Tauri's lightweight architecture for fast, efficient apps
+
+![Hotline Navigator Light Mode](doc-media/main-screen.png)
 
 **Note:** This project does not include server software. This is a client for connecting to and participating on Hotline servers. If you would like to host your own Hotline server (and you should!), please check out the very capable [Mobius project](https://github.com/jhalter/mobius) or my port of [Mobius with a GUI and Swift UI](https://github.com/fuzzywalrus/mobius-macOS-GUI/tree/master).
 
