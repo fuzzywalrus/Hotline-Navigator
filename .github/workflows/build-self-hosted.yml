@@ -329,7 +329,7 @@ jobs:
 
       - name: Add Android Rust targets
         run: |
-          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
 
       - name: Install frontend dependencies
         working-directory: hotline-tauri
@@ -345,6 +345,9 @@ jobs:
 
       - name: Add NDK toolchain to PATH
         run: echo "/Users/greg/Library/Android/sdk/ndk/30.0.14904198/toolchains/llvm/prebuilt/darwin-x86_64/bin" >> $GITHUB_PATH
+
+      - name: Clean stale Android build artifacts
+        run: rm -rf hotline-tauri/src-tauri/target/*-linux-android*/release/build/openssl-sys-*/out/openssl-build/build/src
 
       - name: Build Android APK
         working-directory: hotline-tauri
