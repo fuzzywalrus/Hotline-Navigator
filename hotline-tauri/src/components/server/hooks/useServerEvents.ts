@@ -13,6 +13,7 @@ import { useChatHistoryStore } from '../../../stores/chatHistoryStore';
 interface UseServerEventsProps {
   serverId: string;
   serverName: string;
+  messagesRef: React.MutableRefObject<ChatMessage[]>;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   setUsers: React.Dispatch<React.SetStateAction<User[]>>;
   setFiles: React.Dispatch<React.SetStateAction<FileItem[]>>;
@@ -38,6 +39,7 @@ interface UseServerEventsProps {
 export function useServerEvents({
   serverId,
   serverName,
+  messagesRef,
   setMessages,
   setUsers,
   setFiles,
@@ -64,6 +66,36 @@ export function useServerEvents({
   const usersRef = useRef<User[]>([]);
   const { updateTabUnread } = useAppStore();
   const { username } = usePreferencesStore();
+
+  // ─── Replay dedup filter ──────────────────────────────────────────
+  // Tracks whether we're in the server chat replay window after login.
+  // During replay, duplicates (matching stored history) are dropped and
+  // new replay messages are flagged as "Server History."
+  const replayFilterRef = useRef<{
+    mode: 'idle' | 'replay_filter' | 'live';
+    storedTail: string[];  // last 200 stored message texts for comparison
+    messageCount: number;  // messages processed during filter
+    gapTimer: ReturnType<typeof setTimeout> | null;
+    safetyTimer: ReturnType<typeof setTimeout> | null;
+  }>({
+    mode: 'idle',
+    storedTail: [],
+    messageCount: 0,
+    gapTimer: null,
+    safetyTimer: null,
+  });
+
+  const exitReplayFilter = () => {
+    const rf = replayFilterRef.current;
+    if (rf.gapTimer) clearTimeout(rf.gapTimer);
+    if (rf.safetyTimer) clearTimeout(rf.safetyTimer);
+    rf.mode = 'live';
+    rf.storedTail = [];
+    rf.messageCount = 0;
+    rf.gapTimer = null;
+    rf.safetyTimer = null;
+    log('Chat', 'Replay filter ended, entering live mode');
+  };
   
   // Helper to check if this server's tab is active
   const isTabActive = () => {
@@ -109,18 +141,62 @@ export function useServerEvents({
 
       log('Chat', 'Chat message received', { userId: event.payload.userId, userName: event.payload.userName });
 
+      // ─── Replay dedup check ───
+      const rf = replayFilterRef.current;
+      let isServerHistory = false;
+
+      // Lazy activation: start replay filter on first chat message if we have displayed messages
+      if (rf.mode === 'idle') {
+        const currentMessages = messagesRef.current;
+        if (currentMessages.length > 0) {
+          const tail = currentMessages.slice(-200).map(m => m.message.trim());
+          rf.mode = 'replay_filter';
+          rf.storedTail = tail;
+          rf.messageCount = 0;
+          rf.gapTimer = setTimeout(exitReplayFilter, 3000);
+          rf.safetyTimer = setTimeout(exitReplayFilter, 60000);
+          log('Chat', `Replay filter activated, ${tail.length} displayed messages to compare`);
+        }
+      }
+
+      if (rf.mode === 'replay_filter') {
+        const msgText = event.payload.message.trim();
+        const isDuplicate = rf.storedTail.some(stored => stored === msgText);
+
+        if (isDuplicate) {
+          log('Chat', 'Replay filter: skipping duplicate message');
+          // Reset gap timer (more replay messages coming)
+          if (rf.gapTimer) clearTimeout(rf.gapTimer);
+          rf.gapTimer = setTimeout(exitReplayFilter, 3000);
+          rf.messageCount++;
+          if (rf.messageCount >= 200) exitReplayFilter();
+          return; // Drop the duplicate
+        }
+
+        // Not a duplicate — it's a message from while we were offline
+        isServerHistory = true;
+        log('Chat', 'Replay filter: new message from server history');
+
+        // Reset gap timer
+        if (rf.gapTimer) clearTimeout(rf.gapTimer);
+        rf.gapTimer = setTimeout(exitReplayFilter, 3000);
+        rf.messageCount++;
+        if (rf.messageCount >= 200) exitReplayFilter();
+      }
+
       const messageData = {
         ...event.payload,
         timestamp: new Date(),
         isMention,
         isAdmin: sender?.isAdmin ?? false,
+        isServerHistory,
       };
 
       setMessages((prev) => [...prev, messageData]);
-      if (!isMuted) soundsRef.current.playChatSound();
+      if (!isMuted && !isServerHistory) soundsRef.current.playChatSound();
 
-      // Persist to encrypted chat history
-      if (usePreferencesStore.getState().enableChatHistory) {
+      // Persist to encrypted chat history (skip server history — it's already from replay)
+      if (usePreferencesStore.getState().enableChatHistory && !isServerHistory) {
         useChatHistoryStore.getState().addMessage(serverId, serverName, {
           userId: messageData.userId,
           userName: messageData.userName,
@@ -716,6 +792,24 @@ export function useServerEvents({
         setConnectionStatus(newStatus);
         if (newStatus === 'logged-in') {
           soundsRef.current.playLoggedInSound();
+
+          // Reset replay filter to idle so it re-activates lazily
+          // on the first incoming chat message (handles reconnect)
+          const rf = replayFilterRef.current;
+          if (rf.gapTimer) clearTimeout(rf.gapTimer);
+          if (rf.safetyTimer) clearTimeout(rf.safetyTimer);
+          rf.mode = 'idle';
+          rf.storedTail = [];
+          rf.messageCount = 0;
+        }
+        if (newStatus === 'disconnected' || newStatus === 'failed') {
+          // Reset replay filter on disconnect
+          const rf = replayFilterRef.current;
+          if (rf.gapTimer) clearTimeout(rf.gapTimer);
+          if (rf.safetyTimer) clearTimeout(rf.safetyTimer);
+          rf.mode = 'idle';
+          rf.storedTail = [];
+          rf.messageCount = 0;
         }
       }
     );

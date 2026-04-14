@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import MarkdownText from '../common/MarkdownText';
 import { usePreferencesStore } from '../../stores/preferencesStore';
 
@@ -10,6 +10,7 @@ interface ChatMessage {
   type?: 'message' | 'agreement' | 'server' | 'joined' | 'left' | 'signOut';
   isMention?: boolean; // Indicates if this message mentions the current user
   isAdmin?: boolean;
+  isServerHistory?: boolean;
 }
 
 interface ChatTabProps {
@@ -101,14 +102,39 @@ export default function ChatTab({
           </div>
         ) : (
           messages.map((msg, index) => {
+            // Show dividers when timestamps are enabled
+            const prevMsg = index > 0 ? messages[index - 1] : null;
+            const showServerHistoryDivider = msg.isServerHistory && (!prevMsg || !prevMsg.isServerHistory);
+            const showLiveDivider = !msg.isServerHistory && prevMsg?.isServerHistory;
+
+            // Render dividers for server history / live transitions
+            const divider = (
+              <>
+                {showServerHistoryDivider && (
+                  <div className="flex items-center gap-2 my-2">
+                    <div className="flex-1 border-t border-gray-300 dark:border-gray-600" />
+                    <span className="text-xs text-gray-400 dark:text-gray-500 italic">Server History</span>
+                    <div className="flex-1 border-t border-gray-300 dark:border-gray-600" />
+                  </div>
+                )}
+                {showLiveDivider && (
+                  <div className="flex items-center gap-2 my-2">
+                    <div className="flex-1 border-t border-gray-300 dark:border-gray-600" />
+                    <span className="text-xs text-gray-400 dark:text-gray-500">{formatTime(msg.timestamp)}</span>
+                    <div className="flex-1 border-t border-gray-300 dark:border-gray-600" />
+                  </div>
+                )}
+              </>
+            );
+
             // Check if this is a broadcast message (from Server)
             const isBroadcast = msg.userName === 'Server' && msg.userId === 0;
-            
+
             if (isBroadcast) {
               // Create unique key for broadcast
               const uniqueKey = `broadcast-${msg.timestamp.getTime()}-${msg.message.substring(0, 20)}-${index}`;
               return (
-                <div key={uniqueKey} className="my-2">
+                <React.Fragment key={uniqueKey}>{divider}<div className="my-2">
                   <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 flex items-start gap-3">
                     <svg className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
@@ -125,25 +151,25 @@ export default function ChatTab({
                       </div>
                     </div>
                   </div>
-                </div>
+                </div></React.Fragment>
               );
             }
-            
+
             // Check if this is a join/leave message
             if (msg.type === 'joined' || msg.type === 'left') {
               const uniqueKey = `${msg.type}-${msg.userId}-${msg.timestamp.getTime()}-${index}`;
               return (
-                <div key={uniqueKey} className="text-sm text-center my-1">
-                  {showTimestamps && (
+                <React.Fragment key={uniqueKey}>{divider}<div className="text-sm text-center my-1">
+                  {showTimestamps && !msg.isServerHistory && (
                     <span className="text-xs text-gray-400 dark:text-gray-500 mr-1">{formatTime(msg.timestamp)}</span>
                   )}
                   <span className="italic text-gray-500 dark:text-gray-400">
                     {msg.message}
                   </span>
-                </div>
+                </div></React.Fragment>
               );
             }
-            
+
             const isOwnMessage = msg.userName === 'Me';
             const isMention = msg.isMention || false;
             // Create unique key from userId, timestamp, message content, and index
@@ -155,15 +181,14 @@ export default function ChatTab({
               : null;
 
             return (
-              <div
-                key={uniqueKey}
+              <React.Fragment key={uniqueKey}>{divider}<div
                 className={`text-sm ${
                   isMention
                     ? 'bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-400 dark:border-yellow-500 pl-3 py-2 rounded-r my-1'
                     : ''
                 }`}
               >
-                {showTimestamps && (
+                {showTimestamps && !msg.isServerHistory && (
                   <span className="text-xs text-gray-400 dark:text-gray-500 mr-1">{formatTime(msg.timestamp)}</span>
                 )}
                 {relayMatch ? (
@@ -192,7 +217,7 @@ export default function ChatTab({
                 <span className="text-gray-900 dark:text-gray-100">
                   {clickableLinks ? <MarkdownText text={relayMatch ? relayMatch[3] : msg.message} /> : (relayMatch ? relayMatch[3] : msg.message)}
                 </span>
-              </div>
+              </div></React.Fragment>
             );
           })
         )}

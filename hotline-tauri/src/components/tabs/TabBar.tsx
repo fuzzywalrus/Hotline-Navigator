@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../../stores/appStore';
 
 export default function TabBar() {
-  const { tabs, activeTabId, setActiveTab, removeTab, removeActiveServer } = useAppStore();
+  const { tabs, activeTabId, setActiveTab, removeTab, removeActiveServer, reconnectServer } = useAppStore();
 
   const handleCloseTab = async (e: React.MouseEvent, tabId: string) => {
     e.stopPropagation();
@@ -85,6 +85,20 @@ export default function TabBar() {
               </span>
             )}
             
+            {/* Reconnect button - show for disconnected/failed server tabs */}
+            {tab.type === 'server' && tab.serverId && (tab.connectionStatus === 'disconnected' || tab.connectionStatus === 'failed') && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  reconnectServer(tab.serverId!);
+                }}
+                className="flex-shrink-0 ml-1 w-4 h-4 rounded hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center justify-center text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                aria-label="Reconnect"
+                title="Reconnect"
+              >
+                ↺
+              </button>
+            )}
             {/* Close button - show for server and mnemosyne tabs, not tracker tabs */}
             {(tab.type === 'server' || tab.type === 'mnemosyne') && (
               <button

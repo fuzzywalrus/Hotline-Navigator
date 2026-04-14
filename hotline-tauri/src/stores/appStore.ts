@@ -1,5 +1,7 @@
 import { create } from 'zustand';
+import { invoke } from '@tauri-apps/api/core';
 import { Bookmark, ConnectionStatus, MnemosyneBookmark, TrackerBookmark, Transfer } from '../types';
+import { usePreferencesStore } from './preferencesStore';
 
 const MNEMOSYNE_BOOKMARKS_STORAGE_KEY = 'mnemosyne-bookmarks';
 const HOTLINE_PREFERENCES_STORAGE_KEY = 'hotline-preferences';
@@ -99,6 +101,7 @@ interface AppState {
   setFocusedServer: (serverId: string | null) => void; // Deprecated
   addActiveServer: (serverId: string, info: ServerInfo) => void;
   removeActiveServer: (serverId: string) => void;
+  reconnectServer: (serverId: string) => Promise<void>;
 
   // Tab actions
   addTab: (tab: Tab) => void;
@@ -297,6 +300,38 @@ export const useAppStore = create<AppState>((set) => ({
       serverInfo: newServerInfo,
     };
   }),
+
+  reconnectServer: async (serverId) => {
+    const state = useAppStore.getState();
+    const info = state.serverInfo.get(serverId);
+    if (!info) return;
+
+    // Find the matching bookmark by address
+    const bookmark = state.bookmarks.find(b => b.address === info.address);
+    if (!bookmark) return;
+
+    // Read preferences for connection settings
+    const prefs = usePreferencesStore.getState();
+    const { username, userIconId, autoDetectTls, allowLegacyTls } = prefs;
+
+    // Disconnect old client
+    try {
+      await invoke('disconnect_from_server', { serverId });
+    } catch { /* ignore */ }
+
+    // Reconnect with same bookmark
+    try {
+      await invoke('connect_to_server', {
+        bookmark,
+        username,
+        userIconId,
+        autoDetectTls: autoDetectTls && !bookmark.tls,
+        allowLegacyTls,
+      });
+    } catch (error) {
+      console.error('Reconnect failed:', error);
+    }
+  },
 
   setShowAbout: (show) => set({ showAbout: show }),
   setShowUpdate: (show) => set({ showUpdate: show }),

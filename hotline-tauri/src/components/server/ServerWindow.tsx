@@ -45,6 +45,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const messagesRef = useRef<ChatMessage[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [userAccess, setUserAccess] = useState<number>(0); // User access permissions (bitmask)
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -279,10 +280,16 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     setCurrentPath(prevPath);
   };
 
+  // Keep messagesRef in sync for dedup comparisons
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
   // Use server events hook (handles all event listeners)
   useServerEvents({
     serverId,
     serverName,
+    messagesRef,
     setMessages, // Used for receiving chat messages from server
     setUsers,
     setFiles,

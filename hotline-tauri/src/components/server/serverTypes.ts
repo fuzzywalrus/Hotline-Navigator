@@ -7,6 +7,7 @@ export interface ChatMessage {
   timestamp: Date;
   isMention?: boolean; // Indicates if this message mentions the current user
   isAdmin?: boolean; // Indicates if the sender is an admin
+  isServerHistory?: boolean; // Message from server chat replay on reconnect
 }
 
 export interface User {
@@ -66,6 +67,7 @@ export interface StoredChatMessage {
   isMention?: boolean;
   isAdmin?: boolean;
   type?: string; // 'joined' | 'left' etc.
+  isServerHistory?: boolean;
 }
 
 export type ViewTab = 'chat' | 'board' | 'news' | 'files' | `pchat-${number}`;
