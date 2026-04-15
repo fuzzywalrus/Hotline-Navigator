@@ -873,6 +873,124 @@ pub async fn check_for_updates() -> Result<Option<UpdateRelease>, String> {
     }))
 }
 
+// --- Link preview (OpenGraph) ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkPreviewData {
+    pub url: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub image: Option<String>,
+    pub site_name: Option<String>,
+}
+
+#[tauri::command]
+pub async fn fetch_link_preview(url: String) -> Result<LinkPreviewData, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .map_err(|e| format!("HTTP client error: {e}"))?;
+
+    let response = client
+        .get(&url)
+        .header("User-Agent", "Mozilla/5.0 (compatible; HotlineNavigator/0.2.6)")
+        .header("Accept", "text/html")
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("HTTP {}", response.status()));
+    }
+
+    // Only parse HTML responses
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if !content_type.contains("text/html") {
+        return Ok(LinkPreviewData {
+            url,
+            title: None,
+            description: None,
+            image: None,
+            site_name: None,
+        });
+    }
+
+    // Read up to 64KB to find OG tags (they're in <head>)
+    let bytes = response.bytes().await.map_err(|e| format!("Read error: {e}"))?;
+    let html = String::from_utf8_lossy(&bytes[..bytes.len().min(65536)]);
+
+    fn extract_meta(html: &str, property: &str) -> Option<String> {
+        // Match <meta property="og:X" content="..."> or <meta content="..." property="og:X">
+        let prop_pattern = format!("property=\"{}\"", property);
+        let name_pattern = format!("name=\"{}\"", property);
+
+        for line in html.split('<') {
+            let lower = line.to_lowercase();
+            if !lower.starts_with("meta ") {
+                continue;
+            }
+            if !lower.contains(&prop_pattern) && !lower.contains(&name_pattern) {
+                continue;
+            }
+            // Extract content="..."
+            if let Some(start) = line.find("content=\"").or_else(|| line.find("content='")) {
+                let quote = line.as_bytes()[start + 8] as char;
+                let val_start = start + 9;
+                if let Some(end) = line[val_start..].find(quote) {
+                    let value = &line[val_start..val_start + end];
+                    if !value.is_empty() {
+                        return Some(html_decode(value));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn html_decode(s: &str) -> String {
+        s.replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&#39;", "'")
+            .replace("&#x27;", "'")
+    }
+
+    // Also try to extract <title> as fallback
+    fn extract_title(html: &str) -> Option<String> {
+        let lower = html.to_lowercase();
+        let start = lower.find("<title")?.checked_add(6)?;
+        let after_tag = lower[start..].find('>')? + start + 1;
+        let end = lower[after_tag..].find("</title")? + after_tag;
+        let title = html[after_tag..end].trim();
+        if title.is_empty() { None } else { Some(html_decode(title).to_string()) }
+    }
+
+    let og_title = extract_meta(&html, "og:title");
+    let og_description = extract_meta(&html, "og:description");
+    let og_image = extract_meta(&html, "og:image");
+    let og_site_name = extract_meta(&html, "og:site_name");
+
+    // Fallbacks
+    let title = og_title.or_else(|| extract_meta(&html, "twitter:title")).or_else(|| extract_title(&html));
+    let description = og_description.or_else(|| extract_meta(&html, "twitter:description")).or_else(|| extract_meta(&html, "description"));
+    let image = og_image.or_else(|| extract_meta(&html, "twitter:image"));
+
+    Ok(LinkPreviewData {
+        url,
+        title,
+        description,
+        image,
+        site_name: og_site_name,
+    })
+}
+
 // --- Mnemosyne HTTP proxy (bypasses CORS) ---
 
 #[tauri::command]

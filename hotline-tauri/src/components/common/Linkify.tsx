@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { usePreferencesStore } from '../../stores/preferencesStore';
+import LinkPreview from './LinkPreview';
 
 const URL_REGEX = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/g;
 const IMAGE_EXT_REGEX = /\.(png|jpe?g|gif|webp|bmp|svg)(\?[^\s]*)?$/i;
@@ -44,6 +45,11 @@ interface LinkifyProps {
 
 export default function Linkify({ text, className, hideImageUrls = false }: LinkifyProps) {
   const showInlineImages = usePreferencesStore((s) => s.showInlineImages);
+  const chatDisplayMode = usePreferencesStore((s) => s.chatDisplayMode);
+  const isDiscordMode = chatDisplayMode === 'discord';
+
+  // In Discord mode, always show inline images
+  const effectiveShowImages = showInlineImages || isDiscordMode;
   const parts = text.split(URL_REGEX);
 
   return (
@@ -51,7 +57,7 @@ export default function Linkify({ text, className, hideImageUrls = false }: Link
       {parts.map((part, i) => {
         if (!URL_REGEX.test(part)) return part;
 
-        const isImage = (showInlineImages || hideImageUrls) && IMAGE_EXT_REGEX.test(part);
+        const isImage = effectiveShowImages && IMAGE_EXT_REGEX.test(part);
 
         if (isImage && hideImageUrls) {
           // Discord mode: show only the image, no URL text
@@ -73,6 +79,7 @@ export default function Linkify({ text, className, hideImageUrls = false }: Link
               {part}
             </a>
             {isImage && <InlineImage url={part} />}
+            {!isImage && isDiscordMode && <LinkPreview url={part} />}
           </span>
         );
       })}
