@@ -6,6 +6,7 @@ import { showNotification } from '../../stores/notificationStore';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import type { Bookmark } from '../../types';
 import { useChatHistoryStore } from '../../stores/chatHistoryStore';
+import ChatHistoryPassphraseDialog from './ChatHistoryPassphraseDialog';
 
 interface ChatHistoryMeta {
   serverName: string;
@@ -14,7 +15,7 @@ interface ChatHistoryMeta {
 }
 
 export default function GeneralSettingsTab() {
-  const { username, setUsername, enablePrivateMessaging, setEnablePrivateMessaging, darkMode, setDarkMode, downloadFolder, setDownloadFolder, showServerBanner, setShowServerBanner, clickableLinks, setClickableLinks, showInlineImages, setShowInlineImages, renderMarkdown, setRenderMarkdown, renderMarkdownAgreements, setRenderMarkdownAgreements, useRemoteIcons, setUseRemoteIcons, showRemoteBanners, setShowRemoteBanners, autoDetectTls, setAutoDetectTls, allowLegacyTls, setAllowLegacyTls, autoReconnect, setAutoReconnect, autoReconnectInterval, setAutoReconnectInterval, autoReconnectMaxRetries, setAutoReconnectMaxRetries, autoReconnectSliding, setAutoReconnectSliding, mentionPopup, setMentionPopup, mutedUsers, addMutedUser, removeMutedUser, watchWords, addWatchWord, removeWatchWord, enableChatHistory, setEnableChatHistory, showTimestamps, setShowTimestamps, chatDisplayMode, setChatDisplayMode } = usePreferencesStore();
+  const { username, setUsername, enablePrivateMessaging, setEnablePrivateMessaging, darkMode, setDarkMode, downloadFolder, setDownloadFolder, showServerBanner, setShowServerBanner, clickableLinks, setClickableLinks, showInlineImages, setShowInlineImages, renderMarkdown, setRenderMarkdown, renderMarkdownAgreements, setRenderMarkdownAgreements, useRemoteIcons, setUseRemoteIcons, showRemoteBanners, setShowRemoteBanners, autoDetectTls, setAutoDetectTls, allowLegacyTls, setAllowLegacyTls, autoReconnect, setAutoReconnect, autoReconnectInterval, setAutoReconnectInterval, autoReconnectMaxRetries, setAutoReconnectMaxRetries, autoReconnectSliding, setAutoReconnectSliding, mentionPopup, setMentionPopup, mutedUsers, addMutedUser, removeMutedUser, watchWords, addWatchWord, removeWatchWord, enableChatHistory, setEnableChatHistory, showTimestamps, setShowTimestamps, chatDisplayMode, setChatDisplayMode, showLinkPreviews, setShowLinkPreviews } = usePreferencesStore();
   const { setBookmarks } = useAppStore();
   const isMobile = useIsMobile();
   const [localUsername, setLocalUsername] = useState(username);
@@ -23,15 +24,17 @@ export default function GeneralSettingsTab() {
   const [watchInput, setWatchInput] = useState('');
   const [chatHistoryServers, setChatHistoryServers] = useState<Record<string, ChatHistoryMeta>>({});
   const [clearingHistory, setClearingHistory] = useState<string | null>(null);
+  const [passphraseDialog, setPassphraseDialog] = useState<'create' | null>(null);
+  const chatHistoryUnlocked = useChatHistoryStore((s) => s.unlocked);
 
   useEffect(() => {
     setLocalUsername(username);
   }, [username]);
 
-  // Load chat history metadata
+  // Load chat history metadata (re-run when vault unlocks)
   useEffect(() => {
     useChatHistoryStore.getState().getServersWithHistory().then(setChatHistoryServers);
-  }, []);
+  }, [chatHistoryUnlocked]);
 
   const handleSave = async () => {
     const newUsername = localUsername.trim() || 'guest';
@@ -200,6 +203,22 @@ export default function GeneralSettingsTab() {
                 type="checkbox"
                 checked={showInlineImages}
                 onChange={(e) => setShowInlineImages(e.target.checked)}
+                className="ml-4 toggle toggle-primary"
+              />
+            </div>
+            <div className="flex items-center justify-between mt-3 ml-4 pl-4 border-l-2 border-gray-200 dark:border-gray-700">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Link Previews
+                </label>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Show rich previews (title, description, image) for links in Discord chat mode. Fetches page metadata from external URLs.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={showLinkPreviews}
+                onChange={(e) => setShowLinkPreviews(e.target.checked)}
                 className="ml-4 toggle toggle-primary"
               />
             </div>
@@ -589,7 +608,18 @@ export default function GeneralSettingsTab() {
             <input
               type="checkbox"
               checked={enableChatHistory}
-              onChange={(e) => setEnableChatHistory(e.target.checked)}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  // Show passphrase creation dialog
+                  setPassphraseDialog('create');
+                } else {
+                  // Disable and lock
+                  if (window.confirm('Disable chat history? Existing history will remain encrypted on disk but won\'t be used. You can clear it below before disabling.')) {
+                    setEnableChatHistory(false);
+                    useChatHistoryStore.getState().lock();
+                  }
+                }
+              }}
               className="sr-only peer"
             />
             <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:after:border-gray-500 peer-checked:bg-blue-600"></div>
@@ -597,9 +627,29 @@ export default function GeneralSettingsTab() {
         </div>
         <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
           {enableChatHistory
-            ? 'Chat messages are stored encrypted on your device while connected to servers.'
-            : 'Chat history is disabled. Messages are not saved between sessions.'}
+            ? chatHistoryUnlocked
+              ? 'Chat history is encrypted and active. Stores the last 1,000 messages per server.'
+              : 'Chat history is enabled but locked. Enter your passphrase to unlock.'
+            : 'Chat history is disabled. Messages are not saved between sessions. When enabled, you\'ll set a passphrase to encrypt stored messages — you\'ll need it each time you open the app.'}
         </p>
+
+        {passphraseDialog && (
+          <ChatHistoryPassphraseDialog
+            mode={passphraseDialog}
+            onSubmit={async (passphrase) => {
+              const ok = await useChatHistoryStore.getState().unlock(passphrase);
+              if (ok) {
+                setEnableChatHistory(true);
+                setPassphraseDialog(null);
+                // Load server history metadata
+                const meta = await useChatHistoryStore.getState().getServersWithHistory();
+                setChatHistoryServers(meta);
+              }
+              return ok;
+            }}
+            onCancel={() => setPassphraseDialog(null)}
+          />
+        )}
 
         {enableChatHistory && Object.keys(chatHistoryServers).length > 0 ? (
           <div className="space-y-2 mb-4">

@@ -7,7 +7,6 @@ import { log, error as logError } from '../utils/logger';
 const MAX_MESSAGES_PER_SERVER = 1000;
 const SAVE_DEBOUNCE_MS = 2000;
 const META_KEY = '__meta';
-const STRONGHOLD_PASSWORD = 'hotline-navigator-chat-v1';
 
 interface ChatHistoryMeta {
   serverName: string;
@@ -16,11 +15,15 @@ interface ChatHistoryMeta {
 }
 
 interface ChatHistoryState {
+  // Whether the vault is unlocked and ready
+  unlocked: boolean;
   // In-memory message cache
   messages: Map<string, StoredChatMessage[]>;
   // Track which servers have been loaded from disk
   loaded: Set<string>;
   // Actions
+  unlock: (passphrase: string) => Promise<boolean>;
+  lock: () => void;
   addMessage: (serverId: string, serverName: string, msg: StoredChatMessage) => void;
   loadHistory: (serverId: string) => Promise<StoredChatMessage[]>;
   getServersWithHistory: () => Promise<Record<string, ChatHistoryMeta>>;
@@ -34,15 +37,16 @@ interface ChatHistoryState {
 let strongholdInstance: Stronghold | null = null;
 let strongholdInitPromise: Promise<Stronghold> | null = null;
 
-async function getStronghold(): Promise<Stronghold> {
-  if (strongholdInstance) return strongholdInstance;
-  if (strongholdInitPromise) return strongholdInitPromise;
+async function initStronghold(passphrase: string): Promise<Stronghold> {
+  // Reset if re-initializing with new passphrase
+  strongholdInstance = null;
+  strongholdInitPromise = null;
 
   strongholdInitPromise = (async () => {
     const dir = await appDataDir();
     const path = `${dir}/chat-history.hold`;
     log('Chat', 'Initializing chat history vault', path);
-    const sh = await Stronghold.load(path, STRONGHOLD_PASSWORD);
+    const sh = await Stronghold.load(path, passphrase);
     strongholdInstance = sh;
     log('Chat', 'Chat history vault ready');
     return sh;
@@ -51,8 +55,13 @@ async function getStronghold(): Promise<Stronghold> {
   return strongholdInitPromise;
 }
 
+function getStronghold(): Stronghold {
+  if (!strongholdInstance) throw new Error('Chat history vault is locked');
+  return strongholdInstance;
+}
+
 async function getStore() {
-  const sh = await getStronghold();
+  const sh = getStronghold();
   let client;
   try {
     client = await sh.loadClient('chat');
@@ -91,7 +100,7 @@ async function storeRemove(key: string): Promise<void> {
 }
 
 async function strongholdSave(): Promise<void> {
-  const sh = await getStronghold();
+  const sh = getStronghold();
   await sh.save();
 }
 
@@ -143,10 +152,38 @@ function debouncedSave(serverId: string, serverName: string, messages: StoredCha
 // --- Store ---
 
 export const useChatHistoryStore = create<ChatHistoryState>((set, get) => ({
+  unlocked: false,
   messages: new Map(),
   loaded: new Set(),
 
+  unlock: async (passphrase: string) => {
+    try {
+      await initStronghold(passphrase);
+      // Verify we can actually access the store (wrong passphrase throws)
+      await getStore();
+      set({ unlocked: true });
+      return true;
+    } catch (e) {
+      logError('Chat', 'Failed to unlock vault', e);
+      strongholdInstance = null;
+      strongholdInitPromise = null;
+      set({ unlocked: false });
+      return false;
+    }
+  },
+
+  lock: () => {
+    // Cancel pending saves
+    for (const [, { timer }] of pendingSaves) clearTimeout(timer);
+    pendingSaves.clear();
+    strongholdInstance = null;
+    strongholdInitPromise = null;
+    set({ unlocked: false, messages: new Map(), loaded: new Set() });
+  },
+
   addMessage: (serverId, serverName, msg) => {
+    if (!get().unlocked) return; // Silently skip if vault is locked
+
     const { messages } = get();
     const existing = messages.get(serverId) || [];
     const updated = [...existing, msg];
@@ -163,6 +200,8 @@ export const useChatHistoryStore = create<ChatHistoryState>((set, get) => ({
   },
 
   loadHistory: async (serverId) => {
+    if (!get().unlocked) return [];
+
     const { loaded, messages } = get();
     if (loaded.has(serverId)) {
       log('Chat', 'History already loaded (cached)', serverId);
@@ -195,6 +234,7 @@ export const useChatHistoryStore = create<ChatHistoryState>((set, get) => ({
   },
 
   getServersWithHistory: async () => {
+    if (!get().unlocked) return {};
     return loadMeta();
   },
 
@@ -248,6 +288,8 @@ export const useChatHistoryStore = create<ChatHistoryState>((set, get) => ({
   },
 
   flushPending: async () => {
+    if (!get().unlocked) return;
+
     // Force-save all pending debounced writes (call on app close)
     for (const [serverId, { serverName, timer }] of pendingSaves) {
       clearTimeout(timer);

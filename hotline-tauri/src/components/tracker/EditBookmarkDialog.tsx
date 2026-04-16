@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../../stores/appStore';
 import type { Bookmark } from '../../types';
+import { savePassword, deletePassword } from '../../utils/passwordVault';
 
 interface EditBookmarkDialogProps {
   bookmark: Bookmark;
@@ -36,13 +37,15 @@ export default function EditBookmarkDialog({ bookmark, onClose, mode = 'edit', o
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    const hasNewPassword = !!formData.password;
     const finalBookmark: Bookmark = {
       ...bookmark,
       name: formData.name || `${formData.address}:${formData.port}`,
       address: formData.address,
       port: parseInt(formData.port),
       login: formData.login,
-      password: formData.password || undefined,
+      password: undefined, // Never pass plaintext password to save_bookmark
+      hasPassword: hasNewPassword || bookmark.hasPassword,
       tls: formData.tls,
       hope: formData.hope,
       autoConnect: formData.autoConnect,
@@ -50,6 +53,14 @@ export default function EditBookmarkDialog({ bookmark, onClose, mode = 'edit', o
     };
 
     try {
+      // Store password in secure vault
+      if (hasNewPassword) {
+        await savePassword(bookmark.id, formData.password);
+      } else if (!formData.password && bookmark.hasPassword) {
+        // User cleared the password field — remove from vault
+        await deletePassword(bookmark.id);
+        finalBookmark.hasPassword = false;
+      }
       await invoke('save_bookmark', { bookmark: finalBookmark });
       if (mode === 'add') {
         addBookmark(finalBookmark);
@@ -196,7 +207,7 @@ export default function EditBookmarkDialog({ bookmark, onClose, mode = 'edit', o
               value={formData.password}
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Leave empty to keep current"
+              placeholder={bookmark.hasPassword ? 'Stored securely — leave empty to keep' : 'Optional'}
             />
           </div>
 

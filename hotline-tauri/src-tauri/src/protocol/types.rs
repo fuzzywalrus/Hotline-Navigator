@@ -15,8 +15,12 @@ pub struct Bookmark {
     pub address: String,
     pub port: u16,
     pub login: String,
+    /// Password — used for IPC transit. Stripped before writing to disk.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
+    /// True when a password is stored in the secure vault.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub has_password: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<u16>,
     #[serde(default)]

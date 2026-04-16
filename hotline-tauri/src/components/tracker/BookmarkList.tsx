@@ -8,6 +8,7 @@ import EditBookmarkDialog from './EditBookmarkDialog';
 import BookmarkInfoDialog from './BookmarkInfoDialog';
 import ErrorModal from './ErrorModal';
 import { classifyError, type ClassifiedError } from '../../utils/errorClassifier';
+import { getPassword } from '../../utils/passwordVault';
 import { useContextMenu, ContextMenuRenderer, type ContextMenuItem } from '../common/ContextMenu';
 import {
   DndContext,
@@ -140,8 +141,14 @@ export default function BookmarkList({ bookmarks, searchQuery = '' }: BookmarkLi
     });
 
     try {
+      // Load password from secure vault if one is stored
+      const connectBookmark = { ...bookmark };
+      if (bookmark.hasPassword && !bookmark.password) {
+        const vaultPassword = await getPassword(bookmark.id);
+        if (vaultPassword) connectBookmark.password = vaultPassword;
+      }
       const result = await invoke<{ serverId: string; tls: boolean; port: number }>('connect_to_server', {
-        bookmark,
+        bookmark: connectBookmark,
         username,
         userIconId,
         autoDetectTls: autoDetectTls && !bookmark.tls, // Only probe if not already TLS

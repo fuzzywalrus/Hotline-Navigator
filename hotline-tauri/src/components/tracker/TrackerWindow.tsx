@@ -8,6 +8,7 @@ import ConnectDialog from './ConnectDialog';
 import SettingsView from '../settings/SettingsView';
 import NotificationLog from '../notifications/NotificationLog';
 import SearchFeaturePrompt from './SearchFeaturePrompt';
+import { getPassword, savePassword } from '../../utils/passwordVault';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import type { Bookmark } from '../../types';
 
@@ -25,10 +26,31 @@ export default function TrackerWindow() {
   const autoConnectRan = useRef(false);
 
   // Load bookmarks from disk on mount - replace entire array to avoid duplicates
+  // Also migrate any legacy plaintext passwords into the secure vault.
   useEffect(() => {
     const loadBookmarks = async () => {
       try {
         const savedBookmarks = await invoke<Bookmark[]>('get_bookmarks');
+        let needsResave = false;
+
+        // Migrate legacy plaintext passwords to secure vault
+        for (const bm of savedBookmarks) {
+          if (bm.password) {
+            await savePassword(bm.id, bm.password);
+            bm.hasPassword = true;
+            bm.password = undefined;
+            needsResave = true;
+          }
+        }
+
+        if (needsResave) {
+          // Re-save bookmarks with passwords stripped
+          for (const bm of savedBookmarks) {
+            await invoke('save_bookmark', { bookmark: bm });
+          }
+          console.log('Migrated bookmark passwords to secure vault');
+        }
+
         setBookmarks(savedBookmarks);
       } catch (error) {
         console.error('Failed to load bookmarks:', error);
@@ -64,8 +86,14 @@ export default function TrackerWindow() {
       (async () => {
         try {
           console.log(`Auto-connecting to ${bookmark.name}...`);
+          // Load password from secure vault
+          const connectBookmark = { ...bookmark };
+          if (bookmark.hasPassword) {
+            const vaultPassword = await getPassword(bookmark.id);
+            if (vaultPassword) connectBookmark.password = vaultPassword;
+          }
           const result = await invoke<{ serverId: string; tls: boolean; port: number }>('connect_to_server', {
-            bookmark,
+            bookmark: connectBookmark,
             username,
             userIconId,
             autoDetectTls: autoDetectTls && !bookmark.tls,

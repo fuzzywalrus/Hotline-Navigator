@@ -1,6 +1,8 @@
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from './stores/appStore';
+import { usePreferencesStore } from './stores/preferencesStore';
+import { useChatHistoryStore } from './stores/chatHistoryStore';
 import TrackerWindow from './components/tracker/TrackerWindow';
 import ServerWindow from './components/server/ServerWindow';
 import MnemosyneWindow from './components/mnemosyne/MnemosyneWindow';
@@ -8,12 +10,23 @@ import TabBar from './components/tabs/TabBar';
 import { useDarkMode } from './hooks/useDarkMode';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import NotificationContainer from './components/notifications/NotificationContainer';
+import ChatHistoryPassphraseDialog from './components/settings/ChatHistoryPassphraseDialog';
 
 function App() {
   // Initialize dark mode management
   useDarkMode();
-  
+
   const { tabs, activeTabId, serverInfo, removeTab, addTab, setActiveTab } = useAppStore();
+  const enableChatHistory = usePreferencesStore((s) => s.enableChatHistory);
+  const chatHistoryUnlocked = useChatHistoryStore((s) => s.unlocked);
+  const [showPassphrasePrompt, setShowPassphrasePrompt] = useState(false);
+
+  // Prompt for chat history passphrase on startup if enabled but not yet unlocked
+  useEffect(() => {
+    if (enableChatHistory && !chatHistoryUnlocked) {
+      setShowPassphrasePrompt(true);
+    }
+  }, []); // Only on mount
   
   // Ensure we always have at least one tab
   useEffect(() => {
@@ -127,6 +140,19 @@ function App() {
       
       {/* Notification toasts */}
       <NotificationContainer />
+
+      {/* Chat history passphrase prompt on startup */}
+      {showPassphrasePrompt && (
+        <ChatHistoryPassphraseDialog
+          mode="unlock"
+          onSubmit={async (passphrase) => {
+            const ok = await useChatHistoryStore.getState().unlock(passphrase);
+            if (ok) setShowPassphrasePrompt(false);
+            return ok;
+          }}
+          onCancel={() => setShowPassphrasePrompt(false)}
+        />
+      )}
     </div>
   );
 }

@@ -66,14 +66,14 @@ impl AppState {
             ("default-tracker-preterhuman", "Preterhuman", "tracker.preterhuman.net", DEFAULT_TRACKER_PORT),
         ];
 
-        // Define default servers: (id, name, address, port, tls)
+        // Define default servers: (id, name, address, port, tls, hope)
         let default_servers = vec![
-            ("default-server-bigredh", "Hotline Central Hub", "server.bigredh.com", DEFAULT_SERVER_PORT, false),
-            ("default-server-system7", "System7 Today", "hotline.system7today.com", DEFAULT_SERVER_PORT, false),
-            ("default-server-macdomain", "MacDomain", "62.116.228.143", DEFAULT_SERVER_PORT, false),
-            ("default-server-applearchive", "Apple Media Archive & Hotline Navigator", "hotline.semihosted.xyz", DEFAULT_TLS_PORT, true),
+            ("default-server-bigredh", "Hotline Central Hub", "server.bigredh.com", DEFAULT_SERVER_PORT, false, false),
+            ("default-server-system7", "System7 Today", "hotline.system7today.com", DEFAULT_SERVER_PORT, false, false),
+            ("default-server-macdomain", "MacDomain", "62.116.228.143", DEFAULT_SERVER_PORT, false, false),
+            ("default-server-applearchive", "Apple Media Archive & Hotline Navigator", "hotline.semihosted.xyz", DEFAULT_TLS_PORT, true, true),
         ];
-        
+
         // Fix any existing default trackers that lost their type
         for bookmark in bookmarks.iter_mut() {
             for (id, name, address, port) in &default_trackers {
@@ -88,9 +88,9 @@ impl AppState {
             }
         }
         
-        // Fix any existing default servers that lost their type or need TLS update
+        // Fix any existing default servers that lost their type or need TLS/HOPE update
         for bookmark in bookmarks.iter_mut() {
-            for (id, name, address, _port, tls) in &default_servers {
+            for (id, name, address, _port, tls, hope) in &default_servers {
                 if bookmark.id == *id || (bookmark.address == *address) {
                     if !matches!(bookmark.bookmark_type, Some(BookmarkType::Server)) {
                         bookmark.bookmark_type = Some(BookmarkType::Server);
@@ -102,6 +102,11 @@ impl AppState {
                     if bookmark.tls != *tls {
                         bookmark.tls = *tls;
                         bookmark.port = if *tls { DEFAULT_TLS_PORT } else { DEFAULT_SERVER_PORT };
+                        needs_save = true;
+                    }
+                    // Update HOPE setting if it changed
+                    if bookmark.hope != *hope {
+                        bookmark.hope = *hope;
                         needs_save = true;
                     }
                 }
@@ -119,6 +124,7 @@ impl AppState {
                     port: *port,
                     login: "guest".to_string(),
                     password: None,
+                    has_password: false,
                     icon: None,
                     auto_connect: false,
                     tls: false,
@@ -129,7 +135,7 @@ impl AppState {
             }
 
             // Add default servers
-            for (id, name, address, port, tls) in &default_servers {
+            for (id, name, address, port, tls, hope) in &default_servers {
                 let server = Bookmark {
                     id: id.to_string(),
                     name: name.to_string(),
@@ -137,10 +143,11 @@ impl AppState {
                     port: *port,
                     login: "guest".to_string(),
                     password: None,
+                    has_password: false,
                     icon: None,
                     auto_connect: false,
                     tls: *tls,
-                    hope: false,
+                    hope: *hope,
                     bookmark_type: Some(BookmarkType::Server),
                 };
                 bookmarks.push(server);
@@ -160,7 +167,17 @@ impl AppState {
     }
 
     fn save_bookmarks_to_disk(&self, bookmarks: &[Bookmark]) -> Result<(), String> {
-        let json = serde_json::to_string_pretty(bookmarks)
+        // Strip plaintext passwords before writing — passwords live in Stronghold vault
+        let sanitized: Vec<Bookmark> = bookmarks.iter().map(|b| {
+            let mut clean = b.clone();
+            if clean.password.is_some() {
+                clean.has_password = true;
+                clean.password = None;
+            }
+            clean
+        }).collect();
+
+        let json = serde_json::to_string_pretty(&sanitized)
             .map_err(|e| format!("Failed to serialize bookmarks: {}", e))?;
 
         fs::write(&self.bookmarks_path, json)
@@ -749,8 +766,28 @@ impl AppState {
                 })
                 .collect::<String>();
             
-            // Create full file path
-            let file_path = downloads_dir.join(&sanitized_name);
+            // Create full file path, avoiding collisions with existing files
+            let file_path = {
+                let base = downloads_dir.join(&sanitized_name);
+                if !base.exists() {
+                    base
+                } else {
+                    // Split into stem and extension for numbered suffix
+                    let stem = base.file_stem().and_then(|s| s.to_str()).unwrap_or(&sanitized_name).to_string();
+                    let ext = base.extension().and_then(|s| s.to_str()).map(|e| format!(".{e}")).unwrap_or_default();
+                    let mut counter = 1u32;
+                    loop {
+                        let candidate = downloads_dir.join(format!("{stem} ({counter}){ext}"));
+                        if !candidate.exists() {
+                            break candidate;
+                        }
+                        counter += 1;
+                        if counter > 9999 {
+                            break candidate; // Safety valve
+                        }
+                    }
+                }
+            };
 
             println!("Saving file to: {:?} (original name: {:?})", file_path, file_name);
 
@@ -964,12 +1001,12 @@ impl AppState {
             ("default-tracker-preterhuman", "Preterhuman", "tracker.preterhuman.net", DEFAULT_TRACKER_PORT),
         ];
 
-        // Define default servers: (id, name, address, port, tls)
+        // Define default servers: (id, name, address, port, tls, hope)
         let default_servers = vec![
-            ("default-server-bigredh", "Hotline Central Hub", "server.bigredh.com", DEFAULT_SERVER_PORT, false),
-            ("default-server-system7", "System7 Today", "hotline.system7today.com", DEFAULT_SERVER_PORT, false),
-            ("default-server-macdomain", "MacDomain", "62.116.228.143", DEFAULT_SERVER_PORT, false),
-            ("default-server-applearchive", "Apple Media Archive & Hotline Navigator", "hotline.semihosted.xyz", DEFAULT_TLS_PORT, true),
+            ("default-server-bigredh", "Hotline Central Hub", "server.bigredh.com", DEFAULT_SERVER_PORT, false, false),
+            ("default-server-system7", "System7 Today", "hotline.system7today.com", DEFAULT_SERVER_PORT, false, false),
+            ("default-server-macdomain", "MacDomain", "62.116.228.143", DEFAULT_SERVER_PORT, false, false),
+            ("default-server-applearchive", "Apple Media Archive & Hotline Navigator", "hotline.semihosted.xyz", DEFAULT_TLS_PORT, true, true),
         ];
 
         let mut added_count = 0;
@@ -990,6 +1027,7 @@ impl AppState {
                     port: *port,
                     login: "guest".to_string(),
                     password: None,
+                    has_password: false,
                     icon: None,
                     auto_connect: false,
                     tls: false,
@@ -1002,7 +1040,7 @@ impl AppState {
         }
 
         // Add missing default servers
-        for (id, name, address, port, tls) in &default_servers {
+        for (id, name, address, port, tls, hope) in &default_servers {
             let has_server = bookmarks.iter().any(|b: &Bookmark| {
                 b.address == *address
                 && matches!(b.bookmark_type, Some(BookmarkType::Server))
@@ -1016,10 +1054,11 @@ impl AppState {
                     port: *port,
                     login: "guest".to_string(),
                     password: None,
+                    has_password: false,
                     icon: None,
                     auto_connect: false,
                     tls: *tls,
-                    hope: false,
+                    hope: *hope,
                     bookmark_type: Some(BookmarkType::Server),
                 };
                 bookmarks.push(server);

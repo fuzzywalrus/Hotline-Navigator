@@ -766,6 +766,7 @@ pub async fn test_connection(address: String, port: u16) -> Result<String, Strin
         port,
         login: "guest".to_string(),
         password: Some("".to_string()),
+        has_password: false,
         icon: Some(414),
         auto_connect: false,
         tls: false,
@@ -885,21 +886,115 @@ pub struct LinkPreviewData {
     pub site_name: Option<String>,
 }
 
+/// Check whether an IP address belongs to a private/internal range.
+fn is_private_ip(ip: &std::net::IpAddr) -> bool {
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+    match ip {
+        IpAddr::V4(v4) => {
+            v4.is_loopback()                                      // 127.0.0.0/8
+                || v4.is_private()                                // 10/8, 172.16/12, 192.168/16
+                || v4.is_link_local()                             // 169.254/16
+                || v4.is_broadcast()                              // 255.255.255.255
+                || v4.is_unspecified()                            // 0.0.0.0
+                || *v4 == Ipv4Addr::new(0, 0, 0, 0)
+                || v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64  // 100.64/10 (CGNAT)
+                || v4.octets()[0] == 192 && v4.octets()[1] == 0 && v4.octets()[2] == 0  // 192.0.0/24
+        }
+        IpAddr::V6(v6) => {
+            v6.is_loopback()                                      // ::1
+                || v6.is_unspecified()                            // ::
+                || *v6 == Ipv6Addr::LOCALHOST
+                || {
+                    let segs = v6.segments();
+                    (segs[0] & 0xfe00) == 0xfc00                  // fc00::/7 (ULA)
+                        || (segs[0] == 0xfe80)                    // fe80::/10 (link-local)
+                        || (segs[0] == 0 && segs[1] == 0 && segs[2] == 0
+                            && segs[3] == 0 && segs[4] == 0 && segs[5] == 0xffff) // ::ffff:0:0/96 (v4-mapped, check inner)
+                            && is_private_ip(&IpAddr::V4(std::net::Ipv4Addr::new(
+                                (segs[6] >> 8) as u8, segs[6] as u8,
+                                (segs[7] >> 8) as u8, segs[7] as u8,
+                            )))
+                }
+        }
+    }
+}
+
+/// Resolve hostname and reject private/internal IPs before fetching.
+async fn validate_url_target(url: &str) -> Result<(), String> {
+    let parsed = reqwest::Url::parse(url)
+        .map_err(|e| format!("Invalid URL: {e}"))?;
+
+    // Only allow http/https
+    match parsed.scheme() {
+        "http" | "https" => {}
+        s => return Err(format!("Blocked scheme: {s}")),
+    }
+
+    let host = parsed.host_str().ok_or("URL has no host")?;
+    let port = parsed.port_or_known_default().unwrap_or(80);
+
+    // Resolve DNS and check all returned addresses
+    use tokio::net::lookup_host;
+    let addrs: Vec<std::net::SocketAddr> = lookup_host(format!("{host}:{port}"))
+        .await
+        .map_err(|e| format!("DNS resolution failed: {e}"))?
+        .collect();
+
+    if addrs.is_empty() {
+        return Err("DNS resolved to no addresses".to_string());
+    }
+
+    for addr in &addrs {
+        if is_private_ip(&addr.ip()) {
+            return Err("URL resolves to a private/internal IP address".to_string());
+        }
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn fetch_link_preview(url: String) -> Result<LinkPreviewData, String> {
+    // Validate URL target before fetching — blocks private IPs, non-http schemes
+    validate_url_target(&url).await?;
+
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
-        .redirect(reqwest::redirect::Policy::limited(5))
+        .redirect(reqwest::redirect::Policy::none()) // Handle redirects manually to check each hop
         .build()
         .map_err(|e| format!("HTTP client error: {e}"))?;
 
-    let response = client
-        .get(&url)
-        .header("User-Agent", "Mozilla/5.0 (compatible; HotlineNavigator/0.2.6)")
-        .header("Accept", "text/html")
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {e}"))?;
+    // Follow redirects manually, validating each hop (max 5)
+    let mut current_url = url.clone();
+    let mut response = None;
+    for _ in 0..5 {
+        let resp = client
+            .get(&current_url)
+            .header("User-Agent", "Mozilla/5.0 (compatible; HotlineNavigator/0.2.6)")
+            .header("Accept", "text/html")
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {e}"))?;
+
+        if resp.status().is_redirection() {
+            if let Some(location) = resp.headers().get("location").and_then(|v| v.to_str().ok()) {
+                // Resolve relative redirects against current URL
+                let next = reqwest::Url::parse(location)
+                    .or_else(|_| reqwest::Url::parse(&current_url).and_then(|base| base.join(location)))
+                    .map_err(|e| format!("Invalid redirect URL: {e}"))?;
+                let next_str = next.to_string();
+                // Validate the redirect target
+                validate_url_target(&next_str).await?;
+                current_url = next_str;
+                continue;
+            }
+        }
+
+        response = Some(resp);
+        break;
+    }
+
+    let response = response.ok_or("Too many redirects")?;
 
     if !response.status().is_success() {
         return Err(format!("HTTP {}", response.status()));

@@ -24,6 +24,10 @@ interface PreferencesState {
   showInlineImages: boolean;
   setShowInlineImages: (enabled: boolean) => void;
 
+  // Link preview preferences
+  showLinkPreviews: boolean;
+  setShowLinkPreviews: (enabled: boolean) => void;
+
   // Markdown preferences
   renderMarkdown: boolean;
   setRenderMarkdown: (enabled: boolean) => void;
@@ -123,6 +127,10 @@ export const usePreferencesStore = create<PreferencesState>()(
       showInlineImages: false,
       setShowInlineImages: (showInlineImages) => set({ showInlineImages }),
 
+      // Link preview preferences
+      showLinkPreviews: true,
+      setShowLinkPreviews: (showLinkPreviews) => set({ showLinkPreviews }),
+
       // Markdown preferences
       renderMarkdown: true,
       setRenderMarkdown: (renderMarkdown) => set({ renderMarkdown }),
@@ -154,7 +162,7 @@ export const usePreferencesStore = create<PreferencesState>()(
       setShowRemoteBanners: (showRemoteBanners) => set({ showRemoteBanners }),
 
       // Chat history
-      enableChatHistory: true,
+      enableChatHistory: false,
       setEnableChatHistory: (enableChatHistory) => set({ enableChatHistory }),
       showTimestamps: true,
       setShowTimestamps: (showTimestamps) => set({ showTimestamps }),

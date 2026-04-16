@@ -8,7 +8,8 @@ export interface Bookmark {
   address: string;
   port: number;
   login: string;
-  password?: string;
+  password?: string; // Used only for IPC transit — never persisted to disk
+  hasPassword?: boolean; // True when a password is stored in the vault
   icon?: number;
   autoConnect?: boolean;
   tls?: boolean;

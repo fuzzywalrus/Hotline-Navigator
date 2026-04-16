@@ -4,6 +4,7 @@ import { useAppStore } from '../../stores/appStore';
 import { usePreferencesStore } from '../../stores/preferencesStore';
 import { classifyError } from '../../utils/errorClassifier';
 import type { Bookmark } from '../../types';
+import { savePassword } from '../../utils/passwordVault';
 
 interface ConnectDialogProps {
   onClose: () => void;
@@ -143,7 +144,8 @@ export default function ConnectDialog({ onClose }: ConnectDialogProps) {
       address,
       port,
       login: formData.login,
-      password: formData.password || undefined,
+      password: formData.password || undefined, // Kept for this connection only
+      hasPassword: !!formData.password,
       tls,
       hope: formData.hope,
       type: bookmarkType,
@@ -152,9 +154,14 @@ export default function ConnectDialog({ onClose }: ConnectDialogProps) {
     try {
       // Save bookmark if requested (not for URL type)
       if (formData.type !== 'url' && formData.saveAsBookmark) {
-        await invoke('save_bookmark', { bookmark });
+        // Store password in secure vault, strip from saved bookmark
+        if (formData.password) {
+          await savePassword(bookmark.id, formData.password);
+        }
+        const savedBookmark = { ...bookmark, password: undefined };
+        await invoke('save_bookmark', { bookmark: savedBookmark });
         if (!bookmarks.some((b: Bookmark) => b.id === bookmark.id)) {
-          addBookmark(bookmark);
+          addBookmark(savedBookmark);
         }
       }
 

@@ -45,6 +45,7 @@ interface LinkifyProps {
 
 export default function Linkify({ text, className, hideImageUrls = false }: LinkifyProps) {
   const showInlineImages = usePreferencesStore((s) => s.showInlineImages);
+  const showLinkPreviews = usePreferencesStore((s) => s.showLinkPreviews);
   const chatDisplayMode = usePreferencesStore((s) => s.chatDisplayMode);
   const isDiscordMode = chatDisplayMode === 'discord';
 
@@ -79,7 +80,7 @@ export default function Linkify({ text, className, hideImageUrls = false }: Link
               {part}
             </a>
             {isImage && <InlineImage url={part} />}
-            {!isImage && isDiscordMode && <LinkPreview url={part} />}
+            {!isImage && isDiscordMode && showLinkPreviews && <LinkPreview url={part} />}
           </span>
         );
       })}
