@@ -10,6 +10,10 @@ export interface ChatMessage {
   isMention?: boolean; // Indicates if this message mentions the current user
   isAdmin?: boolean; // Indicates if the sender is an admin
   isServerHistory?: boolean; // Message from server chat replay on reconnect
+  isAction?: boolean; // /me emote (from history flags bit 0)
+  isDeleted?: boolean; // Tombstoned message (from history flags bit 2)
+  messageId?: string; // Server-assigned history ID (string to avoid JS precision loss)
+  fromHistory?: boolean; // True if loaded from server-side chat history extension
 }
 
 export interface User {

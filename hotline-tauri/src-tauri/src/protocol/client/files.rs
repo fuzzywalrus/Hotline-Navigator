@@ -1472,6 +1472,7 @@ mod tests {
             port: port - 1,
             login: "guest".to_string(),
             password: None,
+            has_password: false,
             icon: None,
             auto_connect: false,
             tls: true,

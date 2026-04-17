@@ -61,6 +61,11 @@ export interface ChatMessage {
   userName?: string;
   message: string;
   type: 'chat' | 'join' | 'leave' | 'disconnect' | 'system';
+  isAction?: boolean;       // /me emote
+  isServerMsg?: boolean;    // server broadcast
+  isDeleted?: boolean;      // tombstoned (history only)
+  messageId?: string;       // server-assigned history ID (string to avoid JS precision loss)
+  fromHistory?: boolean;    // true if loaded from server history
 }
 
 export interface PrivateMessage {
@@ -129,6 +134,9 @@ export interface ServerInfo {
   hopeEnabled?: boolean;
   hopeTransport?: boolean;
   agreement?: string;
+  chatHistorySupported?: boolean;
+  historyMaxMsgs?: number;
+  historyMaxDays?: number;
 }
 
 export interface Permissions {
@@ -209,4 +217,22 @@ export interface MnemosyneHealthResponse {
   version: string;
   uptime_seconds: number;
   database: string;
+}
+
+// Chat history extension types
+
+export interface ChatHistoryEntry {
+  messageId: string;        // u64 as string to avoid JS precision loss
+  timestamp: number;        // Unix epoch seconds
+  isAction: boolean;
+  isServerMsg: boolean;
+  isDeleted: boolean;
+  iconId: number;
+  nick: string;
+  message: string;
+}
+
+export interface ChatHistoryResponse {
+  entries: ChatHistoryEntry[];
+  hasMore: boolean;
 }

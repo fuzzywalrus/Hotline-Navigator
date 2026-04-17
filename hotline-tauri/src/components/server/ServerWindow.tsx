@@ -16,7 +16,7 @@ import MobileTabBar from './MobileTabBar';
 import TransferList from '../transfers/TransferList';
 import NotificationLog from '../notifications/NotificationLog';
 import MarkdownText from '../common/MarkdownText';
-import { ServerInfo, ConnectionStatus } from '../../types';
+import { ServerInfo, ConnectionStatus, ChatHistoryResponse } from '../../types';
 import { useAppStore } from '../../stores/appStore';
 import { usePreferencesStore } from '../../stores/preferencesStore';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
@@ -81,6 +81,13 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
+
+  // Server-side chat history state
+  const oldestHistoryIdRef = useRef<string | null>(null);
+  const newestHistoryIdRef = useRef<string | null>(null);
+  const historyHasMoreRef = useRef(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const serverHistoryLoadedRef = useRef(false);
 
   // Sync connection status to tab store so TabBar can reflect it
   const tabId = tabs.find(t => t.type === 'server' && t.serverId === serverId)?.id;
@@ -286,6 +293,10 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     messagesRef.current = messages;
   }, [messages]);
 
+  // Keep a ref to serverInfo for useServerEvents (local history suppression check)
+  const serverInfoRefForEvents = useRef<ServerInfo | null>(null);
+  useEffect(() => { serverInfoRefForEvents.current = serverInfo; }, [serverInfo]);
+
   // Use server events hook (handles all event listeners)
   useServerEvents({
     serverId,
@@ -311,6 +322,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     addTransfer,
     updateTransfer,
     onFileListReceived: handleFileListReceived,
+    serverInfoRef: serverInfoRefForEvents,
   });
 
   // Keyboard shortcuts
@@ -486,6 +498,137 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     }
   }, [serverId, connectionStatus, serverInfo, serverName, updateTabTitle]);
 
+  // Convert a ChatHistoryEntry to a ChatMessage for the UI
+  const historyEntryToMessage = (e: import('../../types').ChatHistoryEntry): ChatMessage => {
+    let messageText = e.message;
+    if (e.isDeleted) {
+      messageText = '[message removed]';
+    } else if (e.isAction) {
+      // Reconstruct emote format to match live "*** nick does something"
+      messageText = `*** ${e.nick} ${e.message}`;
+    }
+    return {
+      userId: 0,
+      userName: e.isDeleted ? '' : e.nick,
+      message: messageText,
+      timestamp: new Date(e.timestamp * 1000),
+      iconId: e.iconId || undefined,
+      type: e.isServerMsg ? 'server' as const : 'message' as const,
+      isServerHistory: true,
+      isAction: e.isAction,
+      isDeleted: e.isDeleted,
+      messageId: e.messageId,
+      fromHistory: true,
+    };
+  };
+
+  // Reset server history state on disconnect (for reconnect catch-up)
+  useEffect(() => {
+    if (connectionStatus === 'disconnected') {
+      serverHistoryLoadedRef.current = false;
+      // Keep newestHistoryIdRef so we can catch up on reconnect
+    }
+  }, [connectionStatus]);
+
+  // Fetch server-side chat history on connect (when server supports it and user has it enabled)
+  const enableServerChatHistory = usePreferencesStore((s) => s.enableServerChatHistory);
+  useEffect(() => {
+    if (!serverInfo?.chatHistorySupported || !enableServerChatHistory || serverHistoryLoadedRef.current) return;
+    if (connectionStatus !== 'logged-in') return;
+    serverHistoryLoadedRef.current = true;
+
+    const isReconnect = newestHistoryIdRef.current !== null;
+
+    const fetchServerHistory = async () => {
+      try {
+        setHistoryLoading(true);
+
+        if (isReconnect) {
+          // Reconnect catch-up: fetch messages since last known ID
+          log('Chat', `Catching up from message ${newestHistoryIdRef.current}`);
+          let after = newestHistoryIdRef.current!;
+          let allCaughtUp = false;
+          while (!allCaughtUp) {
+            const catchUpResponse = await invoke<ChatHistoryResponse>('get_chat_history', {
+              serverId,
+              after,
+              limit: 50,
+            });
+            if (catchUpResponse.entries.length > 0) {
+              const catchUpMessages: ChatMessage[] = catchUpResponse.entries.map(historyEntryToMessage);
+              // Deduplicate by messageId before appending
+              setMessages((prev) => {
+                const existingIds = new Set(prev.filter(m => m.messageId).map(m => m.messageId));
+                const newMsgs = catchUpMessages.filter(m => !existingIds.has(m.messageId));
+                return [...prev, ...newMsgs];
+              });
+              after = catchUpResponse.entries[catchUpResponse.entries.length - 1].messageId;
+              newestHistoryIdRef.current = after;
+            }
+            allCaughtUp = !catchUpResponse.hasMore;
+          }
+          log('Chat', 'Reconnect catch-up complete');
+          setHistoryLoading(false);
+          return;
+        }
+
+        // Initial load: fetch most recent messages
+        log('Chat', 'Fetching server-side chat history');
+        const response = await invoke<ChatHistoryResponse>('get_chat_history', {
+          serverId,
+          limit: 50,
+        });
+
+        if (response.entries.length > 0) {
+          log('Chat', `Loaded ${response.entries.length} messages from server history`);
+
+          const historyMessages: ChatMessage[] = response.entries.map(historyEntryToMessage);
+
+          // Prepend server history before any existing messages
+          setMessages((prev) => [...historyMessages, ...prev]);
+
+          // Track cursors for pagination
+          oldestHistoryIdRef.current = response.entries[0].messageId;
+          newestHistoryIdRef.current = response.entries[response.entries.length - 1].messageId;
+          historyHasMoreRef.current = response.hasMore;
+        }
+      } catch (error) {
+        logError('Chat', 'Failed to fetch server chat history', error);
+      } finally {
+        setHistoryLoading(false);
+      }
+    };
+
+    fetchServerHistory();
+  }, [serverInfo, serverId, connectionStatus]);
+
+
+  // Load more history (scroll-back pagination)
+  const handleLoadMoreHistory = async () => {
+    if (!oldestHistoryIdRef.current || historyLoading) return;
+    try {
+      setHistoryLoading(true);
+      const response = await invoke<ChatHistoryResponse>('get_chat_history', {
+        serverId,
+        before: oldestHistoryIdRef.current,
+        limit: 50,
+      });
+
+      if (response.entries.length > 0) {
+        log('Chat', `Loaded ${response.entries.length} older messages from server history`);
+
+        const olderMessages: ChatMessage[] = response.entries.map(historyEntryToMessage);
+
+        setMessages((prev) => [...olderMessages, ...prev]);
+        oldestHistoryIdRef.current = response.entries[0].messageId;
+      }
+      historyHasMoreRef.current = response.hasMore;
+    } catch (error) {
+      logError('Chat', 'Failed to load more chat history', error);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
 
   const handleUserClick = (user: User) => {
     // Open message dialog (chat) directly
@@ -1136,6 +1279,11 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
               onSendBroadcast={handleSendBroadcast}
               onAcceptAgreement={handleAcceptAgreement}
               onDeclineAgreement={handleDeclineAgreement}
+              historyLoading={historyLoading}
+              historyHasMore={historyHasMoreRef.current}
+              onLoadMoreHistory={handleLoadMoreHistory}
+              historyMaxMsgs={serverInfo?.historyMaxMsgs}
+              historyMaxDays={serverInfo?.historyMaxDays}
             />
           )}
 

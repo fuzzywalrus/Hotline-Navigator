@@ -13,6 +13,10 @@ interface ChatMessage {
   isMention?: boolean; // Indicates if this message mentions the current user
   isAdmin?: boolean;
   isServerHistory?: boolean;
+  isAction?: boolean;
+  isDeleted?: boolean;
+  messageId?: string;
+  fromHistory?: boolean;
 }
 
 interface ChatTabProps {
@@ -28,6 +32,12 @@ interface ChatTabProps {
   onSendBroadcast?: (message: string) => void;
   onAcceptAgreement?: () => void;
   onDeclineAgreement?: () => void;
+  // Server-side chat history
+  historyLoading?: boolean;
+  historyHasMore?: boolean;
+  onLoadMoreHistory?: () => void;
+  historyMaxMsgs?: number;
+  historyMaxDays?: number;
 }
 
 export default function ChatTab({
@@ -43,6 +53,11 @@ export default function ChatTab({
   onSendBroadcast,
   onAcceptAgreement: _onAcceptAgreement,
   onDeclineAgreement: _onDeclineAgreement,
+  historyLoading,
+  historyHasMore,
+  onLoadMoreHistory,
+  historyMaxMsgs,
+  historyMaxDays,
 }: ChatTabProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -60,11 +75,72 @@ export default function ChatTab({
     messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'instant' });
   };
 
+  const loadingMoreRef = useRef(false);
+  const prevScrollHeightRef = useRef(0);
+  const pullDistanceRef = useRef(0);
+  const [pullProgress, setPullProgress] = useState(0); // 0–1 for pull indicator
+  const PULL_THRESHOLD = 60; // pixels of overscroll to trigger load
+
   const handleScroll = () => {
     const el = scrollContainerRef.current;
     if (!el) return;
     isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+
+    // Reset pull progress when user scrolls away from top
+    if (el.scrollTop > 0) {
+      pullDistanceRef.current = 0;
+      setPullProgress(0);
+    }
   };
+
+  // Track overscroll via wheel events for elastic pull-to-load
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (!historyHasMore || historyLoading || loadingMoreRef.current || !onLoadMoreHistory) return;
+
+      // Only accumulate when at the very top and scrolling up
+      if (el.scrollTop === 0 && e.deltaY < 0) {
+        pullDistanceRef.current = Math.min(pullDistanceRef.current + Math.abs(e.deltaY), PULL_THRESHOLD * 1.2);
+        setPullProgress(Math.min(pullDistanceRef.current / PULL_THRESHOLD, 1));
+
+        // Trigger load when threshold reached
+        if (pullDistanceRef.current >= PULL_THRESHOLD) {
+          loadingMoreRef.current = true;
+          prevScrollHeightRef.current = el.scrollHeight;
+          pullDistanceRef.current = 0;
+          setPullProgress(0);
+          onLoadMoreHistory();
+        }
+      } else if (e.deltaY > 0) {
+        // Scrolling down — reset pull
+        pullDistanceRef.current = 0;
+        setPullProgress(0);
+      }
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: true });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [historyHasMore, historyLoading, onLoadMoreHistory]);
+
+  // Restore scroll position after older messages are prepended
+  useEffect(() => {
+    if (!loadingMoreRef.current) return;
+    const el = scrollContainerRef.current;
+    if (!el) return;
+
+    // Wait for DOM to update with new messages
+    requestAnimationFrame(() => {
+      const newScrollHeight = el.scrollHeight;
+      const addedHeight = newScrollHeight - prevScrollHeightRef.current;
+      if (addedHeight > 0) {
+        el.scrollTop = addedHeight;
+      }
+      loadingMoreRef.current = false;
+    });
+  }, [messages]);
 
   // Auto-scroll to bottom when new messages arrive (only if already at bottom)
   useEffect(() => {
@@ -98,7 +174,48 @@ export default function ChatTab({
     <div className="flex-1 flex flex-col min-h-0">
       {/* Messages */}
       <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 space-y-2">
-        {messages.length === 0 && !agreementText ? (
+        {/* Pull-to-load-more indicator */}
+        {pullProgress > 0 && !historyLoading && historyHasMore && (
+          <div
+            className="text-xs text-gray-400 dark:text-gray-500 text-center flex items-center justify-center gap-2 overflow-hidden transition-all duration-150"
+            style={{ height: `${pullProgress * 36}px`, opacity: pullProgress }}
+          >
+            <svg
+              className="h-3.5 w-3.5 transition-transform duration-150"
+              style={{ transform: `rotate(${pullProgress * 180}deg)` }}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M12 19V5M5 12l7-7 7 7" />
+            </svg>
+            {pullProgress >= 1 ? 'Release to load more' : 'Pull to load more'}
+          </div>
+        )}
+        {/* Server-side history loading indicator */}
+        {historyLoading && (
+          <div className="text-xs text-gray-400 dark:text-gray-500 text-center py-3 flex items-center justify-center gap-2">
+            <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Loading chat history...
+          </div>
+        )}
+        {/* Beginning of chat history — shown only when fully scrolled to the start */}
+        {historyHasMore === false && messages.some(m => m.fromHistory) && (
+          <div className="text-xs text-gray-400 dark:text-gray-500 text-center py-2 border-b border-gray-200 dark:border-gray-700 mb-2">
+            Beginning of chat history
+          </div>
+        )}
+        {/* Server retention policy hint — shown above loaded history messages */}
+        {messages.some(m => m.fromHistory) && (historyMaxMsgs || historyMaxDays) && (
+          <div className="text-xs text-gray-400 dark:text-gray-500 text-center py-1">
+            This server keeps {historyMaxDays ? `${historyMaxDays} days` : ''}{historyMaxDays && historyMaxMsgs ? ' / ' : ''}{historyMaxMsgs ? `${historyMaxMsgs.toLocaleString()} messages` : ''} of chat history
+          </div>
+        )}
+        {messages.length === 0 && !agreementText && !historyLoading ? (
           <div className="text-sm text-gray-500 dark:text-gray-400 text-center">
             Connected to {serverName}
           </div>
@@ -281,7 +398,7 @@ export default function ChatTab({
       )}
 
       {/* Message input */}
-      <form onSubmit={onSendMessage} className="border-t border-gray-200 dark:border-gray-700 p-4">
+      <form onSubmit={(e) => { onSendMessage(e); scrollToBottom(); isAtBottomRef.current = true; }} className="border-t border-gray-200 dark:border-gray-700 p-4">
         <div className="flex gap-2">
           {canBroadcast && !broadcastMode && (
             <button

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from './stores/appStore';
 import { usePreferencesStore } from './stores/preferencesStore';
@@ -10,7 +10,6 @@ import TabBar from './components/tabs/TabBar';
 import { useDarkMode } from './hooks/useDarkMode';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import NotificationContainer from './components/notifications/NotificationContainer';
-import ChatHistoryPassphraseDialog from './components/settings/ChatHistoryPassphraseDialog';
 
 function App() {
   // Initialize dark mode management
@@ -18,13 +17,11 @@ function App() {
 
   const { tabs, activeTabId, serverInfo, removeTab, addTab, setActiveTab } = useAppStore();
   const enableChatHistory = usePreferencesStore((s) => s.enableChatHistory);
-  const chatHistoryUnlocked = useChatHistoryStore((s) => s.unlocked);
-  const [showPassphrasePrompt, setShowPassphrasePrompt] = useState(false);
 
-  // Prompt for chat history passphrase on startup if enabled but not yet unlocked
+  // Auto-unlock chat history vault on startup (default passphrase, no user prompt)
   useEffect(() => {
-    if (enableChatHistory && !chatHistoryUnlocked) {
-      setShowPassphrasePrompt(true);
+    if (enableChatHistory) {
+      useChatHistoryStore.getState().unlock('hotline-navigator-chat-v1');
     }
   }, []); // Only on mount
   
@@ -140,19 +137,6 @@ function App() {
       
       {/* Notification toasts */}
       <NotificationContainer />
-
-      {/* Chat history passphrase prompt on startup */}
-      {showPassphrasePrompt && (
-        <ChatHistoryPassphraseDialog
-          mode="unlock"
-          onSubmit={async (passphrase) => {
-            const ok = await useChatHistoryStore.getState().unlock(passphrase);
-            if (ok) setShowPassphrasePrompt(false);
-            return ok;
-          }}
-          onCancel={() => setShowPassphrasePrompt(false)}
-        />
-      )}
     </div>
   );
 }

@@ -826,6 +826,21 @@ impl AppState {
         }
     }
 
+    pub async fn get_chat_history(
+        &self,
+        server_id: &str,
+        before: Option<u64>,
+        after: Option<u64>,
+        limit: Option<u16>,
+    ) -> Result<(Vec<crate::protocol::history::HistoryEntry>, bool), String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.get_chat_history(0, before, after, limit).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
     pub async fn delete_file(&self, server_id: &str, path: Vec<String>, file_name: String) -> Result<(), String> {
         let clients = self.clients.read().await;
         if let Some(client) = clients.get(server_id) {

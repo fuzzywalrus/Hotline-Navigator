@@ -158,6 +158,7 @@ pub const DEFAULT_TRACKER_PORT: u16 = 5498;
 
 // Capability flags (DATA_CAPABILITIES bitmask)
 pub const CAPABILITY_LARGE_FILES: u16 = 0x0001;
+pub const CAPABILITY_CHAT_HISTORY: u16 = 0x0010; // bit 4
 
 // HTXF transfer flags
 pub const HTXF_FLAG_LARGE_FILE: u32 = 0x00000001;
@@ -226,6 +227,7 @@ pub enum TransactionType {
     PostNewsArticle = 410,
     DeleteNewsArticle = 411,
     KeepAlive = 500,
+    GetChatHistory = 700,
     Unknown = 0xFFFF,
 }
 
@@ -291,6 +293,7 @@ impl From<u16> for TransactionType {
             410 => Self::PostNewsArticle,
             411 => Self::DeleteNewsArticle,
             500 => Self::KeepAlive,
+            700 => Self::GetChatHistory,
             _ => Self::Unknown,
         }
     }
@@ -383,6 +386,15 @@ pub enum FieldType {
     HopeClientChecksum = 3784,     // 0x0EC8
     HopeServerCompression = 3785,  // 0x0EC9
     HopeClientCompression = 3786,  // 0x0ECA
+    // Chat history extension fields
+    ChannelId = 3841,              // 0x0F01
+    HistoryBefore = 3842,          // 0x0F02
+    HistoryAfter = 3843,           // 0x0F03
+    HistoryLimit = 3844,           // 0x0F04
+    HistoryEntry = 3845,           // 0x0F05
+    HistoryHasMore = 3846,         // 0x0F06
+    HistoryMaxMsgs = 3847,         // 0x0F07
+    HistoryMaxDays = 3848,         // 0x0F08
 }
 
 impl From<u16> for FieldType {
@@ -468,6 +480,14 @@ impl From<u16> for FieldType {
             3784 => Self::HopeClientChecksum,
             3785 => Self::HopeServerCompression,
             3786 => Self::HopeClientCompression,
+            3841 => Self::ChannelId,
+            3842 => Self::HistoryBefore,
+            3843 => Self::HistoryAfter,
+            3844 => Self::HistoryLimit,
+            3845 => Self::HistoryEntry,
+            3846 => Self::HistoryHasMore,
+            3847 => Self::HistoryMaxMsgs,
+            3848 => Self::HistoryMaxDays,
             _ => Self::ErrorText, // Default fallback
         }
     }

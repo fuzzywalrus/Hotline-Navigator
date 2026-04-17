@@ -53,6 +53,8 @@ interface PreferencesState {
   // Chat history
   enableChatHistory: boolean;
   setEnableChatHistory: (enabled: boolean) => void;
+  enableServerChatHistory: boolean;
+  setEnableServerChatHistory: (enabled: boolean) => void;
   showTimestamps: boolean;
   setShowTimestamps: (enabled: boolean) => void;
 
@@ -164,6 +166,8 @@ export const usePreferencesStore = create<PreferencesState>()(
       // Chat history
       enableChatHistory: false,
       setEnableChatHistory: (enableChatHistory) => set({ enableChatHistory }),
+      enableServerChatHistory: true,
+      setEnableServerChatHistory: (enableServerChatHistory) => set({ enableServerChatHistory }),
       showTimestamps: true,
       setShowTimestamps: (showTimestamps) => set({ showTimestamps }),
 

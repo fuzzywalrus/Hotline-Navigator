@@ -177,6 +177,7 @@ pub fn run() {
             commands::send_private_chat,
             commands::mnemosyne_fetch,
             commands::fetch_link_preview,
+            commands::get_chat_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

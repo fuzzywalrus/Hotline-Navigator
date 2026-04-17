@@ -53,6 +53,15 @@ pub struct ServerInfo {
     pub hope_transport: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agreement: Option<String>,
+    /// Server supports chat history extension (capability bit 4).
+    #[serde(rename = "chatHistorySupported", default)]
+    pub chat_history_supported: bool,
+    /// Server retention policy: max messages (0 = unlimited). Informational only.
+    #[serde(rename = "historyMaxMsgs", skip_serializing_if = "Option::is_none")]
+    pub history_max_msgs: Option<u32>,
+    /// Server retention policy: max days (0 = unlimited). Informational only.
+    #[serde(rename = "historyMaxDays", skip_serializing_if = "Option::is_none")]
+    pub history_max_days: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

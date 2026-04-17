@@ -11,7 +11,7 @@ pub(crate) mod users;
 use super::constants::{
     FieldType, TransactionType, PROTOCOL_ID, PROTOCOL_SUBVERSION,
     PROTOCOL_VERSION, SUBPROTOCOL_ID, TRANSACTION_HEADER_SIZE,
-    CAPABILITY_LARGE_FILES, resolve_error_message,
+    CAPABILITY_LARGE_FILES, CAPABILITY_CHAT_HISTORY, resolve_error_message,
 };
 use super::transaction::{Transaction, TransactionField};
 use super::types::{Bookmark, ConnectionStatus, ServerInfo};
@@ -206,6 +206,9 @@ pub struct HotlineClient {
     // Large file support (negotiated during login)
     pub(crate) large_file_support: Arc<AtomicBool>,
 
+    // Chat history support (negotiated during login via capability bit 4)
+    pub(crate) chat_history_support: Arc<AtomicBool>,
+
     // HOPE AEAD file transfer base key (set when AEAD transport is activated)
     ft_base_key: Arc<Mutex<Option<[u8; 32]>>>,
 
@@ -238,6 +241,7 @@ impl HotlineClient {
             server_info: Arc::new(Mutex::new(None)),
             user_access: Arc::new(Mutex::new(0)),
             large_file_support: Arc::new(AtomicBool::new(false)),
+            chat_history_support: Arc::new(AtomicBool::new(false)),
             ft_base_key: Arc::new(Mutex::new(None)),
             running: Arc::new(AtomicBool::new(false)),
             event_tx,
@@ -821,7 +825,7 @@ impl HotlineClient {
             auth_tx.add_field(TransactionField::from_u16(FieldType::UserIconId, user_icon_id));
             auth_tx.add_field(TransactionField::from_string(FieldType::UserName, &username));
             auth_tx.add_field(TransactionField::from_u32(FieldType::VersionNumber, 255));
-            auth_tx.add_field(TransactionField::from_u16(FieldType::Capabilities, CAPABILITY_LARGE_FILES));
+            auth_tx.add_field(TransactionField::from_u16(FieldType::Capabilities, CAPABILITY_LARGE_FILES | CAPABILITY_CHAT_HISTORY));
 
             println!("Sending HOPE authenticated login...");
             self.emit_protocol_log("info", "Sending HOPE authenticated login");
@@ -952,7 +956,7 @@ impl HotlineClient {
             login_tx.add_field(TransactionField::from_u16(FieldType::UserIconId, user_icon_id));
             login_tx.add_field(TransactionField::from_string(FieldType::UserName, &username));
             login_tx.add_field(TransactionField::from_u32(FieldType::VersionNumber, 255));
-            login_tx.add_field(TransactionField::from_u16(FieldType::Capabilities, CAPABILITY_LARGE_FILES));
+            login_tx.add_field(TransactionField::from_u16(FieldType::Capabilities, CAPABILITY_LARGE_FILES | CAPABILITY_CHAT_HISTORY));
 
             println!("Sending login...");
             self.emit_protocol_log("info", "Sending legacy login (XOR-encoded credentials)");
@@ -1025,12 +1029,33 @@ impl HotlineClient {
 
         let large_files = (server_capabilities & CAPABILITY_LARGE_FILES) != 0;
         self.large_file_support.store(large_files, Ordering::SeqCst);
-        println!("Server capabilities: 0x{:04X} (large files: {})", server_capabilities, large_files);
+
+        let chat_history = (server_capabilities & CAPABILITY_CHAT_HISTORY) != 0;
+        self.chat_history_support.store(chat_history, Ordering::SeqCst);
+
+        // Extract optional retention policy hints from login reply
+        let history_max_msgs = login_reply
+            .get_field(FieldType::HistoryMaxMsgs)
+            .and_then(|f| f.to_u32().ok());
+        let history_max_days = login_reply
+            .get_field(FieldType::HistoryMaxDays)
+            .and_then(|f| f.to_u32().ok());
+
+        println!("Server capabilities: 0x{:04X} (large files: {}, chat history: {})", server_capabilities, large_files, chat_history);
+        if chat_history {
+            println!("Chat history enabled by server: max_msgs={:?}, max_days={:?}", history_max_msgs, history_max_days);
+            self.emit_protocol_log("info", format!(
+                "Server chat history available — retention: max_msgs={}, max_days={}",
+                history_max_msgs.map_or("unlimited".to_string(), |v| if v == 0 { "unlimited".to_string() } else { v.to_string() }),
+                history_max_days.map_or("unlimited".to_string(), |v| if v == 0 { "unlimited".to_string() } else { v.to_string() }),
+            ));
+        }
         self.emit_protocol_log("info", format!(
-            "Login successful — server: \"{}\", version: {}, large files: {}, HOPE: {}",
+            "Login successful — server: \"{}\", version: {}, large files: {}, chat history: {}, HOPE: {}",
             server_name,
             server_version,
             large_files,
+            chat_history,
             if hope_negotiation.is_some() {
                 if hope_aead_active { "AEAD (ChaCha20-Poly1305)" }
                 else if hope_rc4_active { "encrypted (RC4)" }
@@ -1047,6 +1072,9 @@ impl HotlineClient {
                 hope_enabled: hope_negotiation.is_some(),
                 hope_transport: hope_transport_active,
                 agreement: None,
+                chat_history_supported: chat_history,
+                history_max_msgs: history_max_msgs,
+                history_max_days: history_max_days,
             });
         }
 
@@ -1809,6 +1837,7 @@ mod tests {
             port,
             login: "guest".to_string(),
             password: None,
+            has_password: false,
             icon: None,
             auto_connect: false,
             tls: true,

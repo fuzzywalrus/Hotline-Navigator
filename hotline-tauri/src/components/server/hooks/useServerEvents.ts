@@ -34,6 +34,7 @@ interface UseServerEventsProps {
   addTransfer: (transfer: any) => void;
   updateTransfer: (id: string, updates: Partial<any>) => void;
   onFileListReceived?: (path: string[]) => void;
+  serverInfoRef?: React.MutableRefObject<any>;
 }
 
 export function useServerEvents({
@@ -60,6 +61,7 @@ export function useServerEvents({
   addTransfer,
   updateTransfer,
   onFileListReceived,
+  serverInfoRef,
 }: UseServerEventsProps) {
   const sounds = useSound();
   const soundsRef = useRef(sounds);
@@ -213,8 +215,9 @@ export function useServerEvents({
       setMessages((prev) => [...prev, messageData]);
       if (!isMuted && !isServerHistory) soundsRef.current.playChatSound();
 
-      // Persist to encrypted chat history (skip server history — it's already from replay)
-      if (usePreferencesStore.getState().enableChatHistory && !isServerHistory) {
+      // Persist to encrypted chat history (skip if server provides history, or if replayed)
+      const serverHasHistory = serverInfoRef?.current?.chatHistorySupported && usePreferencesStore.getState().enableServerChatHistory;
+      if (usePreferencesStore.getState().enableChatHistory && !isServerHistory && !serverHasHistory) {
         useChatHistoryStore.getState().addMessage(serverId, serverName, {
           userId: messageData.userId,
           userName: messageData.userName,
@@ -284,7 +287,7 @@ export function useServerEvents({
       ]);
       soundsRef.current.playServerMessageSound();
 
-      if (usePreferencesStore.getState().enableChatHistory) {
+      if (usePreferencesStore.getState().enableChatHistory && !(serverInfoRef?.current?.chatHistorySupported && usePreferencesStore.getState().enableServerChatHistory)) {
         useChatHistoryStore.getState().addMessage(serverId, serverName, {
           userId: 0,
           userName: 'Server',
@@ -431,7 +434,7 @@ export function useServerEvents({
           }];
         });
 
-        if (usePreferencesStore.getState().enableChatHistory) {
+        if (usePreferencesStore.getState().enableChatHistory && !(serverInfoRef?.current?.chatHistorySupported && usePreferencesStore.getState().enableServerChatHistory)) {
           useChatHistoryStore.getState().addMessage(serverId, serverName, {
             userId: event.payload.userId,
             userName,
@@ -504,7 +507,7 @@ export function useServerEvents({
               }];
             });
 
-            if (usePreferencesStore.getState().enableChatHistory) {
+            if (usePreferencesStore.getState().enableChatHistory && !(serverInfoRef?.current?.chatHistorySupported && usePreferencesStore.getState().enableServerChatHistory)) {
               useChatHistoryStore.getState().addMessage(serverId, serverName, {
                 userId: event.payload.userId,
                 userName: event.payload.userName,

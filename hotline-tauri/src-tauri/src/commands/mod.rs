@@ -618,6 +618,71 @@ pub async fn get_user_access(
     state.get_user_access(&server_id).await
 }
 
+/// Response for the get_chat_history command.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatHistoryResponse {
+    pub entries: Vec<ChatHistoryEntry>,
+    pub has_more: bool,
+}
+
+/// A single chat history entry serialized for the frontend.
+/// message_id is a string to avoid JavaScript precision loss on u64.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatHistoryEntry {
+    pub message_id: String,
+    pub timestamp: i64,
+    pub is_action: bool,
+    pub is_server_msg: bool,
+    pub is_deleted: bool,
+    pub icon_id: u16,
+    pub nick: String,
+    pub message: String,
+}
+
+#[tauri::command]
+pub async fn get_chat_history(
+    server_id: String,
+    before: Option<String>,
+    after: Option<String>,
+    limit: Option<u16>,
+    state: State<'_, AppState>,
+) -> Result<ChatHistoryResponse, String> {
+    println!("Command: get_chat_history for {} (before={:?}, after={:?}, limit={:?})", server_id, before, after, limit);
+
+    // Parse cursor strings to u64 (frontend sends strings to avoid precision loss)
+    let before_u64 = before.as_deref()
+        .map(|s| s.parse::<u64>().map_err(|e| format!("Invalid 'before' cursor: {}", e)))
+        .transpose()?;
+    let after_u64 = after.as_deref()
+        .map(|s| s.parse::<u64>().map_err(|e| format!("Invalid 'after' cursor: {}", e)))
+        .transpose()?;
+
+    let (entries, has_more) = state.get_chat_history(&server_id, before_u64, after_u64, limit).await?;
+
+    let response_entries = entries.into_iter().map(|e| {
+        let is_action = e.is_action();
+        let is_server_msg = e.is_server_msg();
+        let is_deleted = e.is_deleted();
+        ChatHistoryEntry {
+            message_id: e.message_id,
+            timestamp: e.timestamp,
+            is_action,
+            is_server_msg,
+            is_deleted,
+            icon_id: e.icon_id,
+            nick: e.nick,
+            message: e.message,
+        }
+    }).collect();
+
+    Ok(ChatHistoryResponse {
+        entries: response_entries,
+        has_more,
+    })
+}
+
 #[tauri::command]
 pub async fn delete_file(
     server_id: String,
@@ -970,7 +1035,7 @@ pub async fn fetch_link_preview(url: String) -> Result<LinkPreviewData, String> 
     for _ in 0..5 {
         let resp = client
             .get(&current_url)
-            .header("User-Agent", "Mozilla/5.0 (compatible; HotlineNavigator/0.2.6)")
+            .header("User-Agent", "Mozilla/5.0 (compatible; HotlineNavigator/0.2.7)")
             .header("Accept", "text/html")
             .send()
             .await

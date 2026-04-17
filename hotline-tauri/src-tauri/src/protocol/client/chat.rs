@@ -2,6 +2,7 @@
 
 use super::HotlineClient;
 use crate::protocol::constants::{FieldType, TransactionType, resolve_error_message};
+use crate::protocol::history::{self, HistoryEntry};
 use crate::protocol::transaction::{Transaction, TransactionField};
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -184,6 +185,101 @@ impl HotlineClient {
         transaction.add_field(TransactionField::from_u32(FieldType::ChatId, chat_id));
         transaction.add_field(TransactionField::from_string(FieldType::ChatSubject, &subject));
         self.send_transaction(&transaction).await
+    }
+
+    /// Request chat history from the server (transaction 700).
+    ///
+    /// Returns a vec of parsed history entries (oldest-first) and a `has_more` flag.
+    /// `channel_id` is always 0 for public chat.
+    pub async fn get_chat_history(
+        &self,
+        channel_id: u32,
+        before: Option<u64>,
+        after: Option<u64>,
+        limit: Option<u16>,
+    ) -> Result<(Vec<HistoryEntry>, bool), String> {
+        println!("Requesting chat history: channel={}, before={:?}, after={:?}, limit={:?}", channel_id, before, after, limit);
+        self.emit_protocol_log("info", format!(
+            "Requesting chat history (channel={}, before={:?}, after={:?}, limit={:?})",
+            channel_id, before, after, limit
+        ));
+
+        let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::GetChatHistory);
+        transaction.add_field(TransactionField::from_u32(FieldType::ChannelId, channel_id));
+
+        if let Some(b) = before {
+            transaction.add_field(TransactionField::from_u64(FieldType::HistoryBefore, b));
+        }
+        if let Some(a) = after {
+            transaction.add_field(TransactionField::from_u64(FieldType::HistoryAfter, a));
+        }
+        if let Some(l) = limit {
+            transaction.add_field(TransactionField::from_u16(FieldType::HistoryLimit, l));
+        }
+
+        let transaction_id = transaction.id;
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut pending = self.pending_transactions.write().await;
+            pending.insert(transaction_id, tx);
+        }
+
+        self.send_transaction(&transaction).await?;
+
+        match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(reply)) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+
+                if reply.error_code != 0 {
+                    let server_text = reply.get_field(FieldType::ErrorText).and_then(|f| f.to_string().ok());
+                    return Err(resolve_error_message(reply.error_code, server_text));
+                }
+
+                // Parse all DATA_HISTORY_ENTRY (0x0F05) fields
+                let entries: Vec<HistoryEntry> = reply.fields.iter()
+                    .filter(|f| f.field_type == FieldType::HistoryEntry)
+                    .filter_map(|f| {
+                        match history::parse_history_entry(&f.data) {
+                            Ok(entry) => Some(entry),
+                            Err(e) => {
+                                println!("Warning: failed to parse history entry: {}", e);
+                                None
+                            }
+                        }
+                    })
+                    .collect();
+
+                // Extract has_more flag (default false if absent)
+                let has_more = reply
+                    .get_field(FieldType::HistoryHasMore)
+                    .map(|f| {
+                        if f.data.is_empty() { false }
+                        else { f.data[0] != 0 }
+                    })
+                    .unwrap_or(false);
+
+                println!("Chat history reply: {} entries, has_more={}", entries.len(), has_more);
+                self.emit_protocol_log("info", format!(
+                    "Chat history received: {} entries, has_more={}",
+                    entries.len(), has_more
+                ));
+
+                Ok((entries, has_more))
+            }
+            Ok(None) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                println!("Chat history request failed: channel closed");
+                Err("Channel closed".to_string())
+            }
+            Err(_) => {
+                let mut pending = self.pending_transactions.write().await;
+                pending.remove(&transaction_id);
+                println!("Chat history request failed: timeout");
+                Err("Timeout waiting for chat history reply".to_string())
+            }
+        }
     }
 
     /// Send a chat message to a private chat room.

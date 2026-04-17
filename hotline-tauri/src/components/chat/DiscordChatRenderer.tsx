@@ -12,6 +12,7 @@ interface ChatMessage {
   isMention?: boolean;
   isAdmin?: boolean;
   isServerHistory?: boolean;
+  fromHistory?: boolean;
 }
 
 interface MessageGroup {
@@ -46,12 +47,16 @@ function batchMessages(messages: ChatMessage[]): (MessageGroup | ChatMessage)[] 
   let currentGroup: MessageGroup | null = null;
 
   messages.forEach((msg, index) => {
-    // System messages, broadcasts, and server history break batching
+    // System messages, broadcasts, and legacy server history replay break batching
+    // (but NOT messages from the chat history extension — those render as normal Discord messages)
     const isSystem = msg.type === 'joined' || msg.type === 'left' || msg.type === 'signOut';
     const isBroadcast = msg.userName === 'Server' && msg.userId === 0;
-    const isServerHistory = msg.isServerHistory;
+    const isLegacyReplay = msg.isServerHistory && !msg.fromHistory;
+    // Detect sign-on/off messages from server history (e.g., "nick signed on", "nick signed off")
+    const isSignOnOff = msg.fromHistory && /\bsigned (on|off)\b/i.test(msg.message);
+    const isServerType = msg.type === 'server';
 
-    if (isSystem || isBroadcast || isServerHistory) {
+    if (isSystem || isBroadcast || isLegacyReplay || isSignOnOff || isServerType) {
       if (currentGroup) {
         batches.push(currentGroup);
         currentGroup = null;
@@ -137,17 +142,18 @@ export default function DiscordChatRenderer({ messages, formatTime }: DiscordCha
             );
           }
 
-          // Join/leave/server history — render as simple centered text
-          if (msg.type === 'joined' || msg.type === 'left') {
+          // Join/leave/sign-on/off/server messages — render as simple centered italic text
+          const isSignMsg = msg.fromHistory && /\bsigned (on|off)\b/i.test(msg.message);
+          if (msg.type === 'joined' || msg.type === 'left' || isSignMsg || msg.type === 'server') {
             return (
-              <div key={`sys-${batchIndex}`} className="text-sm text-center my-1">
-                <span className="italic text-gray-500 dark:text-gray-400">{msg.message}</span>
+              <div key={`sys-${batchIndex}`} className="text-xs text-center my-1">
+                <span className="italic text-gray-400 dark:text-gray-500">{msg.message}</span>
               </div>
             );
           }
 
-          // Server history message — render retro-style (no icon)
-          if (msg.isServerHistory) {
+          // Legacy server history replay — render retro-style (no icon)
+          if (msg.isServerHistory && !msg.fromHistory) {
             return (
               <div key={`hist-${batchIndex}`} className="text-sm">
                 <span className={`font-bold ${

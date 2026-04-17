@@ -2,6 +2,7 @@
 
 pub mod client;
 pub mod constants;
+pub mod history;
 pub mod transaction;
 pub mod types;
 pub mod tracker;
