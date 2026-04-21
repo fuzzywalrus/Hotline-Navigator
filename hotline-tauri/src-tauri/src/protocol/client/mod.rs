@@ -28,6 +28,21 @@ use tokio::task::JoinHandle;
 use hope_aead::{HopeAeadReader, HopeAeadWriter};
 use hope_stream::{HopeReader, HopeWriter};
 
+/// Enable TCP-level keepalive on a control-channel socket so the OS surfaces
+/// silent drops (peer vanished without FIN/RST) before the multi-minute
+/// retransmit default. idle=30s, interval=10s, count=3 — ~60s detection on
+/// macOS/Linux. Windows can't set retry count via socket2, so it uses the
+/// system default (typically 10) and detects in ~130s.
+fn apply_tcp_keepalive(stream: &TcpStream) -> std::io::Result<()> {
+    let sock_ref = socket2::SockRef::from(stream);
+    let ka = socket2::TcpKeepalive::new()
+        .with_time(Duration::from_secs(30))
+        .with_interval(Duration::from_secs(10));
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "linux", target_os = "android", target_os = "freebsd"))]
+    let ka = ka.with_retries(3);
+    sock_ref.set_tcp_keepalive(&ka)
+}
+
 /// Transport reader: either RC4 stream (with optional encryption) or AEAD.
 enum TransportReader {
     Stream(HopeReader),
@@ -280,6 +295,10 @@ impl HotlineClient {
             format!("Failed to connect: {}", e)
         })?;
 
+        if let Err(e) = apply_tcp_keepalive(&stream) {
+            self.emit_protocol_log("warn", format!("Failed to enable TCP keepalive: {}", e));
+        }
+
         if self.bookmark.tls {
             // Always try modern TLS (1.2+) first via rustls.
             // If that fails and legacy TLS is enabled, reconnect and retry
@@ -312,6 +331,10 @@ impl HotlineClient {
                     .await
                     .map_err(|_| format!("Legacy TLS reconnect timed out"))?
                     .map_err(|e| format!("Legacy TLS reconnect failed: {}", e))?;
+
+                    if let Err(e) = apply_tcp_keepalive(&stream) {
+                        self.emit_protocol_log("warn", format!("Failed to enable TCP keepalive (legacy): {}", e));
+                    }
 
                     match tokio::time::timeout(
                         Duration::from_secs(10),
@@ -1614,8 +1637,11 @@ impl HotlineClient {
         println!("Starting keep-alive...");
 
         let hope_writer = self.transport_writer.clone();
+        let transport_reader = self.transport_reader.clone();
         let running = self.running.clone();
         let transaction_counter = self.transaction_counter.clone();
+        let status = self.status.clone();
+        let event_tx = self.event_tx.clone();
 
         let task = tokio::spawn(async move {
             while running.load(Ordering::SeqCst) {
@@ -1635,7 +1661,14 @@ impl HotlineClient {
                 let mut write_guard = hope_writer.lock().await;
                 if let Some(writer) = write_guard.as_mut() {
                     if writer.write_transaction(&transaction).await.is_err() {
-                        println!("Keep-alive failed, connection lost");
+                        println!("Keep-alive write failed — marking disconnected");
+                        // Clear writer (we already hold the guard) then reader;
+                        // receive loop will unblock on the next read error.
+                        *write_guard = None;
+                        drop(write_guard);
+                        transport_reader.lock().await.take();
+                        *status.lock().await = ConnectionStatus::Disconnected;
+                        let _ = event_tx.send(HotlineEvent::StatusChanged(ConnectionStatus::Disconnected));
                         break;
                     }
                     println!("Keep-alive sent");
