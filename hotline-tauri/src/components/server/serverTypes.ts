@@ -14,6 +14,8 @@ export interface ChatMessage {
   isDeleted?: boolean; // Tombstoned message (from history flags bit 2)
   messageId?: string; // Server-assigned history ID (string to avoid JS precision loss)
   fromHistory?: boolean; // True if loaded from server-side chat history extension
+  pending?: boolean; // Optimistic local insert awaiting server echo
+  optimisticKey?: string; // Identifier for matching optimistic insert with its echo
 }
 
 export interface User {

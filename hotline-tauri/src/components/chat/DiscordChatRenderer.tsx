@@ -13,6 +13,8 @@ interface ChatMessage {
   isAdmin?: boolean;
   isServerHistory?: boolean;
   fromHistory?: boolean;
+  pending?: boolean;
+  optimisticKey?: string;
 }
 
 interface MessageGroup {
@@ -21,7 +23,7 @@ interface MessageGroup {
   iconId?: number;
   isAdmin?: boolean;
   timestamp: Date;
-  messages: { message: string; timestamp: Date; isMention?: boolean; index: number }[];
+  messages: { message: string; timestamp: Date; isMention?: boolean; index: number; pending?: boolean }[];
 }
 
 interface ChatUser {
@@ -106,6 +108,7 @@ function batchMessages(
         message: msg.message,
         timestamp: msg.timestamp,
         isMention: msg.isMention,
+        pending: msg.pending,
         index,
       });
     } else {
@@ -122,6 +125,7 @@ function batchMessages(
           message: msg.message,
           timestamp: msg.timestamp,
           isMention: msg.isMention,
+          pending: msg.pending,
           index,
         }],
       };
@@ -262,7 +266,7 @@ export default function DiscordChatRenderer({ messages, users, formatTime }: Dis
                       m.isMention
                         ? 'bg-yellow-50 dark:bg-yellow-900/20 border-l-2 border-yellow-400 dark:border-yellow-500 pl-2 py-0.5 rounded-r my-0.5'
                         : ''
-                    }`}
+                    } ${m.pending ? 'opacity-60' : ''}`}
                   >
                     <span className="text-gray-900 dark:text-gray-100">
                       <MarkdownText text={displayText} hideImageUrls />

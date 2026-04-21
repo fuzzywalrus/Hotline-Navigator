@@ -61,6 +61,10 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
   const [newsCategories, setNewsCategories] = useState<NewsCategory[]>([]);
   const [newsArticles, setNewsArticles] = useState<NewsArticle[]>([]);
   const [newsPath, setNewsPath] = useState<string[]>([]);
+  // Hotline news has bundles (type 2, contain bundles/categories) and categories
+  // (type 3, contain articles). Only the leaf type matters for which fetch to
+  // call — going back always lands on a bundle since it had to contain children.
+  const [newsLeafType, setNewsLeafType] = useState<2 | 3>(2);
   const [selectedArticle, setSelectedArticle] = useState<NewsArticle | null>(null);
   const [articleContent, setArticleContent] = useState<string>('');
   const [loadingNews, setLoadingNews] = useState(false);
@@ -742,6 +746,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     currentPath,
     downloadFolder,
     setMessage,
+    setMessages,
     setSending,
     setBoardMessage,
     setPostingBoard,
@@ -751,6 +756,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
     setPrivateMessageHistory,
     setAgreementText,
     setNewsPath,
+    setNewsLeafType,
     setNewsArticles,
     setComposerTitle,
     setComposerBody,
@@ -947,25 +953,15 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
       setSelectedArticle(null);
       setArticleContent('');
 
-      // Load categories OR articles based on path (not both!)
-      // Empty path = root, load categories
-      // Non-empty path = inside a category, load articles
+      // Dispatch on the leaf item type:
+      //   bundle (type 2) → list of bundles/categories  → get_news_categories
+      //   category (type 3) → list of articles         → get_news_articles
+      // Root path is implicitly a bundle (default leaf type 2).
       const loadNews = async () => {
-        log('News', 'Loading news for path', newsPath);
+        log('News', 'Loading news for path', { newsPath, leafType: newsLeafType });
         try {
-          if (newsPath.length === 0) {
-            // Root path - load categories only
-            log('News', 'Fetching categories at root path');
-            const categories = await invoke<NewsCategory[]>('get_news_categories', {
-              serverId,
-              path: newsPath,
-            });
-            log('News', 'Categories received', { count: categories.length });
-            setNewsCategories(categories);
-            setNewsArticles([]);
-          } else {
-            // Inside a category - load articles only
-            log('News', 'Fetching articles for path', newsPath);
+          if (newsLeafType === 3) {
+            log('News', 'Fetching articles (leaf is a category)');
             const articles = await invoke<NewsArticle[]>('get_news_articles', {
               serverId,
               path: newsPath,
@@ -973,6 +969,15 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
             log('News', 'Articles received', { count: articles.length });
             setNewsCategories([]);
             setNewsArticles(articles);
+          } else {
+            log('News', 'Fetching categories (leaf is a bundle)');
+            const categories = await invoke<NewsCategory[]>('get_news_categories', {
+              serverId,
+              path: newsPath,
+            });
+            log('News', 'Categories received', { count: categories.length });
+            setNewsCategories(categories);
+            setNewsArticles([]);
           }
         } catch (error) {
           logError('News', 'Failed to load news', error);
@@ -985,7 +990,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
 
       loadNews();
     }
-  }, [activeTab, newsPath, serverId]);
+  }, [activeTab, newsPath, newsLeafType, serverId]);
 
 
   return (

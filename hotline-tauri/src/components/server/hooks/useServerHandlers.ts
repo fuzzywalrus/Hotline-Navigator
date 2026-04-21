@@ -1,7 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import { openPath } from '@tauri-apps/plugin-opener';
-import type { NewsArticle } from '../serverTypes';
+import type { ChatMessage, NewsArticle } from '../serverTypes';
 import { useSound } from '../../../hooks/useSound';
+import { usePreferencesStore } from '../../../stores/preferencesStore';
 import { showNotification, useNotificationStore } from '../../../stores/notificationStore';
 import { log, error as logError } from '../../../utils/logger';
 
@@ -11,6 +12,7 @@ interface UseServerHandlersProps {
   currentPath: string[];
   downloadFolder?: string | null;
   setMessage: React.Dispatch<React.SetStateAction<string>>;
+  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   setSending: React.Dispatch<React.SetStateAction<boolean>>;
   setBoardMessage: React.Dispatch<React.SetStateAction<string>>;
   setPostingBoard: React.Dispatch<React.SetStateAction<boolean>>;
@@ -20,6 +22,7 @@ interface UseServerHandlersProps {
   setPrivateMessageHistory: React.Dispatch<React.SetStateAction<Map<number, any[]>>>;
   setAgreementText: React.Dispatch<React.SetStateAction<string | null>>;
   setNewsPath: React.Dispatch<React.SetStateAction<string[]>>;
+  setNewsLeafType: React.Dispatch<React.SetStateAction<2 | 3>>;
   setNewsArticles: React.Dispatch<React.SetStateAction<NewsArticle[]>>;
   setComposerTitle: React.Dispatch<React.SetStateAction<string>>;
   setComposerBody: React.Dispatch<React.SetStateAction<string>>;
@@ -35,6 +38,7 @@ export function useServerHandlers({
   currentPath,
   downloadFolder,
   setMessage,
+  setMessages,
   setSending,
   setBoardMessage,
   setPostingBoard,
@@ -44,6 +48,7 @@ export function useServerHandlers({
   setPrivateMessageHistory,
   setAgreementText,
   setNewsPath,
+  setNewsLeafType,
   setNewsArticles,
   setComposerTitle,
   setComposerBody,
@@ -59,19 +64,64 @@ export function useServerHandlers({
     if (!message.trim() || sending) return;
 
     const messageText = message.trim();
+
+    // Optimistically insert only for commands (! and /), so the user's command
+    // reliably appears before the server's broadcast response. Regular chat
+    // keeps the original wait-for-echo behavior.
+    const isCommand = messageText.startsWith('!') || messageText.startsWith('/');
+    let optimisticKey: string | null = null;
+    if (isCommand) {
+      const prefs = usePreferencesStore.getState();
+      const ownUsername = prefs.username;
+      const ownIconId = prefs.userIconId;
+
+      // Preformat /me and /em as the server will echo them, so dedup matches.
+      let displayMessage = messageText;
+      const meMatch = messageText.match(/^\/(me|em)\s+(.*)$/);
+      if (meMatch) {
+        displayMessage = `*** ${ownUsername} ${meMatch[2]}`;
+      }
+
+      optimisticKey = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const key = optimisticKey;
+      setMessages((prev) => [
+        ...prev,
+        {
+          userId: 0,
+          userName: ownUsername,
+          iconId: ownIconId,
+          message: displayMessage,
+          timestamp: new Date(),
+          pending: true,
+          optimisticKey: key,
+        },
+      ]);
+      setMessage('');
+
+      // Safety: clear pending after 30s if the server never echoes (e.g. dropped).
+      setTimeout(() => {
+        setMessages((prev) =>
+          prev.map((m) => (m.optimisticKey === key ? { ...m, pending: false } : m))
+        );
+      }, 30000);
+    }
+
     setSending(true);
     try {
       await invoke('send_chat_message', {
         serverId,
         message: messageText,
       });
-
-      // Don't add message locally - wait for server echo to avoid duplicates
-      // The server will echo the message back as a ChatMessage event
       log('Chat', 'Message sent');
-      setMessage('');
+      if (!isCommand) setMessage('');
     } catch (err) {
       logError('Chat', 'Failed to send message', err);
+      if (optimisticKey) {
+        const key = optimisticKey;
+        setMessages((prev) =>
+          prev.map((m) => (m.optimisticKey === key ? { ...m, pending: false } : m))
+        );
+      }
       showNotification.error(
         `Failed to send message: ${err}`,
         'Message Error',
@@ -361,6 +411,7 @@ export function useServerHandlers({
     log('News', 'Navigating to category', category);
     if (category.type === 2 || category.type === 3) {
       setNewsPath(category.path);
+      setNewsLeafType(category.type);
     }
   };
 
@@ -368,6 +419,8 @@ export function useServerHandlers({
     log('News', 'Navigating back from path', newsPath);
     if (newsPath.length > 0) {
       setNewsPath(newsPath.slice(0, -1));
+      // Parent of any item is by definition a bundle (it contained children).
+      setNewsLeafType(2);
     }
   };
 

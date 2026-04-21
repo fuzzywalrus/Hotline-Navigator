@@ -226,6 +226,39 @@ export function useServerEvents({
         iconId = usePreferencesStore.getState().userIconId;
       }
 
+      // Echo dedup: if this is our own message, look for a pending optimistic
+      // entry with matching text within the last 10s and confirm it in place
+      // (drops the duplicate). This is what makes "/help" appear before the
+      // server's broadcast response — our message is already in the list.
+      const isOwnMessage = resolvedUserName.toLowerCase() === username.toLowerCase();
+      if (isOwnMessage) {
+        const trimmedBody = event.payload.message.trim();
+        const pendingMatch = messagesRef.current.find(
+          (m) =>
+            m.pending
+            && m.userName === resolvedUserName
+            && m.message.trim() === trimmedBody
+            && Date.now() - m.timestamp.getTime() < 10000,
+        );
+        if (pendingMatch) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.optimisticKey === pendingMatch.optimisticKey
+                ? {
+                    ...m,
+                    pending: false,
+                    userId: event.payload.userId,
+                    isAdmin: sender?.isAdmin ?? false,
+                    isServerHistory,
+                  }
+                : m,
+            ),
+          );
+          if (!isMuted && !isServerHistory) soundsRef.current.playChatSound();
+          return;
+        }
+      }
+
       const messageData = {
         ...event.payload,
         userName: resolvedUserName,
