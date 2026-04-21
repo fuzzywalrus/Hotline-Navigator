@@ -24,8 +24,16 @@ interface MessageGroup {
   messages: { message: string; timestamp: Date; isMention?: boolean; index: number }[];
 }
 
+interface ChatUser {
+  userId: number;
+  userName: string;
+  iconId?: number;
+  isAdmin?: boolean;
+}
+
 interface DiscordChatRendererProps {
   messages: ChatMessage[];
+  users?: ChatUser[];
   formatTime: (date: Date) => string;
 }
 
@@ -42,9 +50,26 @@ function stripUsernamePrefix(message: string, userName: string): string {
   return trimmed;
 }
 
-function batchMessages(messages: ChatMessage[]): (MessageGroup | ChatMessage)[] {
+function batchMessages(
+  messages: ChatMessage[],
+  users?: ChatUser[],
+): (MessageGroup | ChatMessage)[] {
   const batches: (MessageGroup | ChatMessage)[] = [];
   let currentGroup: MessageGroup | null = null;
+
+  // Resolve iconId/isAdmin from the live user list when possible — the values
+  // baked into the message at receipt time can be stale (e.g. user list hadn't
+  // populated yet, or the user has since changed icon/admin status).
+  // Fall back to the cached values for users no longer in the list.
+  const resolveLive = (msg: ChatMessage): { iconId?: number; isAdmin?: boolean } => {
+    if (!users || !msg.userId) return { iconId: msg.iconId, isAdmin: msg.isAdmin };
+    const live = users.find((u) => u.userId === msg.userId)
+      || users.find((u) => u.userName === msg.userName);
+    return {
+      iconId: live?.iconId ?? msg.iconId,
+      isAdmin: live?.isAdmin ?? msg.isAdmin,
+    };
+  };
 
   messages.forEach((msg, index) => {
     // System messages, broadcasts, and legacy server history replay break batching
@@ -86,11 +111,12 @@ function batchMessages(messages: ChatMessage[]): (MessageGroup | ChatMessage)[] 
     } else {
       // Start a new group
       if (currentGroup) batches.push(currentGroup);
+      const live = resolveLive(msg);
       currentGroup = {
         userId: msg.userId,
         userName: msg.userName,
-        iconId: msg.iconId,
-        isAdmin: msg.isAdmin,
+        iconId: live.iconId,
+        isAdmin: live.isAdmin,
         timestamp: msg.timestamp,
         messages: [{
           message: msg.message,
@@ -110,8 +136,8 @@ function isMessageGroup(item: MessageGroup | ChatMessage): item is MessageGroup 
   return 'messages' in item && Array.isArray((item as MessageGroup).messages);
 }
 
-export default function DiscordChatRenderer({ messages, formatTime }: DiscordChatRendererProps) {
-  const batches = batchMessages(messages);
+export default function DiscordChatRenderer({ messages, users, formatTime }: DiscordChatRendererProps) {
+  const batches = batchMessages(messages, users);
 
   return (
     <>

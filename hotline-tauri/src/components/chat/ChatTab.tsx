@@ -19,9 +19,17 @@ interface ChatMessage {
   fromHistory?: boolean;
 }
 
+interface ChatUser {
+  userId: number;
+  userName: string;
+  iconId?: number;
+  isAdmin?: boolean;
+}
+
 interface ChatTabProps {
   serverName: string;
   messages: ChatMessage[];
+  users?: ChatUser[];
   message: string;
   sending: boolean;
   bannerUrl?: string | null;
@@ -43,6 +51,7 @@ interface ChatTabProps {
 export default function ChatTab({
   serverName,
   messages,
+  users,
   message,
   sending,
   bannerUrl: _bannerUrl,
@@ -220,7 +229,7 @@ export default function ChatTab({
             Connected to {serverName}
           </div>
         ) : chatDisplayMode === 'discord' ? (
-          <DiscordChatRenderer messages={messages} formatTime={formatTime} />
+          <DiscordChatRenderer messages={messages} users={users} formatTime={formatTime} />
         ) : (
           messages.map((msg, index) => {
             // Show dividers when timestamps are enabled

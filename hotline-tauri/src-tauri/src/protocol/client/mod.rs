@@ -1405,13 +1405,19 @@ impl HotlineClient {
                 // If the server didn't send a separate UserName field, parse it
                 // from the Data field. Hotline chat Data is typically formatted as
                 // "\r <nick>:  <message>" or "\n <nick>:  <message>".
+                // Emote messages use "*** <nick> <action>" with no colon.
                 if user_name.is_empty() {
-                    let trimmed = message.trim_start_matches(|c: char| c == '\r' || c == '\n');
+                    let trimmed = message
+                        .trim_start_matches(|c: char| c == '\r' || c == '\n' || c == ' ');
                     if let Some(colon_pos) = trimmed.find(':') {
                         let candidate = trimmed[..colon_pos].trim();
                         if !candidate.is_empty() {
                             user_name = candidate.to_string();
                             message = trimmed[colon_pos + 1..].trim_start().to_string();
+                        }
+                    } else if let Some(rest) = trimmed.strip_prefix("*** ") {
+                        if let Some(name) = rest.split_whitespace().next() {
+                            user_name = name.to_string();
                         }
                     }
                 }

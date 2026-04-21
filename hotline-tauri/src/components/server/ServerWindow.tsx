@@ -1269,6 +1269,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
             <ChatTab
               serverName={serverName}
               messages={messages}
+              users={users}
               message={message}
               sending={sending}
               bannerUrl={bannerUrl}

@@ -128,13 +128,36 @@ export function useServerEvents({
       if (!isActive) return; // Prevent processing if effect has been cleaned up
 
       const prefs = usePreferencesStore.getState();
+
+      // For emote messages ("*** name action"), the Rust parser extracts only the
+      // first whitespace token as the sender name — but Hotline usernames can
+      // contain spaces (e.g. "dmg - dev"). Re-resolve the real sender by finding
+      // the longest username in the live user list that the body starts with.
+      let resolvedUserName = event.payload.userName;
+      const bodyTrimmed = event.payload.message.replace(/^[\r\n\s]+/, '');
+      if (bodyTrimmed.startsWith('*** ')) {
+        const afterStars = bodyTrimmed.slice(4);
+        let bestMatch = '';
+        for (const u of usersRef.current) {
+          if (
+            (afterStars.startsWith(u.userName + ' ') || afterStars === u.userName)
+            && u.userName.length > bestMatch.length
+          ) {
+            bestMatch = u.userName;
+          }
+        }
+        if (bestMatch) {
+          resolvedUserName = bestMatch;
+        }
+      }
+
       const isMuted = prefs.mutedUsers.some(
-        (u) => u.toLowerCase() === event.payload.userName.toLowerCase()
+        (u) => u.toLowerCase() === resolvedUserName.toLowerCase()
       );
 
       // Look up sender from current users — try by userId first, fall back to userName
       const sender = usersRef.current.find(u => u.userId === event.payload.userId)
-        || usersRef.current.find(u => u.userName === event.payload.userName);
+        || usersRef.current.find(u => u.userName === resolvedUserName);
 
       // Check if message contains a mention of the current user or a watch word
       const isMention = !isMuted && (
@@ -199,12 +222,13 @@ export function useServerEvents({
 
       // Resolve icon: from user list, or fall back to own icon if it's our message
       let iconId = sender?.iconId;
-      if (iconId == null && event.payload.userName.toLowerCase() === username.toLowerCase()) {
+      if (iconId == null && resolvedUserName.toLowerCase() === username.toLowerCase()) {
         iconId = usePreferencesStore.getState().userIconId;
       }
 
       const messageData = {
         ...event.payload,
+        userName: resolvedUserName,
         timestamp: new Date(),
         iconId,
         isMention,
