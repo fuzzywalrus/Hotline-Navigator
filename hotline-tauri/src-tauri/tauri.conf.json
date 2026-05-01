@@ -43,7 +43,8 @@
       "minimumSystemVersion": "11.0",
       "exceptionDomain": "",
       "signingIdentity": "Developer ID Application: Greg Gant (36SA478KNK)",
-      "entitlements": null
+      "entitlements": null,
+      "infoPlist": "Info.plist"
     },
     "windows": {
       "certificateThumbprint": null,
