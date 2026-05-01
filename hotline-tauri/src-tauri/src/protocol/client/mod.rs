@@ -1950,4 +1950,191 @@ mod tests {
             "hotline.example.com"
         );
     }
+
+    // ─── End-to-end integration tests ─────────────────────────────────────
+    //
+    // These exercise the full transport stack against a real server: TCP/TLS
+    // accept → Hotline TRTP/HOTL handshake → transaction round-trip. They
+    // close the coverage gap between unit tests (which exercise each layer
+    // in isolation) and manual ad-hoc verification against real servers.
+
+    use std::io::{Read, Write};
+    use crate::protocol::constants::{PROTOCOL_ID, SUBPROTOCOL_ID};
+    use crate::protocol::transaction::Transaction;
+    use crate::protocol::constants::TransactionType;
+
+    /// Read the 12-byte Hotline handshake, validate, send the 8-byte success
+    /// ack, then read one transaction and reply. Generic over any blocking
+    /// read+write stream so it works for plain TCP and TLS-wrapped streams.
+    fn handle_one_hotline_session(stream: &mut (impl Read + Write)) -> Result<(), String> {
+        // 1. Read 12-byte handshake: "TRTP" + "HOTL" + version(u16) + subversion(u16)
+        let mut handshake = [0u8; 12];
+        stream
+            .read_exact(&mut handshake)
+            .map_err(|e| format!("read handshake: {}", e))?;
+        if &handshake[0..4] != PROTOCOL_ID || &handshake[4..8] != SUBPROTOCOL_ID {
+            return Err(format!("bad handshake magic: {:?}", &handshake[0..8]));
+        }
+
+        // 2. Send 8-byte ack: "TRTP" + error_code u32 = 0
+        stream
+            .write_all(b"TRTP\x00\x00\x00\x00")
+            .map_err(|e| format!("write ack: {}", e))?;
+        stream.flush().map_err(|e| format!("flush ack: {}", e))?;
+
+        // 3. Read one full transaction (20-byte header + body)
+        let mut header = [0u8; 20];
+        stream
+            .read_exact(&mut header)
+            .map_err(|e| format!("read tx header: {}", e))?;
+        let request_id =
+            u32::from_be_bytes([header[4], header[5], header[6], header[7]]);
+        let data_size =
+            u32::from_be_bytes([header[16], header[17], header[18], header[19]]) as usize;
+        let mut body = vec![0u8; data_size];
+        if data_size > 0 {
+            stream
+                .read_exact(&mut body)
+                .map_err(|e| format!("read tx body: {}", e))?;
+        }
+
+        // 4. Build a minimal reply: same id, is_reply=1, error_code=0, no fields
+        let mut reply = Vec::with_capacity(22);
+        reply.push(0); // flags
+        reply.push(1); // is_reply
+        reply.extend_from_slice(&0u16.to_be_bytes()); // type
+        reply.extend_from_slice(&request_id.to_be_bytes()); // id (echoed)
+        reply.extend_from_slice(&0u32.to_be_bytes()); // error_code
+        reply.extend_from_slice(&2u32.to_be_bytes()); // total_size (just the field count)
+        reply.extend_from_slice(&2u32.to_be_bytes()); // data_size
+        reply.extend_from_slice(&0u16.to_be_bytes()); // field count = 0
+        stream
+            .write_all(&reply)
+            .map_err(|e| format!("write reply: {}", e))?;
+        stream.flush().map_err(|e| format!("flush reply: {}", e))?;
+        Ok(())
+    }
+
+    fn spawn_plain_hotline_server() -> Result<(u16, thread::JoinHandle<Result<(), String>>), String>
+    {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .map_err(|e| format!("bind: {}", e))?;
+        let port = listener
+            .local_addr()
+            .map_err(|e| format!("local_addr: {}", e))?
+            .port();
+        let handle = thread::spawn(move || -> Result<(), String> {
+            let (mut stream, _) = listener.accept().map_err(|e| format!("accept: {}", e))?;
+            handle_one_hotline_session(&mut stream)
+        });
+        Ok((port, handle))
+    }
+
+    fn spawn_tls_hotline_server() -> Result<(u16, thread::JoinHandle<Result<(), String>>), String> {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .map_err(|e| format!("bind: {}", e))?;
+        let port = listener
+            .local_addr()
+            .map_err(|e| format!("local_addr: {}", e))?
+            .port();
+        let (pkey, cert) = build_self_signed_cert()?;
+
+        let mut builder = SslAcceptor::mozilla_intermediate_v5(SslMethod::tls())
+            .map_err(|e| format!("acceptor builder: {}", e))?;
+        builder.set_private_key(&pkey).map_err(|e| format!("set key: {}", e))?;
+        builder.set_certificate(&cert).map_err(|e| format!("set cert: {}", e))?;
+        builder.check_private_key().map_err(|e| format!("check key: {}", e))?;
+        builder.set_min_proto_version(Some(SslVersion::TLS1_2))
+            .map_err(|e| format!("min ver: {}", e))?;
+        builder.set_max_proto_version(Some(SslVersion::TLS1_2))
+            .map_err(|e| format!("max ver: {}", e))?;
+        let acceptor = builder.build();
+
+        let handle = thread::spawn(move || -> Result<(), String> {
+            let (raw, _) = listener.accept().map_err(|e| format!("accept: {}", e))?;
+            let mut tls = acceptor.accept(raw).map_err(|e| format!("tls accept: {}", e))?;
+            handle_one_hotline_session(&mut tls)
+        });
+        Ok((port, handle))
+    }
+
+    /// End-to-end: plain TCP → Hotline handshake → transaction round-trip.
+    /// Proves that open_connection + handshake + transport_writer/reader work
+    /// together against a real server doing the real wire protocol.
+    #[tokio::test]
+    async fn e2e_plain_tcp_handshake_and_transaction_roundtrip() {
+        let (port, server) = spawn_plain_hotline_server().expect("server start");
+        let mut bookmark = test_tls_bookmark(port);
+        bookmark.tls = false;
+        let client = HotlineClient::new(bookmark, false);
+
+        client
+            .open_connection()
+            .await
+            .expect("open_connection failed");
+        client
+            .handshake(super::PROTOCOL_SUBVERSION)
+            .await
+            .expect("handshake failed");
+
+        // Send a minimal transaction (KeepAlive — no fields, no side effects)
+        // and read the reply directly through the transport, bypassing login.
+        let tx = Transaction::new(client.next_transaction_id(), TransactionType::KeepAlive);
+        {
+            let mut writer_guard = client.transport_writer.lock().await;
+            let writer = writer_guard.as_mut().expect("writer present");
+            writer
+                .write_transaction(&tx)
+                .await
+                .expect("write_transaction failed");
+        }
+        let reply = {
+            let mut reader_guard = client.transport_reader.lock().await;
+            let reader = reader_guard.as_mut().expect("reader present");
+            reader.read_transaction().await.expect("read_transaction failed")
+        };
+        assert_eq!(reply.id, tx.id, "reply should echo our transaction id");
+        assert_eq!(reply.is_reply, 1);
+        assert_eq!(reply.error_code, 0);
+
+        server.join().expect("server thread panicked").expect("server failed");
+    }
+
+    /// End-to-end: TLS 1.2 → Hotline handshake → transaction round-trip.
+    /// Catches regressions where TLS works in isolation but the handshake or
+    /// transaction encoding breaks once wrapped in tokio_rustls.
+    #[tokio::test]
+    async fn e2e_tls_handshake_and_transaction_roundtrip() {
+        let (port, server) = spawn_tls_hotline_server().expect("server start");
+        let client = HotlineClient::new(test_tls_bookmark(port), false);
+
+        client
+            .open_connection()
+            .await
+            .expect("open_connection failed");
+        client
+            .handshake(super::PROTOCOL_SUBVERSION)
+            .await
+            .expect("handshake failed");
+
+        let tx = Transaction::new(client.next_transaction_id(), TransactionType::KeepAlive);
+        {
+            let mut writer_guard = client.transport_writer.lock().await;
+            let writer = writer_guard.as_mut().expect("writer present");
+            writer
+                .write_transaction(&tx)
+                .await
+                .expect("write_transaction failed");
+        }
+        let reply = {
+            let mut reader_guard = client.transport_reader.lock().await;
+            let reader = reader_guard.as_mut().expect("reader present");
+            reader.read_transaction().await.expect("read_transaction failed")
+        };
+        assert_eq!(reply.id, tx.id);
+        assert_eq!(reply.is_reply, 1);
+        assert_eq!(reply.error_code, 0);
+
+        server.join().expect("server thread panicked").expect("server failed");
+    }
 }
