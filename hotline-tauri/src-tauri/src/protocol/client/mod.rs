@@ -1525,6 +1525,12 @@ impl HotlineClient {
                     .get_field(FieldType::UserFlags)
                     .and_then(|f| f.to_u16().ok())
                     .unwrap_or(0);
+                // fogWraith DATA_COLOR (0x0500) is the canonical delivery form.
+                // Per user-management spec, when both this field and trailing
+                // bytes on UserNameWithInfo appear for the same user, 0x0500
+                // wins. The trailing-bytes parser in client/users.rs only runs
+                // on Get User Name List replies, which don't carry this field,
+                // so the two paths don't conflict in practice.
                 let color = transaction
                     .get_field(FieldType::NickColor)
                     .and_then(|f| f.to_u32().ok())
@@ -1591,6 +1597,9 @@ impl HotlineClient {
                     .get_field(FieldType::UserFlags)
                     .and_then(|f| f.to_u16().ok())
                     .unwrap_or(0);
+                // fogWraith DATA_COLOR (0x0500) — canonical form per spec.
+                // Private chat rooms don't use the legacy trailing-bytes form,
+                // so there's no tiebreak to apply here.
                 let color = transaction
                     .get_field(FieldType::NickColor)
                     .and_then(|f| f.to_u32().ok())

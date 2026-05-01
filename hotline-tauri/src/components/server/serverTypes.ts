@@ -16,6 +16,7 @@ export interface ChatMessage {
   fromHistory?: boolean; // True if loaded from server-side chat history extension
   pending?: boolean; // Optimistic local insert awaiting server echo
   optimisticKey?: string; // Identifier for matching optimistic insert with its echo
+  color?: string | null; // Sender's nickname color (CSS hex), if known at receipt time
 }
 
 export interface User {

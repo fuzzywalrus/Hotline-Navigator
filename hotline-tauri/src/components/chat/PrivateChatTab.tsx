@@ -1,6 +1,8 @@
 import { useRef, useEffect, useState } from 'react';
 import MarkdownText from '../common/MarkdownText';
 import { usePreferencesStore } from '../../stores/preferencesStore';
+import { getDisplayColor } from '../../utils/displayColor';
+import { useThemeBackground } from '../../hooks/useThemeBackground';
 import type { PrivateChatRoom } from '../server/serverTypes';
 
 interface PrivateChatTabProps {
@@ -18,7 +20,9 @@ export default function PrivateChatTab({ room, onSendMessage, onLeave, onSetSubj
   const [message, setMessage] = useState('');
   const [editingSubject, setEditingSubject] = useState(false);
   const [subjectDraft, setSubjectDraft] = useState(room.subject);
-  const { clickableLinks } = usePreferencesStore();
+  const { clickableLinks, displayUserColors, enforceColorLegibility } = usePreferencesStore();
+  const themeBg = useThemeBackground();
+  const colorPrefs = { displayUserColors, enforceColorLegibility };
 
   useEffect(() => {
     setSubjectDraft(room.subject);
@@ -102,9 +106,16 @@ export default function PrivateChatTab({ room, onSendMessage, onLeave, onSetSubj
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto p-3 space-y-1"
       >
-        {room.messages.map((msg, i) => (
+        {room.messages.map((msg, i) => {
+          const sender = room.users.find((u) => u.id === msg.userId)
+            || room.users.find((u) => u.name === msg.userName);
+          const userColor = getDisplayColor(sender?.color, themeBg, colorPrefs);
+          return (
           <div key={i} className="text-sm">
-            <span className="font-bold text-gray-800 dark:text-gray-200">
+            <span
+              className={userColor ? 'font-bold' : 'font-bold text-gray-800 dark:text-gray-200'}
+              style={userColor ? { color: userColor } : undefined}
+            >
               {msg.userName}
             </span>
             <span className="text-gray-500 dark:text-gray-400 text-xs ml-1">
@@ -118,7 +129,8 @@ export default function PrivateChatTab({ room, onSendMessage, onLeave, onSetSubj
               )}
             </span>
           </div>
-        ))}
+          );
+        })}
         <div ref={messagesEndRef} />
       </div>
 

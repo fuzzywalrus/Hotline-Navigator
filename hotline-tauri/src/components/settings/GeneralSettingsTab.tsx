@@ -14,7 +14,7 @@ interface ChatHistoryMeta {
 }
 
 export default function GeneralSettingsTab() {
-  const { username, setUsername, enablePrivateMessaging, setEnablePrivateMessaging, darkMode, setDarkMode, downloadFolder, setDownloadFolder, showServerBanner, setShowServerBanner, clickableLinks, setClickableLinks, showInlineImages, setShowInlineImages, renderMarkdown, setRenderMarkdown, renderMarkdownAgreements, setRenderMarkdownAgreements, useRemoteIcons, setUseRemoteIcons, showRemoteBanners, setShowRemoteBanners, autoDetectTls, setAutoDetectTls, allowLegacyTls, setAllowLegacyTls, autoReconnect, setAutoReconnect, autoReconnectInterval, setAutoReconnectInterval, autoReconnectMaxRetries, setAutoReconnectMaxRetries, autoReconnectSliding, setAutoReconnectSliding, mentionPopup, setMentionPopup, mutedUsers, addMutedUser, removeMutedUser, watchWords, addWatchWord, removeWatchWord, enableChatHistory, setEnableChatHistory, enableServerChatHistory, setEnableServerChatHistory, showTimestamps, setShowTimestamps, chatDisplayMode, setChatDisplayMode, showLinkPreviews, setShowLinkPreviews } = usePreferencesStore();
+  const { username, setUsername, enablePrivateMessaging, setEnablePrivateMessaging, darkMode, setDarkMode, downloadFolder, setDownloadFolder, showServerBanner, setShowServerBanner, clickableLinks, setClickableLinks, showInlineImages, setShowInlineImages, renderMarkdown, setRenderMarkdown, renderMarkdownAgreements, setRenderMarkdownAgreements, useRemoteIcons, setUseRemoteIcons, showRemoteBanners, setShowRemoteBanners, autoDetectTls, setAutoDetectTls, allowLegacyTls, setAllowLegacyTls, autoReconnect, setAutoReconnect, autoReconnectInterval, setAutoReconnectInterval, autoReconnectMaxRetries, setAutoReconnectMaxRetries, autoReconnectSliding, setAutoReconnectSliding, mentionPopup, setMentionPopup, mutedUsers, addMutedUser, removeMutedUser, watchWords, addWatchWord, removeWatchWord, enableChatHistory, setEnableChatHistory, enableServerChatHistory, setEnableServerChatHistory, showTimestamps, setShowTimestamps, chatDisplayMode, setChatDisplayMode, showLinkPreviews, setShowLinkPreviews, nickColor, setNickColor, displayUserColors, setDisplayUserColors, enforceColorLegibility, setEnforceColorLegibility } = usePreferencesStore();
   const { setBookmarks } = useAppStore();
   const isMobile = useIsMobile();
   const [localUsername, setLocalUsername] = useState(username);
@@ -37,7 +37,42 @@ export default function GeneralSettingsTab() {
     const newUsername = localUsername.trim() || 'guest';
     setUsername(newUsername);
     try {
-      await invoke('update_user_info', { username: newUsername, iconId: usePreferencesStore.getState().userIconId, color: null });
+      await invoke('update_user_info', {
+        username: newUsername,
+        iconId: usePreferencesStore.getState().userIconId,
+        color: usePreferencesStore.getState().nickColor,
+      });
+    } catch {
+      // Silently ignore - no servers connected or update failed on some
+    }
+  };
+
+  // 0x00RRGGBB <-> "#RRGGBB" at the UI boundary. Store keeps the protocol-native u32.
+  const u32ToHex = (n: number) => `#${(n & 0xffffff).toString(16).padStart(6, '0')}`;
+  const hexToU32 = (hex: string) => parseInt(hex.replace(/^#/, ''), 16) & 0xffffff;
+
+  const handleColorChange = async (hex: string) => {
+    const u32 = hexToU32(hex);
+    setNickColor(u32);
+    try {
+      await invoke('update_user_info', {
+        username: usePreferencesStore.getState().username,
+        iconId: usePreferencesStore.getState().userIconId,
+        color: u32,
+      });
+    } catch {
+      // Silently ignore - no servers connected or update failed on some
+    }
+  };
+
+  const handleColorClear = async () => {
+    setNickColor(null);
+    try {
+      await invoke('update_user_info', {
+        username: usePreferencesStore.getState().username,
+        iconId: usePreferencesStore.getState().userIconId,
+        color: null,
+      });
     } catch {
       // Silently ignore - no servers connected or update failed on some
     }
@@ -94,6 +129,71 @@ export default function GeneralSettingsTab() {
         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
           This name will be displayed to other users on servers you connect to.
         </p>
+      </div>
+
+      <div className="border border-gray-200 dark:border-gray-700 rounded-md p-4 space-y-3">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Username Color
+          </label>
+          <div className="flex items-center gap-3">
+            <input
+              type="color"
+              value={nickColor != null ? u32ToHex(nickColor) : '#888888'}
+              onChange={(e) => handleColorChange(e.target.value)}
+              className="h-9 w-14 rounded border border-gray-300 dark:border-gray-600 bg-transparent cursor-pointer"
+              title={nickColor != null ? u32ToHex(nickColor) : 'No color set'}
+            />
+            <button
+              type="button"
+              onClick={handleColorClear}
+              disabled={nickColor == null}
+              className="px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Clear
+            </button>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {nickColor != null ? u32ToHex(nickColor) : 'No color (default)'}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Your name color on color-aware servers. "No color" matches classic 1.9.x client behavior.
+          </p>
+        </div>
+
+        <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-700">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Display Username Colors
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Apply colors set by other users. Off renders all names in the default theme color.
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            checked={displayUserColors}
+            onChange={(e) => setDisplayUserColors(e.target.checked)}
+            className="ml-4 toggle toggle-primary"
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Enforce Legibility
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Auto-adjust colors that fall too close to the current theme background so names stay readable.
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            checked={enforceColorLegibility}
+            onChange={(e) => setEnforceColorLegibility(e.target.checked)}
+            className="ml-4 toggle toggle-primary"
+          />
+        </div>
       </div>
 
       <div>

@@ -2,6 +2,8 @@ import React, { useRef, useEffect, useState } from 'react';
 import MarkdownText from '../common/MarkdownText';
 import DiscordChatRenderer from './DiscordChatRenderer';
 import { usePreferencesStore } from '../../stores/preferencesStore';
+import { resolveNameColor } from '../../utils/displayColor';
+import { useThemeBackground } from '../../hooks/useThemeBackground';
 
 interface ChatMessage {
   userId: number;
@@ -17,6 +19,9 @@ interface ChatMessage {
   isDeleted?: boolean;
   messageId?: string;
   fromHistory?: boolean;
+  pending?: boolean;
+  optimisticKey?: string;
+  color?: string | null;
 }
 
 interface ChatUser {
@@ -24,6 +29,7 @@ interface ChatUser {
   userName: string;
   iconId?: number;
   isAdmin?: boolean;
+  color?: string | null;
 }
 
 interface ChatTabProps {
@@ -74,7 +80,18 @@ export default function ChatTab({
   const isAtBottomRef = useRef(true);
   const [broadcastMode, setBroadcastMode] = useState(false);
   const [broadcastMessage, setBroadcastMessage] = useState('');
-  const { clickableLinks, showTimestamps, chatDisplayMode } = usePreferencesStore();
+  const { clickableLinks, showTimestamps, chatDisplayMode, displayUserColors, enforceColorLegibility } = usePreferencesStore();
+  const themeBg = useThemeBackground();
+  const colorPrefs = { displayUserColors, enforceColorLegibility };
+
+  // Resolve a name color from the live user list (so a user who chatted before
+  // their info loaded still gets their color once we know it).
+  const resolveLiveColor = (msg: ChatMessage): string | null | undefined => {
+    if (!users || !msg.userId) return msg.color;
+    const live = users.find((u) => u.userId === msg.userId)
+      || users.find((u) => u.userName === msg.userName);
+    return live?.color ?? msg.color;
+  };
 
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -310,6 +327,14 @@ export default function ChatTab({
               ? msg.message.match(/^(.+?)\s*\|\s*(.+?):\s(.*)$/s)
               : null;
 
+            const nameColor = resolveNameColor({
+              userColor: resolveLiveColor(msg),
+              isOwn: isOwnMessage,
+              isAdmin: !!msg.isAdmin,
+              themeBg,
+              prefs: colorPrefs,
+            });
+
             return (
               <React.Fragment key={uniqueKey}>{divider}<div
                 className={`text-sm ${
@@ -333,13 +358,8 @@ export default function ChatTab({
                   </>
                 ) : (
                   <span
-                    className={`font-bold ${
-                      isOwnMessage
-                        ? 'text-green-600 dark:text-green-400'
-                        : msg.isAdmin
-                          ? 'text-red-600 dark:text-red-400'
-                          : 'text-sky-600 dark:text-sky-400'
-                    }`}
+                    className="font-bold"
+                    style={nameColor ? { color: nameColor } : undefined}
                   >
                     {msg.userName}:
                   </span>

@@ -1,6 +1,9 @@
 // Discord-style chat renderer with message batching, user icons, and grouped timestamps
 import UserIcon from '../users/UserIcon';
 import MarkdownText from '../common/MarkdownText';
+import { resolveNameColor } from '../../utils/displayColor';
+import { useThemeBackground } from '../../hooks/useThemeBackground';
+import { usePreferencesStore } from '../../stores/preferencesStore';
 
 interface ChatMessage {
   userId: number;
@@ -15,6 +18,7 @@ interface ChatMessage {
   fromHistory?: boolean;
   pending?: boolean;
   optimisticKey?: string;
+  color?: string | null;
 }
 
 interface MessageGroup {
@@ -22,6 +26,7 @@ interface MessageGroup {
   userName: string;
   iconId?: number;
   isAdmin?: boolean;
+  color?: string | null;
   timestamp: Date;
   messages: { message: string; timestamp: Date; isMention?: boolean; index: number; pending?: boolean }[];
 }
@@ -31,6 +36,7 @@ interface ChatUser {
   userName: string;
   iconId?: number;
   isAdmin?: boolean;
+  color?: string | null;
 }
 
 interface DiscordChatRendererProps {
@@ -63,13 +69,14 @@ function batchMessages(
   // baked into the message at receipt time can be stale (e.g. user list hadn't
   // populated yet, or the user has since changed icon/admin status).
   // Fall back to the cached values for users no longer in the list.
-  const resolveLive = (msg: ChatMessage): { iconId?: number; isAdmin?: boolean } => {
-    if (!users || !msg.userId) return { iconId: msg.iconId, isAdmin: msg.isAdmin };
+  const resolveLive = (msg: ChatMessage): { iconId?: number; isAdmin?: boolean; color?: string | null } => {
+    if (!users || !msg.userId) return { iconId: msg.iconId, isAdmin: msg.isAdmin, color: msg.color };
     const live = users.find((u) => u.userId === msg.userId)
       || users.find((u) => u.userName === msg.userName);
     return {
       iconId: live?.iconId ?? msg.iconId,
       isAdmin: live?.isAdmin ?? msg.isAdmin,
+      color: live?.color ?? msg.color,
     };
   };
 
@@ -120,6 +127,7 @@ function batchMessages(
         userName: msg.userName,
         iconId: live.iconId,
         isAdmin: live.isAdmin,
+        color: live.color,
         timestamp: msg.timestamp,
         messages: [{
           message: msg.message,
@@ -142,6 +150,10 @@ function isMessageGroup(item: MessageGroup | ChatMessage): item is MessageGroup 
 
 export default function DiscordChatRenderer({ messages, users, formatTime }: DiscordChatRendererProps) {
   const batches = batchMessages(messages, users);
+  const themeBg = useThemeBackground();
+  const displayUserColors = usePreferencesStore((s) => s.displayUserColors);
+  const enforceColorLegibility = usePreferencesStore((s) => s.enforceColorLegibility);
+  const colorPrefs = { displayUserColors, enforceColorLegibility };
 
   return (
     <>
@@ -184,11 +196,16 @@ export default function DiscordChatRenderer({ messages, users, formatTime }: Dis
 
           // Legacy server history replay — render retro-style (no icon)
           if (msg.isServerHistory && !msg.fromHistory) {
+            const histColor = resolveNameColor({
+              userColor: msg.color,
+              isOwn: false,
+              isAdmin: !!msg.isAdmin,
+              themeBg,
+              prefs: colorPrefs,
+            });
             return (
               <div key={`hist-${batchIndex}`} className="text-sm">
-                <span className={`font-bold ${
-                  msg.isAdmin ? 'text-red-600 dark:text-red-400' : 'text-sky-600 dark:text-sky-400'
-                }`}>
+                <span className="font-bold" style={histColor ? { color: histColor } : undefined}>
                   {msg.userName}:
                 </span>{' '}
                 <span className="text-gray-900 dark:text-gray-100">{stripUsernamePrefix(msg.message, msg.userName)}</span>
@@ -207,6 +224,14 @@ export default function DiscordChatRenderer({ messages, users, formatTime }: Dis
         const relayMatch = group.userName === 'Relay'
           ? group.messages[0].message.match(/^(.+?)\s*\|\s*(.+?):\s(.*)$/s)
           : null;
+
+        const nameColor = resolveNameColor({
+          userColor: group.color,
+          isOwn: isOwnMessage,
+          isAdmin: !!group.isAdmin,
+          themeBg,
+          prefs: colorPrefs,
+        });
 
         return (
           <div key={`group-${batchIndex}`} className="flex gap-3 py-1 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded px-1 -mx-1">
@@ -236,13 +261,10 @@ export default function DiscordChatRenderer({ messages, users, formatTime }: Dis
                     </span>
                   </>
                 ) : (
-                  <span className={`font-semibold text-sm ${
-                    isOwnMessage
-                      ? 'text-green-600 dark:text-green-400'
-                      : group.isAdmin
-                        ? 'text-red-600 dark:text-red-400'
-                        : 'text-sky-600 dark:text-sky-400'
-                  }`}>
+                  <span
+                    className="font-semibold text-sm"
+                    style={nameColor ? { color: nameColor } : undefined}
+                  >
                     {group.userName}
                   </span>
                 )}

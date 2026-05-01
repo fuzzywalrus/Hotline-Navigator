@@ -78,6 +78,14 @@ interface PreferencesState {
   autoReconnectSliding: boolean;
   setAutoReconnectSliding: (enabled: boolean) => void;
 
+  // Nickname color preferences
+  nickColor: number | null;
+  setNickColor: (color: number | null) => void;
+  displayUserColors: boolean;
+  setDisplayUserColors: (enabled: boolean) => void;
+  enforceColorLegibility: boolean;
+  setEnforceColorLegibility: (enabled: boolean) => void;
+
   // Sound preferences
   playSounds: boolean;
   playChatSound: boolean;
@@ -138,6 +146,14 @@ export const usePreferencesStore = create<PreferencesState>()(
       setRenderMarkdown: (renderMarkdown) => set({ renderMarkdown }),
       renderMarkdownAgreements: false,
       setRenderMarkdownAgreements: (renderMarkdownAgreements) => set({ renderMarkdownAgreements }),
+
+      // Nickname color preferences
+      nickColor: null,
+      setNickColor: (nickColor) => set({ nickColor }),
+      displayUserColors: true,
+      setDisplayUserColors: (displayUserColors) => set({ displayUserColors }),
+      enforceColorLegibility: true,
+      setEnforceColorLegibility: (enforceColorLegibility) => set({ enforceColorLegibility }),
 
       // Mention preferences
       mentionPopup: true,

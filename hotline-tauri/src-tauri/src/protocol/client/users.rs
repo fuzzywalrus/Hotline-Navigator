@@ -43,7 +43,13 @@ impl HotlineClient {
 
         let username = String::from_utf8_lossy(&data[8..8 + name_len]).to_string();
 
-        // Check for optional trailing nick color (4 bytes after username)
+        // Legacy Mobius convention: 4 trailing color bytes after the username in
+        // UserNameWithInfo. The fogWraith canonical form is the standalone field
+        // 0x0500 (DATA_COLOR) carried in 301/117 notifications. Per user-management
+        // spec, when both forms are present in the same packet, 0x0500 wins —
+        // but they don't collide here: this parser runs on Get User Name List
+        // replies only, where no 0x0500 field exists. Kept indefinitely for
+        // older Mobius-derived servers that don't emit 0x0500.
         let color = if data.len() >= 8 + name_len + 4 {
             let c = u32::from_be_bytes([
                 data[8 + name_len],

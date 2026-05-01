@@ -1,5 +1,8 @@
 import UserIcon, { UserBanner } from './UserIcon';
 import { isIconBlocked } from '../../utils/iconBlocklist';
+import { getDisplayColor } from '../../utils/displayColor';
+import { useThemeBackground } from '../../hooks/useThemeBackground';
+import { usePreferencesStore } from '../../stores/preferencesStore';
 
 interface User {
   userId: number;
@@ -20,13 +23,20 @@ interface UserListProps {
 }
 
 export default function UserList({ users, unreadCounts, onUserClick, onUserRightClick }: UserListProps) {
+  const themeBg = useThemeBackground();
+  const displayUserColors = usePreferencesStore((s) => s.displayUserColors);
+  const enforceColorLegibility = usePreferencesStore((s) => s.enforceColorLegibility);
+  const colorPrefs = { displayUserColors, enforceColorLegibility };
+
   return (
     <div className="p-2">
       <h2 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2 px-2">
         Users ({users.length})
       </h2>
       <div className="space-y-1">
-        {users.map((user) => (
+        {users.map((user) => {
+          const displayColor = user.isIdle ? undefined : getDisplayColor(user.color, themeBg, colorPrefs);
+          return (
           <div
             key={user.userId}
             onClick={() => onUserClick(user)}
@@ -34,11 +44,11 @@ export default function UserList({ users, unreadCounts, onUserClick, onUserRight
             className={`relative flex items-center gap-2 text-sm py-1 px-2 rounded cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors overflow-hidden ${
               user.isIdle
                 ? 'opacity-50 text-gray-500 dark:text-gray-500'
-                : user.color
+                : displayColor
                   ? ''
                   : 'text-gray-700 dark:text-gray-300'
             }`}
-            style={user.color && !user.isIdle ? { color: user.color } : undefined}
+            style={displayColor ? { color: displayColor } : undefined}
             title={`Click to message${user.isAdmin ? ' (Admin)' : ''}${user.isIdle ? ' (Idle)' : ''} | Right-click for menu`}
           >
             {!isIconBlocked(user.iconId) && <UserBanner iconId={user.iconId} />}
@@ -62,7 +72,8 @@ export default function UserList({ users, unreadCounts, onUserClick, onUserRight
               </div>
             ) : null}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
