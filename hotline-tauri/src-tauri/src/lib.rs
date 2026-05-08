@@ -178,6 +178,11 @@ pub fn run() {
             commands::mnemosyne_fetch,
             commands::fetch_link_preview,
             commands::get_chat_history,
+            commands::upload_media,
+            commands::download_media,
+            commands::get_inline_media_status,
+            commands::set_inline_media_enabled,
+            commands::pick_image_for_chat,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

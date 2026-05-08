@@ -293,11 +293,12 @@ impl AppState {
                 use crate::protocol::client::HotlineEvent;
 
                 match event {
-                    HotlineEvent::ChatMessage { user_id, user_name, message } => {
+                    HotlineEvent::ChatMessage { user_id, user_name, message, media } => {
                         let payload = serde_json::json!({
                             "userId": user_id,
                             "userName": user_name,
                             "message": message,
+                            "media": media,
                         });
                         let _ = app_handle.emit(&format!("chat-message-{}", server_id_clone), payload);
                     }
@@ -379,10 +380,11 @@ impl AppState {
                         });
                         let _ = app_handle.emit(&format!("message-board-post-{}", server_id_clone), payload);
                     }
-                    HotlineEvent::PrivateMessage { user_id, message } => {
+                    HotlineEvent::PrivateMessage { user_id, message, media } => {
                         let payload = serde_json::json!({
                             "userId": user_id,
                             "message": message,
+                            "media": media,
                         });
                         let _ = app_handle.emit(&format!("private-message-{}", server_id_clone), payload);
                     }
@@ -394,12 +396,13 @@ impl AppState {
                         });
                         let _ = app_handle.emit(&format!("chat-invite-{}", server_id_clone), payload);
                     }
-                    HotlineEvent::PrivateChatMessage { chat_id, user_id, user_name, message } => {
+                    HotlineEvent::PrivateChatMessage { chat_id, user_id, user_name, message, media } => {
                         let payload = serde_json::json!({
                             "chatId": chat_id,
                             "userId": user_id,
                             "userName": user_name,
                             "message": message,
+                            "media": media,
                         });
                         let _ = app_handle.emit(&format!("private-chat-message-{}", server_id_clone), payload);
                     }
@@ -512,6 +515,20 @@ impl AppState {
         }
     }
 
+    pub async fn send_chat_with_media(
+        &self,
+        server_id: &str,
+        message: String,
+        media: Option<crate::protocol::client::chat::ChatMediaAttachment>,
+    ) -> Result<(), String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.send_chat_with_media(message, media).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
     pub async fn send_private_message(&self, server_id: &str, user_id: u16, message: String) -> Result<(), String> {
         let clients = self.clients.read().await;
 
@@ -519,6 +536,69 @@ impl AppState {
             client.send_private_message(user_id, message).await
         } else {
             Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn send_private_message_with_media(
+        &self,
+        server_id: &str,
+        user_id: u16,
+        message: String,
+        media: Option<crate::protocol::client::chat::ChatMediaAttachment>,
+    ) -> Result<(), String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            client.send_private_message_with_media(user_id, message, media).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn upload_media(
+        &self,
+        server_id: &str,
+        bytes: Vec<u8>,
+        declared_mime: String,
+    ) -> Result<crate::protocol::client::media::MediaMetadata, String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            crate::protocol::client::media::upload_media(client, bytes, declared_mime).await
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn download_media(
+        &self,
+        server_id: &str,
+        handle_hex: String,
+    ) -> Result<(Vec<u8>, String, u32, u32), String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            let handle = crate::protocol::client::media::handle_from_hex(&handle_hex)?;
+            let entry = crate::protocol::client::media::download_media(client, handle).await?;
+            Ok((entry.bytes, entry.mime, entry.width, entry.height))
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn inline_media_status(
+        &self,
+        server_id: &str,
+    ) -> Result<(bool, bool), String> {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(server_id) {
+            Ok((client.inline_media_supported(), client.can_send_media()))
+        } else {
+            Err("Server not connected".to_string())
+        }
+    }
+
+    pub async fn set_inline_media_enabled(&self, enabled: bool) {
+        let clients = self.clients.read().await;
+        for client in clients.values() {
+            client.set_inline_media_enabled(enabled);
         }
     }
 

@@ -7,6 +7,72 @@ use crate::protocol::types::{NewsArticle, NewsCategory};
 use std::time::Duration;
 use tokio::sync::mpsc;
 
+/// Decode the Hotline 8-byte date format (`year:2 | msecs:2 | secs:4`) into a
+/// human-readable string. Per the fogWraith Capabilities spec, two wire formats
+/// coexist:
+///
+/// - **Modern**: `year` is the actual year (e.g. 2026); `secs` is seconds since
+///   00:00:00 on Jan 1 of that year.
+/// - **Mac-1904 epoch**: `year == 1904`; `secs` is total seconds since
+///   1904-01-01 00:00:00 UTC.
+///
+/// Servers select the format per-client based on whether the client sent
+/// `DATA_CAPABILITIES` during login. Vintage servers always send the 1904 form.
+/// Returns `None` for sentinel values (year=0 or secs=0).
+fn decode_hotline_date(year: u16, secs: u32) -> Option<String> {
+    if year == 0 || secs == 0 {
+        return None;
+    }
+
+    let (resolved_year, secs_in_year) = if year == 1904 {
+        let mut y: u32 = 1904;
+        let mut remaining = secs;
+        loop {
+            let leap = (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
+            let year_secs: u32 = if leap { 366 * 86400 } else { 365 * 86400 };
+            if remaining < year_secs {
+                break;
+            }
+            remaining -= year_secs;
+            y += 1;
+        }
+        (y as u16, remaining)
+    } else {
+        (year, secs)
+    };
+
+    let is_leap =
+        (resolved_year % 4 == 0 && resolved_year % 100 != 0) || (resolved_year % 400 == 0);
+    let days_in_months: [u32; 12] =
+        [31, if is_leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let total_days = secs_in_year / 86400;
+    let day_secs = secs_in_year % 86400;
+    let hour = day_secs / 3600;
+    let minute = (day_secs % 3600) / 60;
+    let mut remaining = total_days;
+    let mut month = 0u32;
+    for (i, &dim) in days_in_months.iter().enumerate() {
+        if remaining < dim {
+            month = i as u32 + 1;
+            break;
+        }
+        remaining -= dim;
+    }
+    if month == 0 {
+        month = 12;
+    }
+    let day = remaining + 1;
+    let ampm = if hour < 12 { "AM" } else { "PM" };
+    let h12 = if hour == 0 {
+        12
+    } else if hour > 12 {
+        hour - 12
+    } else {
+        hour
+    };
+    Some(format!("{}/{}/{} {}:{:02} {}", month, day, resolved_year, h12, minute, ampm))
+}
+
 impl HotlineClient {
     pub async fn get_message_board(&self) -> Result<Vec<String>, String> {
         println!("Requesting message board");
@@ -509,36 +575,18 @@ impl HotlineClient {
             let article_id = u32::from_be_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]]);
             offset += 4;
 
-            // Parse date (8 bytes): 2-byte year, 2-byte ms, 4-byte seconds since midnight Jan 1 of that year
+            // Parse date (8 bytes). Two wire formats per fogWraith spec —
+            // see `decode_hotline_date`.
             let date_str = if offset + 8 <= data.len() {
                 let year = u16::from_be_bytes([data[offset], data[offset + 1]]);
                 let _ms = u16::from_be_bytes([data[offset + 2], data[offset + 3]]);
-                let secs = u32::from_be_bytes([data[offset + 4], data[offset + 5], data[offset + 6], data[offset + 7]]);
-                if year > 0 && secs > 0 {
-                    // Convert seconds-from-year-start to month/day/hour/minute
-                    let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
-                    let days_in_months: [u32; 12] = [31, if is_leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-                    let total_days = secs / 86400;
-                    let day_secs = secs % 86400;
-                    let hour = day_secs / 3600;
-                    let minute = (day_secs % 3600) / 60;
-                    let mut remaining = total_days;
-                    let mut month = 0u32;
-                    for (i, &dim) in days_in_months.iter().enumerate() {
-                        if remaining < dim {
-                            month = i as u32 + 1;
-                            break;
-                        }
-                        remaining -= dim;
-                    }
-                    if month == 0 { month = 12; }
-                    let day = remaining + 1;
-                    let ampm = if hour < 12 { "AM" } else { "PM" };
-                    let h12 = if hour == 0 { 12 } else if hour > 12 { hour - 12 } else { hour };
-                    Some(format!("{}/{}/{} {}:{:02} {}", month, day, year, h12, minute, ampm))
-                } else {
-                    None
-                }
+                let secs = u32::from_be_bytes([
+                    data[offset + 4],
+                    data[offset + 5],
+                    data[offset + 6],
+                    data[offset + 7],
+                ]);
+                decode_hotline_date(year, secs)
             } else {
                 None
             };
@@ -734,3 +782,82 @@ fn parse_message_board_data(data: &[u8]) -> Vec<String> {
 
     posts
 }
+
+#[cfg(test)]
+mod tests {
+    use super::decode_hotline_date;
+
+    #[test]
+    fn modern_format_jan_1_midnight() {
+        assert_eq!(
+            decode_hotline_date(2026, 1).unwrap(),
+            "1/1/2026 12:00 AM"
+        );
+    }
+
+    #[test]
+    fn modern_format_mid_year() {
+        // 2026-07-15 13:30 — secs since 2026-01-01:
+        // Jan(31)+Feb(28)+Mar(31)+Apr(30)+May(31)+Jun(30) = 181 full days,
+        // then 14 days into July = 195 days * 86400 = 16,848,000
+        // plus 13.5 hours = 13.5*3600 = 48,600
+        // total = 16,896,600
+        let result = decode_hotline_date(2026, 16_896_600).unwrap();
+        assert_eq!(result, "7/15/2026 1:30 PM");
+    }
+
+    #[test]
+    fn mac_1904_epoch_at_zero_secs() {
+        // year=1904, secs=1 → 1904-01-01 00:00:01
+        assert_eq!(
+            decode_hotline_date(1904, 1).unwrap(),
+            "1/1/1904 12:00 AM"
+        );
+    }
+
+    #[test]
+    fn mac_1904_epoch_one_year_later() {
+        // 365 days * 86400 = 31_536_000 → 1905-01-01 00:00:00
+        // (1904 was a leap year so day-by-day increments behave; secs=31_536_000
+        //  hits 1904-12-31 23:59:60 which on real-world is Dec 31; +86400 brings
+        //  us to 1905-01-01.)
+        // Actually 1904 IS leap (divisible by 4, not century). So 366 days = 31_622_400
+        // gets to 1905-01-01.
+        let result = decode_hotline_date(1904, 31_622_400).unwrap();
+        assert_eq!(result, "1/1/1905 12:00 AM");
+    }
+
+    #[test]
+    fn mac_1904_epoch_to_2026() {
+        // From 1904 to 2026: 122 years (so we want secs that lands at 2026-01-01).
+        // Leap years 1904..2026: 1904, 1908, ..., 2024 = (2024-1904)/4 + 1 = 31
+        // (and 2000 is divisible by 400, so it counts; no other century in range)
+        // Non-leap: 122 - 31 = 91. Wait — we need 1904 through 2025 inclusive
+        // (122 years) before reaching 2026.
+        // Leap in [1904, 2025]: 1904, 1908, ..., 2024 = 31. Non-leap: 91.
+        // Total secs = 91*365*86400 + 31*366*86400 = 91*31_536_000 + 31*31_622_400
+        //            = 2_869_776_000 + 980_294_400 = 3_850_070_400
+        let result = decode_hotline_date(1904, 3_850_070_400).unwrap();
+        assert_eq!(result, "1/1/2026 12:00 AM");
+    }
+
+    #[test]
+    fn year_zero_returns_none() {
+        assert!(decode_hotline_date(0, 12345).is_none());
+    }
+
+    #[test]
+    fn secs_zero_returns_none() {
+        assert!(decode_hotline_date(2026, 0).is_none());
+    }
+
+    #[test]
+    fn leap_year_feb_29() {
+        // 2024 is a leap year. Feb 29, 2024 noon:
+        // Jan(31) + 28 days into Feb = 59 days. + 12 hours.
+        // secs = 59*86400 + 12*3600 = 5_097_600 + 43_200 = 5_140_800
+        let result = decode_hotline_date(2024, 5_140_800).unwrap();
+        assert_eq!(result, "2/29/2024 12:00 PM");
+    }
+}
+

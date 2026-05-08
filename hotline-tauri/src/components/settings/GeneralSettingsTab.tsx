@@ -14,7 +14,7 @@ interface ChatHistoryMeta {
 }
 
 export default function GeneralSettingsTab() {
-  const { username, setUsername, enablePrivateMessaging, setEnablePrivateMessaging, darkMode, setDarkMode, downloadFolder, setDownloadFolder, showServerBanner, setShowServerBanner, clickableLinks, setClickableLinks, showInlineImages, setShowInlineImages, renderMarkdown, setRenderMarkdown, renderMarkdownAgreements, setRenderMarkdownAgreements, useRemoteIcons, setUseRemoteIcons, showRemoteBanners, setShowRemoteBanners, autoDetectTls, setAutoDetectTls, allowLegacyTls, setAllowLegacyTls, autoReconnect, setAutoReconnect, autoReconnectInterval, setAutoReconnectInterval, autoReconnectMaxRetries, setAutoReconnectMaxRetries, autoReconnectSliding, setAutoReconnectSliding, mentionPopup, setMentionPopup, mutedUsers, addMutedUser, removeMutedUser, watchWords, addWatchWord, removeWatchWord, enableChatHistory, setEnableChatHistory, enableServerChatHistory, setEnableServerChatHistory, showTimestamps, setShowTimestamps, chatDisplayMode, setChatDisplayMode, showLinkPreviews, setShowLinkPreviews, nickColor, setNickColor, displayUserColors, setDisplayUserColors, enforceColorLegibility, setEnforceColorLegibility } = usePreferencesStore();
+  const { username, setUsername, enablePrivateMessaging, setEnablePrivateMessaging, darkMode, setDarkMode, downloadFolder, setDownloadFolder, showServerBanner, setShowServerBanner, clickableLinks, setClickableLinks, showInlineImages, setShowInlineImages, renderMarkdown, setRenderMarkdown, renderMarkdownAgreements, setRenderMarkdownAgreements, useRemoteIcons, setUseRemoteIcons, showRemoteBanners, setShowRemoteBanners, autoDetectTls, setAutoDetectTls, allowLegacyTls, setAllowLegacyTls, autoReconnect, setAutoReconnect, autoReconnectInterval, setAutoReconnectInterval, autoReconnectMaxRetries, setAutoReconnectMaxRetries, autoReconnectSliding, setAutoReconnectSliding, mentionPopup, setMentionPopup, mutedUsers, addMutedUser, removeMutedUser, watchWords, addWatchWord, removeWatchWord, enableChatHistory, setEnableChatHistory, enableServerChatHistory, setEnableServerChatHistory, showTimestamps, setShowTimestamps, chatDisplayMode, setChatDisplayMode, showLinkPreviews, setShowLinkPreviews, nickColor, setNickColor, displayUserColors, setDisplayUserColors, enforceColorLegibility, setEnforceColorLegibility, inlineMediaEnabled, setInlineMediaEnabled, imageUploadSizeKb, setImageUploadSizeKb } = usePreferencesStore();
   const { setBookmarks } = useAppStore();
   const isMobile = useIsMobile();
   const [localUsername, setLocalUsername] = useState(username);
@@ -600,6 +600,60 @@ export default function GeneralSettingsTab() {
             Add
           </button>
         </div>
+      </div>
+
+      <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Image Attachments
+        </label>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+          Send and receive images inline with chat messages. Requires server support.
+        </p>
+
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Enable inline images
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              When off, images are not sent or received and the attach button is hidden.
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            checked={inlineMediaEnabled}
+            onChange={async (e) => {
+              const enabled = e.target.checked;
+              setInlineMediaEnabled(enabled);
+              try {
+                await invoke('set_inline_media_enabled', { enabled });
+              } catch {}
+            }}
+            className="ml-4 toggle toggle-primary"
+          />
+        </div>
+
+        {inlineMediaEnabled && (
+          <div className="mt-3 ml-4 pl-4 border-l-2 border-gray-200 dark:border-gray-700">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Maximum upload size
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+              Images larger than this limit will be rejected when you try to attach.
+              256 KB matches the spec's recommended server default and works on most servers.
+            </p>
+            <select
+              value={imageUploadSizeKb}
+              onChange={(e) => setImageUploadSizeKb(Number(e.target.value) as 256 | 512 | 1024 | 2048)}
+              className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value={256}>256 KB (Recommended)</option>
+              <option value={512}>512 KB</option>
+              <option value={1024}>1 MB</option>
+              <option value={2048}>2 MB</option>
+            </select>
+          </div>
+        )}
       </div>
 
       <div className="border-t border-gray-200 dark:border-gray-700 pt-6">

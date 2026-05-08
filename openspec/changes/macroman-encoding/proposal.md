@@ -21,15 +21,19 @@ Bookmark
 
 ### 2. Effective encoding resolution
 
-At connect time, after HOPE negotiation, resolve the encoding once:
+At connect time, after HOPE negotiation **and capability echo**, resolve the encoding once:
 
 ```
 effective_encoding =
-    HOPE transport active? → Utf8 (always, overrides bookmark)
-    else                   → bookmark.encoding
+    HOPE transport active?                   → Utf8 (always, overrides bookmark)
+    else server echoed CAPABILITY_TEXT_ENCODING (bit 1)?
+                                             → Utf8 (server has confirmed UTF-8)
+    else                                     → bookmark.encoding
 ```
 
 Store the resolved encoding on the client for the lifetime of the connection.
+
+The client SHALL advertise `CAPABILITY_TEXT_ENCODING = 0x0002` (bit 1) via the `client_capability_bits()` helper introduced by `capabilities-hardening` whenever the bookmark's encoding is set to `Utf8`, OR whenever HOPE is active. (Advertising on HOPE is harmless — server will UTF-8 either way — but signals intent and lets non-HOPE-aware tooling reason about the session.) When the bookmark's encoding is `Macintosh` and HOPE is not active, the client SHALL NOT advertise bit 1.
 
 ### 3. Encoding-aware encode/decode
 
@@ -87,9 +91,14 @@ No encoding field on the quick-connect dialog — it defaults to MacRoman, and H
 
 ## Risks
 
-- **Encoding mismatch**: If a user sets UTF-8 on a classic server (or vice versa), text will garble. Mitigation: MacRoman default is safe for the majority of servers; HOPE auto-detection handles modern servers; the setting is per-bookmark so one wrong choice doesn't affect other connections.
+- **Encoding mismatch**: If a user sets UTF-8 on a classic server (or vice versa), text will garble. Mitigation: MacRoman default is safe for the majority of servers; HOPE auto-detection handles modern servers; capability bit 1 lets spec-aware servers confirm UTF-8 explicitly; the setting is per-bookmark so one wrong choice doesn't affect other connections.
+- **Bookmark says UTF-8 but server doesn't echo bit 1 and isn't HOPE**: The client still uses UTF-8 because the user asked for it. This is the user's prerogative; if the server doesn't actually accept UTF-8, text from us will look wrong on classic clients in that room. Surfaced as the same kind of garbling the user sees today against MacRoman-only servers.
 - **Mixed-encoding chat rooms**: A chat room with both classic and modern clients will inherently have encoding conflicts regardless of what we do — this is a protocol limitation, not something we can solve client-side.
 - **Backward compat**: The `encoding` field defaults via serde, so existing bookmarks on disk are unaffected.
+
+## Dependencies
+
+- **Requires `capabilities-hardening`** to land first. That change adds the u64 wire field, the `client_capability_bits()` helper, and the central place to OR in bit 1.
 
 ## References
 

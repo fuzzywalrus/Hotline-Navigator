@@ -7,13 +7,47 @@ use crate::protocol::transaction::{Transaction, TransactionField};
 use std::time::Duration;
 use tokio::sync::mpsc;
 
+/// Optional media handle to attach to a chat send. Carries hex handle + canonical MIME.
+pub struct ChatMediaAttachment {
+    pub handle_hex: String,
+    pub mime: String,
+}
+
+fn add_media_fields(tx: &mut Transaction, media: &ChatMediaAttachment) -> Result<(), String> {
+    let handle_bytes = crate::protocol::client::media::handle_from_hex(&media.handle_hex)?;
+    tx.add_field(TransactionField::new(FieldType::ChatMediaId, handle_bytes));
+    tx.add_field(TransactionField::from_string(
+        FieldType::ChatMediaType,
+        &media.mime,
+    ));
+    Ok(())
+}
+
 impl HotlineClient {
     pub async fn send_chat(&self, message: String) -> Result<(), String> {
+        self.send_chat_with_media(message, None).await
+    }
+
+    pub async fn send_chat_with_media(
+        &self,
+        message: String,
+        media: Option<ChatMediaAttachment>,
+    ) -> Result<(), String> {
         println!("Sending chat: {}", message);
+
+        if media.is_some() && !self.can_send_media() {
+            return Err("Account does not have permission to send media".to_string());
+        }
+        if media.is_some() && !self.inline_media_supported() {
+            return Err("Server does not support inline media".to_string());
+        }
 
         let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::SendChat);
         transaction.add_field(TransactionField::from_string(FieldType::Data, &message));
         transaction.add_field(TransactionField::from_u16(FieldType::ChatOptions, 0));
+        if let Some(m) = media {
+            add_media_fields(&mut transaction, &m)?;
+        }
 
         self.send_transaction(&transaction).await?;
 
@@ -29,12 +63,31 @@ impl HotlineClient {
     }
 
     pub async fn send_private_message(&self, user_id: u16, message: String) -> Result<(), String> {
+        self.send_private_message_with_media(user_id, message, None).await
+    }
+
+    pub async fn send_private_message_with_media(
+        &self,
+        user_id: u16,
+        message: String,
+        media: Option<ChatMediaAttachment>,
+    ) -> Result<(), String> {
         println!("Sending private message to user {}: {}", user_id, message);
+
+        if media.is_some() && !self.can_send_media() {
+            return Err("Account does not have permission to send media".to_string());
+        }
+        if media.is_some() && !self.inline_media_supported() {
+            return Err("Server does not support inline media".to_string());
+        }
 
         let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::SendInstantMessage);
         transaction.add_field(TransactionField::from_u16(FieldType::UserId, user_id));
         transaction.add_field(TransactionField::from_u32(FieldType::Options, 1));
         transaction.add_field(TransactionField::from_string(FieldType::Data, &message));
+        if let Some(m) = media {
+            add_media_fields(&mut transaction, &m)?;
+        }
 
         self.send_transaction(&transaction).await?;
 
@@ -284,10 +337,29 @@ impl HotlineClient {
 
     /// Send a chat message to a private chat room.
     pub async fn send_private_chat_message(&self, chat_id: u32, message: String) -> Result<(), String> {
+        self.send_private_chat_message_with_media(chat_id, message, None).await
+    }
+
+    pub async fn send_private_chat_message_with_media(
+        &self,
+        chat_id: u32,
+        message: String,
+        media: Option<ChatMediaAttachment>,
+    ) -> Result<(), String> {
+        if media.is_some() && !self.can_send_media() {
+            return Err("Account does not have permission to send media".to_string());
+        }
+        if media.is_some() && !self.inline_media_supported() {
+            return Err("Server does not support inline media".to_string());
+        }
+
         let mut transaction = Transaction::new(self.next_transaction_id(), TransactionType::SendChat);
         transaction.add_field(TransactionField::from_string(FieldType::Data, &message));
         transaction.add_field(TransactionField::from_u32(FieldType::ChatId, chat_id));
         transaction.add_field(TransactionField::from_u16(FieldType::ChatOptions, 0));
+        if let Some(m) = media {
+            add_media_fields(&mut transaction, &m)?;
+        }
         self.send_transaction(&transaction).await
     }
 

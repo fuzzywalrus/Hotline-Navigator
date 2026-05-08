@@ -59,11 +59,16 @@ export function useServerHandlers({
 }: UseServerHandlersProps) {
   const sounds = useSound();
 
-  const handleSendMessage = async (e: React.FormEvent, message: string, sending: boolean) => {
+  const handleSendMessage = async (
+    e: React.FormEvent,
+    message: string,
+    sending: boolean,
+    media?: { handle: string; mime: string } | null,
+  ) => {
     e.preventDefault();
-    if (!message.trim() || sending) return;
+    if ((!message.trim() && !media) || sending) return;
 
-    const messageText = message.trim();
+    const messageText = message.trim() || (media ? '[image]' : '');
 
     // Optimistically insert only for commands (! and /), so the user's command
     // reliably appears before the server's broadcast response. Regular chat
@@ -111,6 +116,7 @@ export function useServerHandlers({
       await invoke('send_chat_message', {
         serverId,
         message: messageText,
+        media: media ?? null,
       });
       log('Chat', 'Message sent');
       if (!isCommand) setMessage('');

@@ -918,10 +918,13 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
   };
 
   // Wrapper functions for handlers that need additional state
-  const handleSendMessageWrapper = (e: React.FormEvent) => {
+  const handleSendMessageWrapper = (
+    e: React.FormEvent,
+    media?: { handle: string; mime: string } | null,
+  ) => {
     e.preventDefault();
-    if (!message.trim() || sending) return;
-    handleSendMessage(e, message, sending);
+    if ((!message.trim() && !media) || sending) return;
+    handleSendMessage(e, message, sending, media ?? null);
   };
 
   const handlePostBoardWrapper = (e: React.FormEvent) => {
@@ -1272,6 +1275,7 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
           {/* Chat view */}
           {activeTab === 'chat' && (
             <ChatTab
+              serverId={serverId}
               serverName={serverName}
               messages={messages}
               users={users}

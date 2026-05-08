@@ -101,14 +101,31 @@ pub async fn update_user_info(
     state.update_user_info_all_servers(&username, icon_id, color).await
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatMediaInput {
+    pub handle: String,
+    pub mime: String,
+}
+
+impl From<ChatMediaInput> for crate::protocol::client::chat::ChatMediaAttachment {
+    fn from(input: ChatMediaInput) -> Self {
+        Self {
+            handle_hex: input.handle,
+            mime: input.mime,
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn send_chat_message(
     server_id: String,
     message: String,
+    media: Option<ChatMediaInput>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    println!("Command: send_chat_message to {}: {}", server_id, message);
-    state.send_chat(&server_id, message).await
+    println!("Command: send_chat_message to {}: {} (media: {})", server_id, message, media.is_some());
+    state.send_chat_with_media(&server_id, message, media.map(Into::into)).await
 }
 
 #[tauri::command]
@@ -116,10 +133,72 @@ pub async fn send_private_message(
     server_id: String,
     user_id: u16,
     message: String,
+    media: Option<ChatMediaInput>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    println!("Command: send_private_message to user {} on {}: {}", user_id, server_id, message);
-    state.send_private_message(&server_id, user_id, message).await
+    println!("Command: send_private_message to user {} on {}: {} (media: {})", user_id, server_id, message, media.is_some());
+    state.send_private_message_with_media(&server_id, user_id, message, media.map(Into::into)).await
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadedMedia {
+    /// Base64-encoded canonical bytes (Tauri IPC handles binary best as base64)
+    pub bytes_base64: String,
+    pub mime: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[tauri::command]
+pub async fn upload_media(
+    server_id: String,
+    bytes_base64: String,
+    declared_mime: String,
+    state: State<'_, AppState>,
+) -> Result<crate::protocol::client::media::MediaMetadata, String> {
+    let bytes = STANDARD.decode(&bytes_base64).map_err(|e| format!("Invalid base64: {}", e))?;
+    state.upload_media(&server_id, bytes, declared_mime).await
+}
+
+#[tauri::command]
+pub async fn download_media(
+    server_id: String,
+    handle: String,
+    state: State<'_, AppState>,
+) -> Result<DownloadedMedia, String> {
+    let (bytes, mime, width, height) = state.download_media(&server_id, handle).await?;
+    Ok(DownloadedMedia {
+        bytes_base64: STANDARD.encode(&bytes),
+        mime,
+        width,
+        height,
+    })
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InlineMediaStatus {
+    pub server_supports: bool,
+    pub can_send: bool,
+}
+
+#[tauri::command]
+pub async fn get_inline_media_status(
+    server_id: String,
+    state: State<'_, AppState>,
+) -> Result<InlineMediaStatus, String> {
+    let (server_supports, can_send) = state.inline_media_status(&server_id).await?;
+    Ok(InlineMediaStatus { server_supports, can_send })
+}
+
+#[tauri::command]
+pub async fn set_inline_media_enabled(
+    enabled: bool,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.set_inline_media_enabled(enabled).await;
+    Ok(())
 }
 
 #[tauri::command]
@@ -197,6 +276,62 @@ pub async fn download_file(
 ) -> Result<String, String> {
     println!("Command: download_file {} (size: {} bytes)", file_name, file_size);
     state.download_file(&server_id, path, file_name, file_size, download_folder).await
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PickedImage {
+    pub bytes_base64: String,
+    pub mime: String,
+    pub filename: String,
+    pub byte_size: u32,
+}
+
+#[tauri::command]
+pub async fn pick_image_for_chat() -> Result<Option<PickedImage>, String> {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        Err("Image picker is not available on mobile yet".to_string())
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let path = tokio::task::spawn_blocking(|| {
+            rfd::FileDialog::new()
+                .set_title("Choose Image to Attach")
+                .add_filter("Images", &["jpg", "jpeg", "png", "gif"])
+                .pick_file()
+        })
+        .await
+        .map_err(|e| format!("Dialog error: {}", e))?;
+
+        let path = match path {
+            Some(p) => p,
+            None => return Ok(None),
+        };
+
+        let bytes = tokio::fs::read(&path)
+            .await
+            .map_err(|e| format!("Failed to read image: {}", e))?;
+        let filename = path
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| "image".to_string());
+        let mime = match path.extension().and_then(|e| e.to_str()).map(|s| s.to_ascii_lowercase()) {
+            Some(ref e) if e == "jpg" || e == "jpeg" => "image/jpeg",
+            Some(ref e) if e == "png" => "image/png",
+            Some(ref e) if e == "gif" => "image/gif",
+            _ => "application/octet-stream",
+        };
+        let byte_size = bytes.len() as u32;
+
+        Ok(Some(PickedImage {
+            bytes_base64: STANDARD.encode(&bytes),
+            mime: mime.to_string(),
+            filename,
+            byte_size,
+        }))
+    }
 }
 
 #[tauri::command]

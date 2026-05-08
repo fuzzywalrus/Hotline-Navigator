@@ -35,6 +35,13 @@ impl TransactionField {
         }
     }
 
+    pub fn from_u8(field_type: FieldType, value: u8) -> Self {
+        Self {
+            field_type,
+            data: vec![value],
+        }
+    }
+
     pub fn from_u16(field_type: FieldType, value: u16) -> Self {
         Self {
             field_type,
@@ -54,6 +61,20 @@ impl TransactionField {
             field_type,
             data: value.to_be_bytes().to_vec(),
         }
+    }
+
+    /// Encode a capability bitmask using the smallest width that fits
+    /// (per spec: "typically 2 bytes, expandable to 8 bytes (64-bit)").
+    /// Servers that only read 2 bytes still see all the bits when they fit.
+    pub fn from_capability_bits(field_type: FieldType, value: u64) -> Self {
+        let data = if value <= u16::MAX as u64 {
+            (value as u16).to_be_bytes().to_vec()
+        } else if value <= u32::MAX as u64 {
+            (value as u32).to_be_bytes().to_vec()
+        } else {
+            value.to_be_bytes().to_vec()
+        };
+        Self { field_type, data }
     }
 
     pub fn from_path(field_type: FieldType, path: &[String]) -> Self {
@@ -138,6 +159,20 @@ impl TransactionField {
             self.data[6],
             self.data[7],
         ]))
+    }
+
+    /// Decode a variable-width capability bitmask field (DATA_CAPABILITIES, 0x01F0).
+    /// Per the fogWraith Capabilities spec, the field is "variable; typically 2 bytes,
+    /// expandable to 8 bytes (64-bit)". Accepts 2-, 4-, or 8-byte fields by right-aligning
+    /// the bytes into a u64 with high-order bytes zero-padded. Other widths return an error.
+    pub fn to_capability_bits(&self) -> Result<u64, String> {
+        let n = self.data.len();
+        if n != 2 && n != 4 && n != 8 {
+            return Err(format!("Invalid capability field width: {}", n));
+        }
+        let mut buf = [0u8; 8];
+        buf[8 - n..].copy_from_slice(&self.data);
+        Ok(u64::from_be_bytes(buf))
     }
 
     // Encode field for transmission
@@ -363,6 +398,72 @@ mod tests {
     fn field_u64_wrong_size() {
         let field = TransactionField::new(FieldType::TransferSize, vec![0; 4]);
         assert!(field.to_u64().is_err());
+    }
+
+    #[test]
+    fn field_capability_bits_2_bytes() {
+        let field = TransactionField::new(FieldType::Capabilities, vec![0x00, 0x11]);
+        assert_eq!(field.to_capability_bits().unwrap(), 0x11);
+    }
+
+    #[test]
+    fn field_capability_bits_4_bytes() {
+        let field = TransactionField::new(
+            FieldType::Capabilities,
+            vec![0x00, 0x00, 0x00, 0x11],
+        );
+        assert_eq!(field.to_capability_bits().unwrap(), 0x11);
+    }
+
+    #[test]
+    fn field_capability_bits_8_bytes() {
+        let field = TransactionField::new(
+            FieldType::Capabilities,
+            vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11],
+        );
+        assert_eq!(field.to_capability_bits().unwrap(), 0x11);
+    }
+
+    #[test]
+    fn field_capability_bits_high_byte() {
+        // Bit 5 (0x20) — verify byte ordering / right-alignment
+        let field = TransactionField::new(FieldType::Capabilities, vec![0x00, 0x20]);
+        assert_eq!(field.to_capability_bits().unwrap(), 0x20);
+    }
+
+    #[test]
+    fn field_from_capability_bits_picks_2_bytes_when_fits() {
+        let field = TransactionField::from_capability_bits(FieldType::Capabilities, 0x19);
+        assert_eq!(field.data, vec![0x00, 0x19]);
+    }
+
+    #[test]
+    fn field_from_capability_bits_picks_4_bytes_when_needed() {
+        let field = TransactionField::from_capability_bits(
+            FieldType::Capabilities,
+            0x0001_0000,
+        );
+        assert_eq!(field.data, vec![0x00, 0x01, 0x00, 0x00]);
+    }
+
+    #[test]
+    fn field_from_capability_bits_picks_8_bytes_for_high_bits() {
+        let field = TransactionField::from_capability_bits(
+            FieldType::Capabilities,
+            0x0001_0000_0000,
+        );
+        assert_eq!(field.data, vec![0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00]);
+    }
+
+    #[test]
+    fn field_capability_bits_invalid_width() {
+        // 3-byte width is not accepted
+        let field = TransactionField::new(FieldType::Capabilities, vec![0x00, 0x00, 0x11]);
+        assert!(field.to_capability_bits().is_err());
+
+        // 0-byte width is not accepted
+        let field = TransactionField::new(FieldType::Capabilities, vec![]);
+        assert!(field.to_capability_bits().is_err());
     }
 
     #[test]

@@ -156,9 +156,18 @@ pub const DEFAULT_SERVER_PORT: u16 = 5500;
 pub const DEFAULT_TLS_PORT: u16 = 5600;
 pub const DEFAULT_TRACKER_PORT: u16 = 5498;
 
-// Capability flags (DATA_CAPABILITIES bitmask)
-pub const CAPABILITY_LARGE_FILES: u16 = 0x0001;
-pub const CAPABILITY_CHAT_HISTORY: u16 = 0x0010; // bit 4
+// Capability flags (DATA_CAPABILITIES bitmask, per fogWraith Capabilities spec).
+// Per spec: "implementations should use a width that accommodates future growth.
+// An 8-byte (64-bit) field provides 64 capability slots."
+pub const CAPABILITY_LARGE_FILES: u64 = 0x0001; // bit 0
+pub const CAPABILITY_TEXT_ENCODING: u64 = 0x0002; // bit 1 (UTF-8)
+pub const CAPABILITY_VOICE: u64 = 0x0004; // bit 2 (WebRTC)
+pub const CAPABILITY_INLINE_MEDIA: u64 = 0x0008; // bit 3
+pub const CAPABILITY_CHAT_HISTORY: u64 = 0x0010; // bit 4
+pub const CAPABILITY_EXTENDED_PRIV: u64 = 0x0020; // bit 5 (provisional — DO NOT advertise)
+
+// Account access privilege bits (FieldUserAccess 110)
+pub const ACCESS_SEND_MEDIA: u64 = 1u64 << 57; // AccessSendMedia (inline media)
 
 // HTXF transfer flags
 pub const HTXF_FLAG_LARGE_FILE: u32 = 0x00000001;
@@ -228,6 +237,9 @@ pub enum TransactionType {
     DeleteNewsArticle = 411,
     KeepAlive = 500,
     GetChatHistory = 700,
+    // Inline-media extension (capability bit 3)
+    UploadMedia = 750,    // 0x02EE
+    DownloadMedia = 751,  // 0x02EF
     Unknown = 0xFFFF,
 }
 
@@ -294,6 +306,8 @@ impl From<u16> for TransactionType {
             411 => Self::DeleteNewsArticle,
             500 => Self::KeepAlive,
             700 => Self::GetChatHistory,
+            750 => Self::UploadMedia,
+            751 => Self::DownloadMedia,
             _ => Self::Unknown,
         }
     }
@@ -369,6 +383,18 @@ pub enum FieldType {
     Offset64 = 498,           // 0x01F2
     TransferSize64 = 499,     // 0x01F3
     FolderItemCount64 = 500,  // 0x01F4
+    // Inline-media extension (capability bit 3)
+    ChatMediaType = 513,           // 0x0201 — canonical MIME (string ≤64)
+    ChatMediaId = 514,             // 0x0202 — opaque handle (binary ≤64)
+    ChatMediaPayload = 515,        // 0x0203 — image bytes (upload/download only)
+    ChatMediaDeclaredType = 516,   // 0x0204 — sender hint, upload only
+    ChatMediaWidth = 517,          // 0x0205 — server-supplied u32
+    ChatMediaHeight = 518,         // 0x0206 — server-supplied u32
+    ChatMediaBytes = 519,          // 0x0207 — server-supplied u32
+    ChatMediaUploadToken = 520,    // 0x0208 — chunked-upload session token
+    ChatMediaPartIndex = 521,      // 0x0209 — u16 chunk index
+    ChatMediaPartCount = 522,      // 0x020A — u16 total chunks
+    ChatMediaPartFinal = 523,      // 0x020B — u8 non-zero on final chunk
     // Colored nicknames extension
     NickColor = 1280,              // 0x0500 - DATA_COLOR (32-bit 0x00RRGGBB)
     // HOPE (Hotline One-time Password Extension) fields
@@ -465,6 +491,17 @@ impl From<u16> for FieldType {
             498 => Self::Offset64,
             499 => Self::TransferSize64,
             500 => Self::FolderItemCount64,
+            513 => Self::ChatMediaType,
+            514 => Self::ChatMediaId,
+            515 => Self::ChatMediaPayload,
+            516 => Self::ChatMediaDeclaredType,
+            517 => Self::ChatMediaWidth,
+            518 => Self::ChatMediaHeight,
+            519 => Self::ChatMediaBytes,
+            520 => Self::ChatMediaUploadToken,
+            521 => Self::ChatMediaPartIndex,
+            522 => Self::ChatMediaPartCount,
+            523 => Self::ChatMediaPartFinal,
             1280 => Self::NickColor,
             3585 => Self::HopeAppId,
             3586 => Self::HopeAppString,

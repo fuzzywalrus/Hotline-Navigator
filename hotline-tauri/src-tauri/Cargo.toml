@@ -1,6 +1,6 @@
 [package]
 name = "hotline-tauri"
-version = "0.2.8"
+version = "0.2.9"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -39,6 +39,7 @@ chacha20poly1305 = "0.10"
 hkdf = "0.12"
 tauri-plugin-stronghold = "2"
 rust-argon2 = "2"
+hex = "0.4"
 
 [target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
 rfd = "0.14"

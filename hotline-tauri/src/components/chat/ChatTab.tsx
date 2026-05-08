@@ -1,9 +1,15 @@
 import React, { useRef, useEffect, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import MarkdownText from '../common/MarkdownText';
 import DiscordChatRenderer from './DiscordChatRenderer';
+import MediaImage from './MediaImage';
+import AttachChip from './AttachChip';
 import { usePreferencesStore } from '../../stores/preferencesStore';
 import { resolveNameColor } from '../../utils/displayColor';
 import { useThemeBackground } from '../../hooks/useThemeBackground';
+import { showNotification } from '../../stores/notificationStore';
+import { log, error as logError } from '../../utils/logger';
+import type { ChatMessageMedia } from '../server/serverTypes';
 
 interface ChatMessage {
   userId: number;
@@ -22,6 +28,19 @@ interface ChatMessage {
   pending?: boolean;
   optimisticKey?: string;
   color?: string | null;
+  media?: ChatMessageMedia;
+}
+
+interface StagedImage {
+  bytesBase64: string;
+  mime: string;
+  filename: string;
+  byteSize: number;
+}
+
+interface InlineMediaStatus {
+  serverSupports: boolean;
+  canSend: boolean;
 }
 
 interface ChatUser {
@@ -33,6 +52,7 @@ interface ChatUser {
 }
 
 interface ChatTabProps {
+  serverId: string;
   serverName: string;
   messages: ChatMessage[];
   users?: ChatUser[];
@@ -42,7 +62,7 @@ interface ChatTabProps {
   agreementText?: string | null;
   canBroadcast?: boolean;
   onMessageChange: (value: string) => void;
-  onSendMessage: (e: React.FormEvent) => void;
+  onSendMessage: (e: React.FormEvent, media?: { handle: string; mime: string } | null) => void;
   onSendBroadcast?: (message: string) => void;
   onAcceptAgreement?: () => void;
   onDeclineAgreement?: () => void;
@@ -55,6 +75,7 @@ interface ChatTabProps {
 }
 
 export default function ChatTab({
+  serverId,
   serverName,
   messages,
   users,
@@ -80,7 +101,129 @@ export default function ChatTab({
   const isAtBottomRef = useRef(true);
   const [broadcastMode, setBroadcastMode] = useState(false);
   const [broadcastMessage, setBroadcastMessage] = useState('');
-  const { clickableLinks, showTimestamps, chatDisplayMode, displayUserColors, enforceColorLegibility } = usePreferencesStore();
+  const {
+    clickableLinks,
+    showTimestamps,
+    chatDisplayMode,
+    displayUserColors,
+    enforceColorLegibility,
+    inlineMediaEnabled,
+    imageUploadSizeKb,
+  } = usePreferencesStore();
+
+  // ─── Inline-media state ──────────────────────────────────────────
+  const [staged, setStaged] = useState<StagedImage | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [mediaStatus, setMediaStatus] = useState<InlineMediaStatus>({
+    serverSupports: false,
+    canSend: false,
+  });
+
+  // Probe inline-media status when server / pref changes.
+  useEffect(() => {
+    let cancelled = false;
+    invoke<InlineMediaStatus>('get_inline_media_status', { serverId })
+      .then((status) => {
+        if (!cancelled) setMediaStatus(status);
+      })
+      .catch(() => {
+        if (!cancelled) setMediaStatus({ serverSupports: false, canSend: false });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [serverId]);
+
+  const attachEnabled = inlineMediaEnabled && mediaStatus.serverSupports && mediaStatus.canSend;
+  const limitBytes = imageUploadSizeKb * 1024;
+
+  const stageImage = (image: StagedImage) => {
+    if (image.byteSize > limitBytes) {
+      const sizeStr = image.byteSize > 1024 * 1024
+        ? `${(image.byteSize / (1024 * 1024)).toFixed(1)} MB`
+        : `${(image.byteSize / 1024).toFixed(0)} KB`;
+      showNotification.warning(
+        `Image is ${sizeStr}, exceeds your ${imageUploadSizeKb} KB limit. Pick a smaller image or raise the limit in Preferences.`,
+        'Image too large',
+        undefined,
+        serverName,
+      );
+      return;
+    }
+    setStaged(image);
+  };
+
+  const handleAttachClick = async () => {
+    try {
+      const picked = await invoke<StagedImage | null>('pick_image_for_chat');
+      if (picked) stageImage(picked);
+    } catch (err) {
+      logError('Chat', 'pick_image_for_chat failed', err);
+    }
+  };
+
+  const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!attachEnabled) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        const blob = item.getAsFile();
+        if (!blob) continue;
+        e.preventDefault();
+        const buf = await blob.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        stageImage({
+          bytesBase64: btoa(binary),
+          mime: blob.type || 'image/png',
+          filename: '', // pasted images carry no filename
+          byteSize: bytes.length,
+        });
+        return;
+      }
+    }
+  };
+
+  const removeStaged = () => setStaged(null);
+
+  // Wrapped submit: upload first if there's a staged image, then call onSendMessage.
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (sending || uploading) return;
+
+    if (!staged) {
+      onSendMessage(e);
+      return;
+    }
+
+    setUploading(true);
+    try {
+      log('Chat', 'Uploading attached image', { mime: staged.mime, bytes: staged.byteSize });
+      const result = await invoke<{ handle: string; mime: string; width: number; height: number; byteSize: number }>(
+        'upload_media',
+        {
+          serverId,
+          bytesBase64: staged.bytesBase64,
+          declaredMime: staged.mime,
+        },
+      );
+      log('Chat', 'Upload complete', { handle: result.handle.slice(0, 16), mime: result.mime });
+      onSendMessage(e, { handle: result.handle, mime: result.mime });
+      setStaged(null);
+    } catch (err) {
+      logError('Chat', 'upload_media failed', err);
+      showNotification.error(
+        `Failed to upload image: ${err}`,
+        'Image Upload Error',
+        undefined,
+        serverName,
+      );
+    } finally {
+      setUploading(false);
+    }
+  };
   const themeBg = useThemeBackground();
   const colorPrefs = { displayUserColors, enforceColorLegibility };
 
@@ -246,7 +389,7 @@ export default function ChatTab({
             Connected to {serverName}
           </div>
         ) : chatDisplayMode === 'discord' ? (
-          <DiscordChatRenderer messages={messages} users={users} formatTime={formatTime} />
+          <DiscordChatRenderer serverId={serverId} messages={messages} users={users} formatTime={formatTime} />
         ) : (
           messages.map((msg, index) => {
             // Show dividers when timestamps are enabled
@@ -367,6 +510,11 @@ export default function ChatTab({
                 <span className="text-gray-900 dark:text-gray-100">
                   {clickableLinks ? <MarkdownText text={relayMatch ? relayMatch[3] : msg.message} /> : (relayMatch ? relayMatch[3] : msg.message)}
                 </span>
+                {msg.media && (
+                  <div className="ml-1">
+                    <MediaImage serverId={serverId} media={msg.media} />
+                  </div>
+                )}
               </div></React.Fragment>
             );
           })
@@ -427,7 +575,22 @@ export default function ChatTab({
       )}
 
       {/* Message input */}
-      <form onSubmit={(e) => { onSendMessage(e); scrollToBottom(); isAtBottomRef.current = true; }} className="border-t border-gray-200 dark:border-gray-700 p-4">
+      <form
+        onSubmit={async (e) => {
+          await handleSubmit(e);
+          scrollToBottom();
+          isAtBottomRef.current = true;
+        }}
+        className="border-t border-gray-200 dark:border-gray-700 p-4"
+      >
+        {staged && (
+          <AttachChip
+            filename={staged.filename || undefined}
+            mime={staged.mime}
+            byteSize={staged.byteSize}
+            onRemove={removeStaged}
+          />
+        )}
         <div className="flex gap-2">
           {canBroadcast && !broadcastMode && (
             <button
@@ -441,29 +604,47 @@ export default function ChatTab({
               </svg>
             </button>
           )}
+          {inlineMediaEnabled && mediaStatus.serverSupports && (
+            <button
+              type="button"
+              onClick={handleAttachClick}
+              disabled={!attachEnabled || sending || uploading || !!agreementText}
+              title={
+                !mediaStatus.canSend
+                  ? 'Your account does not have permission to send images'
+                  : 'Attach image'
+              }
+              className="px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-400 dark:hover:border-blue-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+              </svg>
+            </button>
+          )}
           <textarea
             ref={textareaRef}
             rows={1}
             value={message}
             onChange={(e) => onMessageChange(e.target.value)}
+            onPaste={handlePaste}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                if (message.trim() && !sending && !agreementText) {
+                if ((message.trim() || staged) && !sending && !uploading && !agreementText) {
                   (e.currentTarget.form as HTMLFormElement)?.requestSubmit();
                 }
               }
             }}
             placeholder={agreementText ? "Please accept or decline the server agreement" : "Type a message..."}
-            disabled={sending || !!agreementText}
+            disabled={sending || uploading || !!agreementText}
             className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 resize-none overflow-y-hidden leading-normal"
           />
           <button
             type="submit"
-            disabled={!message.trim() || sending || !!agreementText}
+            disabled={(!message.trim() && !staged) || sending || uploading || !!agreementText}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-md font-medium disabled:cursor-not-allowed"
           >
-            {sending ? 'Sending...' : 'Send'}
+            {uploading ? 'Uploading...' : sending ? 'Sending...' : 'Send'}
           </button>
         </div>
       </form>

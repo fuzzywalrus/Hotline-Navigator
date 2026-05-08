@@ -86,6 +86,12 @@ interface PreferencesState {
   enforceColorLegibility: boolean;
   setEnforceColorLegibility: (enabled: boolean) => void;
 
+  // Inline media preferences (capability bit 3)
+  inlineMediaEnabled: boolean;
+  setInlineMediaEnabled: (enabled: boolean) => void;
+  imageUploadSizeKb: 256 | 512 | 1024 | 2048;
+  setImageUploadSizeKb: (kb: 256 | 512 | 1024 | 2048) => void;
+
   // Sound preferences
   playSounds: boolean;
   playChatSound: boolean;
@@ -206,6 +212,12 @@ export const usePreferencesStore = create<PreferencesState>()(
       setAutoReconnectMaxRetries: (autoReconnectMaxRetries) => set({ autoReconnectMaxRetries: Math.max(1, Math.min(99, autoReconnectMaxRetries)) }),
       autoReconnectSliding: false,
       setAutoReconnectSliding: (autoReconnectSliding) => set({ autoReconnectSliding }),
+
+      // Inline media preferences
+      inlineMediaEnabled: true,
+      setInlineMediaEnabled: (inlineMediaEnabled) => set({ inlineMediaEnabled }),
+      imageUploadSizeKb: 256,
+      setImageUploadSizeKb: (imageUploadSizeKb) => set({ imageUploadSizeKb }),
 
       // Sound preferences (all enabled by default)
       playSounds: true,

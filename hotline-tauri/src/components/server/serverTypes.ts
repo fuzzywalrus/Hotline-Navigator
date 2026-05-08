@@ -1,5 +1,25 @@
 // Type definitions for ServerWindow and related components
 
+/// Inline-media metadata carried alongside a chat message (capability bit 3).
+/// `state` tracks the lifecycle of fetching the canonical bytes for display.
+export type ChatMessageMediaState = 'placeholder' | 'loading' | 'loaded' | 'failed';
+
+export interface ChatMessageMedia {
+  /// Hex-encoded server-issued handle.
+  handle: string;
+  /// Canonical MIME (image/jpeg | image/png | image/gif).
+  mime: string;
+  width: number;
+  height: number;
+  byteSize: number;
+  /// Local-side filename when known (sender side; absent on receive).
+  filename?: string;
+  /// Blob URL once bytes have been fetched (loaded state).
+  bytesUrl?: string;
+  state: ChatMessageMediaState;
+  failureReason?: string;
+}
+
 export interface ChatMessage {
   userId: number;
   userName: string;
@@ -17,6 +37,7 @@ export interface ChatMessage {
   pending?: boolean; // Optimistic local insert awaiting server echo
   optimisticKey?: string; // Identifier for matching optimistic insert with its echo
   color?: string | null; // Sender's nickname color (CSS hex), if known at receipt time
+  media?: ChatMessageMedia; // Inline media metadata (capability bit 3)
 }
 
 export interface User {

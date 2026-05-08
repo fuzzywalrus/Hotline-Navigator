@@ -1,7 +1,29 @@
 import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import type { ConnectionStatus } from '../../../types';
-import type { ChatMessage, FileItem, User, PrivateChatRoom } from '../serverTypes';
+import type { ChatMessage, ChatMessageMedia, FileItem, User, PrivateChatRoom } from '../serverTypes';
+
+/// Wire-format media metadata received from Rust events. Snake-case fields are
+/// already converted to camelCase via serde rename; we add UI-only state.
+interface WireMedia {
+  handle: string;
+  mime: string;
+  width: number;
+  height: number;
+  byteSize: number;
+}
+
+function wireMediaToChatMedia(wire: WireMedia | null | undefined): ChatMessageMedia | undefined {
+  if (!wire || !wire.handle) return undefined;
+  return {
+    handle: wire.handle,
+    mime: wire.mime,
+    width: wire.width,
+    height: wire.height,
+    byteSize: wire.byteSize,
+    state: 'placeholder',
+  };
+}
 import { useSound } from '../../../hooks/useSound';
 import { useAppStore } from '../../../stores/appStore';
 import { usePreferencesStore } from '../../../stores/preferencesStore';
@@ -259,6 +281,7 @@ export function useServerEvents({
         }
       }
 
+      const wireMedia = (event.payload as unknown as { media?: WireMedia | null }).media;
       const messageData = {
         ...event.payload,
         userName: resolvedUserName,
@@ -267,6 +290,7 @@ export function useServerEvents({
         isMention,
         isAdmin: sender?.isAdmin ?? false,
         isServerHistory,
+        media: wireMediaToChatMedia(wireMedia),
       };
 
       setMessages((prev) => [...prev, messageData]);
@@ -1003,14 +1027,15 @@ export function useServerEvents({
       }
     );
 
-    const unlistenMessage = listen<{ chatId: number; userId: number; userName: string; message: string }>(
+    const unlistenMessage = listen<{ chatId: number; userId: number; userName: string; message: string; media?: WireMedia | null }>(
       `private-chat-message-${serverId}`,
       (event) => {
-        const { chatId, userId, userName, message } = event.payload;
+        const { chatId, userId, userName, message, media } = event.payload;
         log('Chat', 'Private chat message', { chatId, userId, userName, message });
+        const chatMedia = wireMediaToChatMedia(media);
         setPrivateChatRooms((prev) => prev.map((room) =>
           room.chatId === chatId
-            ? { ...room, messages: [...room.messages, { userId, userName, message, timestamp: new Date() }] }
+            ? { ...room, messages: [...room.messages, { userId, userName, message, timestamp: new Date(), media: chatMedia }] }
             : room
         ));
       }

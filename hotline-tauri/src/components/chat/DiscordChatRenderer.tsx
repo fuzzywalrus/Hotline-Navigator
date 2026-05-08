@@ -1,9 +1,11 @@
 // Discord-style chat renderer with message batching, user icons, and grouped timestamps
 import UserIcon from '../users/UserIcon';
 import MarkdownText from '../common/MarkdownText';
+import MediaImage from './MediaImage';
 import { resolveNameColor } from '../../utils/displayColor';
 import { useThemeBackground } from '../../hooks/useThemeBackground';
 import { usePreferencesStore } from '../../stores/preferencesStore';
+import type { ChatMessageMedia } from '../server/serverTypes';
 
 interface ChatMessage {
   userId: number;
@@ -19,6 +21,7 @@ interface ChatMessage {
   pending?: boolean;
   optimisticKey?: string;
   color?: string | null;
+  media?: ChatMessageMedia;
 }
 
 interface MessageGroup {
@@ -28,7 +31,14 @@ interface MessageGroup {
   isAdmin?: boolean;
   color?: string | null;
   timestamp: Date;
-  messages: { message: string; timestamp: Date; isMention?: boolean; index: number; pending?: boolean }[];
+  messages: {
+    message: string;
+    timestamp: Date;
+    isMention?: boolean;
+    index: number;
+    pending?: boolean;
+    media?: ChatMessageMedia;
+  }[];
 }
 
 interface ChatUser {
@@ -40,6 +50,7 @@ interface ChatUser {
 }
 
 interface DiscordChatRendererProps {
+  serverId: string;
   messages: ChatMessage[];
   users?: ChatUser[];
   formatTime: (date: Date) => string;
@@ -116,6 +127,7 @@ function batchMessages(
         timestamp: msg.timestamp,
         isMention: msg.isMention,
         pending: msg.pending,
+        media: msg.media,
         index,
       });
     } else {
@@ -134,6 +146,7 @@ function batchMessages(
           timestamp: msg.timestamp,
           isMention: msg.isMention,
           pending: msg.pending,
+          media: msg.media,
           index,
         }],
       };
@@ -148,7 +161,7 @@ function isMessageGroup(item: MessageGroup | ChatMessage): item is MessageGroup 
   return 'messages' in item && Array.isArray((item as MessageGroup).messages);
 }
 
-export default function DiscordChatRenderer({ messages, users, formatTime }: DiscordChatRendererProps) {
+export default function DiscordChatRenderer({ serverId, messages, users, formatTime }: DiscordChatRendererProps) {
   const batches = batchMessages(messages, users);
   const themeBg = useThemeBackground();
   const displayUserColors = usePreferencesStore((s) => s.displayUserColors);
@@ -293,6 +306,11 @@ export default function DiscordChatRenderer({ messages, users, formatTime }: Dis
                     <span className="text-gray-900 dark:text-gray-100">
                       <MarkdownText text={displayText} hideImageUrls />
                     </span>
+                    {m.media && (
+                      <div className="mt-1">
+                        <MediaImage serverId={serverId} media={m.media} />
+                      </div>
+                    )}
                   </div>
                 );
               })}

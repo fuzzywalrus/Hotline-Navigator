@@ -1,17 +1,19 @@
 // Hotline client implementation
 
-mod chat;
+pub(crate) mod chat;
 pub(crate) mod files;
 pub(crate) mod hope;
 mod hope_aead;
 mod hope_stream;
+pub(crate) mod media;
 mod news;
 pub(crate) mod users;
 
 use super::constants::{
     FieldType, TransactionType, PROTOCOL_ID, PROTOCOL_SUBVERSION,
     PROTOCOL_VERSION, SUBPROTOCOL_ID, TRANSACTION_HEADER_SIZE,
-    CAPABILITY_LARGE_FILES, CAPABILITY_CHAT_HISTORY, resolve_error_message,
+    CAPABILITY_LARGE_FILES, CAPABILITY_CHAT_HISTORY, CAPABILITY_EXTENDED_PRIV,
+    CAPABILITY_INLINE_MEDIA, ACCESS_SEND_MEDIA, resolve_error_message,
 };
 use super::transaction::{Transaction, TransactionField};
 use super::types::{Bookmark, ConnectionStatus, ServerInfo};
@@ -157,9 +159,18 @@ impl ServerCertVerifier for NoVerifier {
 // Event types that can be received from the server
 #[derive(Debug, Clone)]
 pub enum HotlineEvent {
-    ChatMessage { user_id: u16, user_name: String, message: String },
+    ChatMessage {
+        user_id: u16,
+        user_name: String,
+        message: String,
+        media: Option<media::MediaMetadata>,
+    },
     ServerMessage(String),
-    PrivateMessage { user_id: u16, message: String },
+    PrivateMessage {
+        user_id: u16,
+        message: String,
+        media: Option<media::MediaMetadata>,
+    },
     UserJoined { user_id: u16, user_name: String, icon: u16, flags: u16, color: Option<String> },
     UserLeft { user_id: u16 },
     UserChanged { user_id: u16, user_name: String, icon: u16, flags: u16, color: Option<String> },
@@ -168,7 +179,13 @@ pub enum HotlineEvent {
     NewMessageBoardPost(String),
     DisconnectMessage(String),
     ChatInvite { chat_id: u32, user_id: u16, user_name: String },
-    PrivateChatMessage { chat_id: u32, user_id: u16, user_name: String, message: String },
+    PrivateChatMessage {
+        chat_id: u32,
+        user_id: u16,
+        user_name: String,
+        message: String,
+        media: Option<media::MediaMetadata>,
+    },
     ChatUserJoined { chat_id: u32, user_id: u16, user_name: String, icon: u16, flags: u16, color: Option<String> },
     ChatUserLeft { chat_id: u32, user_id: u16 },
     ChatSubjectChanged { chat_id: u32, subject: String },
@@ -224,6 +241,13 @@ pub struct HotlineClient {
     // Chat history support (negotiated during login via capability bit 4)
     pub(crate) chat_history_support: Arc<AtomicBool>,
 
+    // Inline media support (capability bit 3) and AccessSendMedia (privilege bit 57)
+    pub(crate) inline_media_supported: Arc<AtomicBool>,
+    pub(crate) can_send_media: Arc<AtomicBool>,
+    /// User preference: send/receive inline media. Default true; UI can flip off.
+    pub(crate) inline_media_enabled: Arc<AtomicBool>,
+    pub(crate) media_cache: Arc<Mutex<media::MediaCache>>,
+
     // HOPE AEAD file transfer base key (set when AEAD transport is activated)
     ft_base_key: Arc<Mutex<Option<[u8; 32]>>>,
 
@@ -257,6 +281,12 @@ impl HotlineClient {
             user_access: Arc::new(Mutex::new(0)),
             large_file_support: Arc::new(AtomicBool::new(false)),
             chat_history_support: Arc::new(AtomicBool::new(false)),
+            inline_media_supported: Arc::new(AtomicBool::new(false)),
+            can_send_media: Arc::new(AtomicBool::new(false)),
+            inline_media_enabled: Arc::new(AtomicBool::new(true)),
+            media_cache: Arc::new(Mutex::new(media::MediaCache::new(
+                media::DEFAULT_CACHE_CAP_BYTES,
+            ))),
             ft_base_key: Arc::new(Mutex::new(None)),
             running: Arc::new(AtomicBool::new(false)),
             event_tx,
@@ -274,6 +304,33 @@ impl HotlineClient {
 
     pub(crate) fn next_transaction_id(&self) -> u32 {
         self.transaction_counter.fetch_add(1, Ordering::SeqCst)
+    }
+
+    /// Compute the DATA_CAPABILITIES bitmask this client advertises during login.
+    /// Single source of truth — both the HOPE auth path and the legacy login path
+    /// route through here. Provisional bits (currently bit 5) are never advertised.
+    fn client_capability_bits(&self) -> u64 {
+        let mut bits = CAPABILITY_LARGE_FILES | CAPABILITY_CHAT_HISTORY;
+        if self.inline_media_enabled.load(Ordering::SeqCst) {
+            bits |= CAPABILITY_INLINE_MEDIA;
+        }
+        bits
+    }
+
+    /// True if the server confirmed CAPABILITY_INLINE_MEDIA (bit 3) for this session.
+    pub fn inline_media_supported(&self) -> bool {
+        self.inline_media_supported.load(Ordering::SeqCst)
+    }
+
+    /// True if the user's account has the AccessSendMedia privilege (bit 57).
+    pub fn can_send_media(&self) -> bool {
+        self.can_send_media.load(Ordering::SeqCst)
+    }
+
+    /// Set the user's preference for inline media. Off = bit 3 not advertised
+    /// on next connection, attach controls hidden, inbound media stripped.
+    pub fn set_inline_media_enabled(&self, enabled: bool) {
+        self.inline_media_enabled.store(enabled, Ordering::SeqCst);
     }
 
     /// Open a raw TCP (or TLS) connection and install it in the reader/writer slots.
@@ -848,7 +905,7 @@ impl HotlineClient {
             auth_tx.add_field(TransactionField::from_u16(FieldType::UserIconId, user_icon_id));
             auth_tx.add_field(TransactionField::from_string(FieldType::UserName, &username));
             auth_tx.add_field(TransactionField::from_u16(FieldType::VersionNumber, 255));
-            auth_tx.add_field(TransactionField::from_u16(FieldType::Capabilities, CAPABILITY_LARGE_FILES | CAPABILITY_CHAT_HISTORY));
+            auth_tx.add_field(TransactionField::from_capability_bits(FieldType::Capabilities, self.client_capability_bits()));
 
             println!("Sending HOPE authenticated login...");
             self.emit_protocol_log("info", "Sending HOPE authenticated login");
@@ -979,7 +1036,7 @@ impl HotlineClient {
             login_tx.add_field(TransactionField::from_u16(FieldType::UserIconId, user_icon_id));
             login_tx.add_field(TransactionField::from_string(FieldType::UserName, &username));
             login_tx.add_field(TransactionField::from_u16(FieldType::VersionNumber, 255));
-            login_tx.add_field(TransactionField::from_u16(FieldType::Capabilities, CAPABILITY_LARGE_FILES | CAPABILITY_CHAT_HISTORY));
+            login_tx.add_field(TransactionField::from_capability_bits(FieldType::Capabilities, self.client_capability_bits()));
 
             println!("Sending login...");
             self.emit_protocol_log("info", "Sending legacy login (XOR-encoded credentials)");
@@ -1047,7 +1104,7 @@ impl HotlineClient {
 
         let server_capabilities = login_reply
             .get_field(FieldType::Capabilities)
-            .and_then(|f| f.to_u16().ok())
+            .and_then(|f| f.to_capability_bits().ok())
             .unwrap_or(0);
 
         let large_files = (server_capabilities & CAPABILITY_LARGE_FILES) != 0;
@@ -1055,6 +1112,25 @@ impl HotlineClient {
 
         let chat_history = (server_capabilities & CAPABILITY_CHAT_HISTORY) != 0;
         self.chat_history_support.store(chat_history, Ordering::SeqCst);
+
+        let inline_media = (server_capabilities & CAPABILITY_INLINE_MEDIA) != 0;
+        self.inline_media_supported.store(inline_media, Ordering::SeqCst);
+
+        // AccessSendMedia (privilege bit 57) gates the SEND side of inline media.
+        // Receiving has no privilege gate — any client that negotiated bit 3 can
+        // be a recipient.
+        let send_media = (user_access & ACCESS_SEND_MEDIA) != 0;
+        self.can_send_media.store(send_media, Ordering::SeqCst);
+
+        // Spec: bit 5 (CAPABILITY_EXTENDED_PRIV) is provisional. We never advertise it.
+        // If a server echoes it back anyway, log a warning and continue parsing
+        // FieldUserAccess as 64 bits — do NOT enable any 128-bit privilege parsing.
+        if (server_capabilities & CAPABILITY_EXTENDED_PRIV) != 0 {
+            self.emit_protocol_log(
+                "warn",
+                "Server echoed CAPABILITY_EXTENDED_PRIV (bit 5) — provisional bit not advertised by client; ignoring",
+            );
+        }
 
         // Extract optional retention policy hints from login reply
         let history_max_msgs = login_reply
@@ -1064,7 +1140,10 @@ impl HotlineClient {
             .get_field(FieldType::HistoryMaxDays)
             .and_then(|f| f.to_u32().ok());
 
-        println!("Server capabilities: 0x{:04X} (large files: {}, chat history: {})", server_capabilities, large_files, chat_history);
+        println!(
+            "Server capabilities: 0x{:016X} (large files: {}, chat history: {}, inline media: {}, can_send_media: {})",
+            server_capabilities, large_files, chat_history, inline_media, send_media
+        );
         if chat_history {
             println!("Chat history enabled by server: max_msgs={:?}, max_days={:?}", history_max_msgs, history_max_days);
             self.emit_protocol_log("info", format!(
@@ -1150,6 +1229,15 @@ impl HotlineClient {
             pending.clear();
         }
         *self.ft_base_key.lock().await = None;
+
+        // Drop the session-scoped media cache. Spec: "Clients MUST NOT cache
+        // media handles across sessions."
+        {
+            let mut cache = self.media_cache.lock().await;
+            cache.clear();
+        }
+        self.inline_media_supported.store(false, Ordering::SeqCst);
+        self.can_send_media.store(false, Ordering::SeqCst);
 
         let mut status = self.status.lock().await;
         *status = ConnectionStatus::Disconnected;
@@ -1422,6 +1510,19 @@ impl HotlineClient {
                     }
                 }
 
+                // Validate companion-fields invariant (MEDIA_ID / MEDIA_TYPE
+                // both present or both absent). On violation, drop both fields
+                // and process as text-only — text content may still be valid.
+                let media = if media::validate_media_invariant(transaction) {
+                    media::extract_chat_media(transaction)
+                } else {
+                    let _ = event_tx.send(HotlineEvent::ProtocolLog {
+                        level: "warn".to_string(),
+                        message: "Chat transaction has exactly one of MEDIA_ID/MEDIA_TYPE; dropping media fields".to_string(),
+                    });
+                    None
+                };
+
                 // Check if this is a private chat room message (has ChatId field)
                 if let Some(chat_id_field) = transaction.get_field(FieldType::ChatId) {
                     if let Ok(chat_id) = chat_id_field.to_u32() {
@@ -1430,6 +1531,7 @@ impl HotlineClient {
                             user_id,
                             user_name,
                             message,
+                            media,
                         });
                     }
                 } else {
@@ -1437,6 +1539,7 @@ impl HotlineClient {
                         user_id,
                         user_name,
                         message,
+                        media,
                     });
                 }
             }
@@ -1446,14 +1549,25 @@ impl HotlineClient {
                     .and_then(|f| f.to_string().ok())
                     .unwrap_or_default();
 
+                // Same invariant + extraction for PMs (104 carries inline media too)
+                let media = if media::validate_media_invariant(transaction) {
+                    media::extract_chat_media(transaction)
+                } else {
+                    let _ = event_tx.send(HotlineEvent::ProtocolLog {
+                        level: "warn".to_string(),
+                        message: "PM transaction has exactly one of MEDIA_ID/MEDIA_TYPE; dropping media fields".to_string(),
+                    });
+                    None
+                };
+
                 // Check if this is a private message (has UserId field) or server broadcast
                 if let Some(user_id_field) = transaction.get_field(FieldType::UserId) {
                     if let Ok(user_id) = user_id_field.to_u16() {
                         // Private message from a specific user
-                        let _ = event_tx.send(HotlineEvent::PrivateMessage { user_id, message });
+                        let _ = event_tx.send(HotlineEvent::PrivateMessage { user_id, message, media });
                     }
                 } else {
-                    // Server broadcast message
+                    // Server broadcast message — no media metadata expected
                     let _ = event_tx.send(HotlineEvent::ServerMessage(message));
                 }
             }

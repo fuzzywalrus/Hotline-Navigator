@@ -13,8 +13,14 @@
 
 ### 3. Effective encoding resolution on HotlineClient (Rust)
 - [ ] Add `effective_encoding: TextEncoding` field on `HotlineClient`
-- [ ] Resolve after HOPE negotiation in `connect()`: HOPE active → `Utf8`, else → `bookmark.encoding`
+- [ ] Add `CAPABILITY_TEXT_ENCODING: u64 = 0x0002` constant in [protocol/constants.rs](hotline-tauri/src-tauri/src/protocol/constants.rs)
+- [ ] Update `client_capability_bits()` helper (introduced by `capabilities-hardening`) to OR in bit 1 when `bookmark.encoding == Utf8` OR HOPE is active
+- [ ] Resolve `effective_encoding` after HOPE negotiation AND capability echo in `connect()`:
+  - HOPE active → `Utf8`
+  - else server echoed bit 1 → `Utf8`
+  - else → `bookmark.encoding`
 - [ ] Expose via accessor method for `&self` call sites
+- [ ] Unit test: each of the three branches yields the expected encoding
 
 ### 4. Thread encoding through receive path (Rust)
 - [ ] Pass `effective_encoding` into the receive loop as a captured variable
@@ -43,3 +49,5 @@
 - [ ] Test HOPE auto-detection: connect to HOPE server, confirm UTF-8 is used regardless of bookmark setting
 - [ ] Test backward compat: existing bookmarks without `encoding` field load correctly as MacRoman
 - [ ] Test CJK fallback: with UTF-8 encoding set, Japanese text passes through correctly
+- [ ] Test bit-1 negotiation: against a fogWraith-spec server that confirms bit 1, confirm `effective_encoding` resolves to UTF-8 on a non-HOPE bookmark with `bookmark.encoding == Macintosh` IF the server echoes bit 1 — verify against expectation (per spec, server only echoes bits the client advertised, so this scenario shouldn't occur; but verify the resolution order is correct under each combination)
+- [ ] Test bit-1 advertisement: bookmark with `encoding == Utf8`, non-HOPE → confirm bit 1 set in advertised capabilities. Bookmark with `encoding == Macintosh`, non-HOPE → confirm bit 1 NOT set
