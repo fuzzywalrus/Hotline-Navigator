@@ -1498,6 +1498,132 @@ mod tests {
             .expect("tls12 server thread panicked")
             .expect("tls12 server failed");
     }
+
+    // ─── Path encoding ────────────────────────────────────────────────────
+
+    #[test]
+    fn encode_file_path_exact_wire_layout() {
+        // count(2) then per component: 0x00 0x00 + len(1) + bytes
+        let path = vec!["abc".to_string(), "de".to_string()];
+        let encoded = super::encode_file_path(&path).expect("non-empty path");
+        let expected: Vec<u8> = vec![
+            0x00, 0x02, // component count
+            0x00, 0x00, 0x03, b'a', b'b', b'c',
+            0x00, 0x00, 0x02, b'd', b'e',
+        ];
+        assert_eq!(encoded, expected);
+    }
+
+    #[test]
+    fn encode_file_path_empty_is_none() {
+        assert_eq!(super::encode_file_path(&[]), None);
+    }
+
+    #[test]
+    fn encode_file_path_truncates_components_to_255_bytes() {
+        let long = "x".repeat(300);
+        let encoded = super::encode_file_path(&[long]).expect("non-empty path");
+        assert_eq!(&encoded[0..2], &[0x00, 0x01]); // count
+        assert_eq!(encoded[4], 255); // 1-byte length capped
+        assert_eq!(encoded.len(), 2 + 3 + 255);
+    }
+
+    #[test]
+    fn encode_path_component_prefers_macroman() {
+        // é is representable in MacRoman as 0x8E
+        assert_eq!(super::encode_path_component("é"), vec![0x8E]);
+        // Unmappable characters fall back to raw UTF-8
+        assert_eq!(super::encode_path_component("→"), "→".as_bytes().to_vec());
+    }
+
+    // ─── HTXF download / flattened FILP parsing ───────────────────────────
+
+    use std::io::{Read, Write};
+
+    /// Fake HTXF server: accepts one transfer connection, validates the
+    /// 16-byte handshake, then streams a two-fork flattened file (an INFO
+    /// fork the client must skip and a DATA fork it must return).
+    fn spawn_htxf_download_server(
+        payload: &'static [u8],
+        reference_number: u32,
+    ) -> Result<(u16, thread::JoinHandle<Result<(), String>>), String> {
+        let listener =
+            TcpListener::bind("127.0.0.1:0").map_err(|e| format!("bind: {}", e))?;
+        let port = listener
+            .local_addr()
+            .map_err(|e| format!("local_addr: {}", e))?
+            .port();
+        let handle = thread::spawn(move || -> Result<(), String> {
+            let (mut stream, _) =
+                listener.accept().map_err(|e| format!("accept: {}", e))?;
+
+            let mut handshake = [0u8; 16];
+            stream
+                .read_exact(&mut handshake)
+                .map_err(|e| format!("read handshake: {}", e))?;
+            if &handshake[0..4] != b"HTXF" {
+                return Err(format!("bad transfer magic: {:?}", &handshake[0..4]));
+            }
+            let got_ref = u32::from_be_bytes([
+                handshake[4], handshake[5], handshake[6], handshake[7],
+            ]);
+            if got_ref != reference_number {
+                return Err(format!("wrong reference number: {}", got_ref));
+            }
+
+            let info: &[u8] = b"opaque INFO fork bytes"; // client skips these
+            let mut filp = Vec::new();
+            filp.extend_from_slice(b"FILP");
+            filp.extend_from_slice(&1u16.to_be_bytes()); // version
+            filp.extend_from_slice(&[0u8; 16]); // reserved
+            filp.extend_from_slice(&2u16.to_be_bytes()); // fork count
+
+            // INFO fork: type(4) + compression(4) + reserved(4) + size(4) + data
+            filp.extend_from_slice(b"INFO");
+            filp.extend_from_slice(&0u32.to_be_bytes());
+            filp.extend_from_slice(&0u32.to_be_bytes());
+            filp.extend_from_slice(&(info.len() as u32).to_be_bytes());
+            filp.extend_from_slice(info);
+
+            // DATA fork
+            filp.extend_from_slice(b"DATA");
+            filp.extend_from_slice(&0u32.to_be_bytes());
+            filp.extend_from_slice(&0u32.to_be_bytes());
+            filp.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+            filp.extend_from_slice(payload);
+
+            stream
+                .write_all(&filp)
+                .map_err(|e| format!("write FILP: {}", e))?;
+            stream.flush().map_err(|e| format!("flush: {}", e))?;
+            Ok(())
+        });
+        Ok((port, handle))
+    }
+
+    #[tokio::test]
+    async fn perform_file_transfer_parses_flattened_filp_download() {
+        const PAYLOAD: &[u8] = b"Hello, flattened fork format!";
+        let (transfer_port, server) =
+            spawn_htxf_download_server(PAYLOAD, 0xCAFE).expect("server start");
+        let mut bookmark = test_tls_bookmark(transfer_port);
+        bookmark.tls = false;
+        let client = HotlineClient::new(bookmark, false);
+
+        let data = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            client.perform_file_transfer(0xCAFE, PAYLOAD.len() as u64, |_, _| {}),
+        )
+        .await
+        .expect("transfer timed out")
+        .expect("transfer failed");
+
+        assert_eq!(
+            data, PAYLOAD,
+            "downloaded bytes must be exactly the DATA fork payload"
+        );
+        server.join().expect("server thread panicked").expect("server failed");
+    }
 }
 
 /// Detailed file info returned by GetFileInfo

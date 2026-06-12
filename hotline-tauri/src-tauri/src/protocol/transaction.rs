@@ -551,6 +551,62 @@ mod tests {
         assert!(Transaction::decode(&data).is_err());
     }
 
+    /// Golden byte vector: pins the exact wire layout of an encoded
+    /// transaction. A round-trip test can't catch a symmetric encode/decode
+    /// bug (e.g. two header fields swapped in both directions) — this can.
+    #[test]
+    fn transaction_encode_golden_bytes() {
+        let mut tx = Transaction::new(0x2A, TransactionType::SendChat); // 105
+        tx.add_field(TransactionField::from_string(FieldType::Data, "hi")); // 101
+
+        let expected: Vec<u8> = vec![
+            0x00, // flags
+            0x00, // is_reply
+            0x00, 0x69, // type = 105 (SendChat)
+            0x00, 0x00, 0x00, 0x2A, // id = 42
+            0x00, 0x00, 0x00, 0x00, // error_code = 0
+            0x00, 0x00, 0x00, 0x08, // total_size = field section (8 bytes)
+            0x00, 0x00, 0x00, 0x08, // data_size = field section (8 bytes)
+            0x00, 0x01, // field count = 1
+            0x00, 0x65, // field type = 101 (Data)
+            0x00, 0x02, // field size = 2
+            b'h', b'i',
+        ];
+        assert_eq!(tx.encode(), expected);
+    }
+
+    #[test]
+    fn transaction_decode_truncated_field_is_dropped_not_panicking() {
+        let mut tx = Transaction::new(7, TransactionType::SendChat);
+        tx.add_field(TransactionField::from_string(FieldType::Data, "hello"));
+        let mut encoded = tx.encode();
+        // Chop the last 3 bytes of field data: the decoder must not panic and
+        // must not return a phantom field with out-of-bounds data.
+        encoded.truncate(encoded.len() - 3);
+        if let Ok(decoded) = Transaction::decode(&encoded) {
+            for f in &decoded.fields {
+                assert!(f.data.len() <= 5, "field data must not exceed available bytes");
+            }
+        }
+    }
+
+    #[test]
+    fn transaction_decode_lying_field_size_does_not_panic() {
+        let mut tx = Transaction::new(7, TransactionType::SendChat);
+        tx.add_field(TransactionField::from_string(FieldType::Data, "hello"));
+        let mut encoded = tx.encode();
+        // Overwrite the field-size u16 (bytes 24-25: header 20 + count 2 +
+        // field type 2) with a size far beyond the buffer.
+        encoded[24] = 0xFF;
+        encoded[25] = 0xFF;
+        // Must not panic; a decoded result must not contain phantom bytes.
+        if let Ok(decoded) = Transaction::decode(&encoded) {
+            for f in &decoded.fields {
+                assert!(f.data.len() <= 5, "field data must not exceed available bytes");
+            }
+        }
+    }
+
     #[test]
     fn transaction_get_field() {
         let mut tx = Transaction::new(1, TransactionType::SendChat);

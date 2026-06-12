@@ -10,6 +10,7 @@ import BoardTab from '../board/BoardTab';
 import FilesTab from '../files/FilesTab';
 import NewsTab from '../news/NewsTab';
 import ServerBanner from './ServerBanner';
+import { showNotification } from '../../stores/notificationStore';
 import ServerHeader from './ServerHeader';
 import ServerSidebar from './ServerSidebar';
 import MobileTabBar from './MobileTabBar';
@@ -23,7 +24,7 @@ import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useServerEvents } from './hooks/useServerEvents';
 import { useServerHandlers } from './hooks/useServerHandlers';
 import { useAutoReconnect } from './hooks/useAutoReconnect';
-import { parseUserFlags } from './serverUtils';
+import { parseUserFlags, hasAccessBit } from './serverUtils';
 import type { ChatMessage, User, PrivateMessage, FileItem, NewsCategory, NewsArticle, ViewTab, PrivateChatRoom } from './serverTypes';
 import { log, error as logError } from '../../utils/logger';
 import { useChatHistoryStore } from '../../stores/chatHistoryStore';
@@ -47,7 +48,9 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const messagesRef = useRef<ChatMessage[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [userAccess, setUserAccess] = useState<number>(0); // User access permissions (bitmask)
+  // User access permissions (64-bit bitmask). Kept as a decimal string because
+  // the bitmap crosses IPC as JSON and a JS number only has 53 bits of precision.
+  const [userAccess, setUserAccess] = useState<string>('0');
   const [files, setFiles] = useState<FileItem[]>([]);
   const currentPathRef = useRef<string[]>([]);
   const [currentPath, setCurrentPath] = useState<string[]>([]);
@@ -194,10 +197,10 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
   useEffect(() => {
     let isActive = true;
     
-    const unlistenPromise = listen<{ access: number }>(`user-access-${serverId}`, (event) => {
+    const unlistenPromise = listen<{ access: string }>(`user-access-${serverId}`, (event) => {
       if (!isActive) return;
       setUserAccess(event.payload.access);
-      log('Permissions', 'User access received', '0x' + event.payload.access.toString(16));
+      log('Permissions', 'User access received', '0x' + BigInt(event.payload.access).toString(16));
     });
 
     return () => {
@@ -207,15 +210,8 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
   }, [serverId]);
 
   // Helper function to check if user has specific permission
-  const hasPermission = (bitIndex: number): boolean => {
-    // Hotline access bits are indexed from 63 down to 0
-    // bitIndex 22 = canDisconnectUsers (bit 63-22 = 41)
-    const bit = 63 - bitIndex;
-    // Convert to BigInt for 64-bit operations, then back to boolean
-    const accessBigInt = BigInt(userAccess);
-    const bitMask = BigInt(1) << BigInt(bit);
-    return (accessBigInt & bitMask) !== BigInt(0);
-  };
+  // (bitIndex 22 = canDisconnectUsers; see hasAccessBit for bit numbering)
+  const hasPermission = (bitIndex: number): boolean => hasAccessBit(userAccess, bitIndex);
   
   // Update connection status based on users - if we have users, we're logged in
   // Use a ref to track if we've already updated to avoid infinite loops
@@ -443,10 +439,16 @@ export default function ServerWindow({ serverId, serverName, onClose }: ServerWi
         setLoadingBoard(false);
       }).catch((error) => {
         logError('Board', 'Failed to get message board', error);
+        // Mark loaded so the effect doesn't re-fire in an endless request
+        // loop — the server refused the board (e.g. account lacks the
+        // privilege) and retrying won't change its answer.
+        setBoardPosts([]);
+        setBoardLoaded(true);
         setLoadingBoard(false);
+        showNotification.error(String(error), 'Message board', undefined, serverName);
       });
     }
-  }, [activeTab, connectionStatus, serverId, loadingBoard, boardLoaded]);
+  }, [activeTab, connectionStatus, serverId, serverName, loadingBoard, boardLoaded]);
 
 
   // Download banner immediately after login (before agreement is shown)

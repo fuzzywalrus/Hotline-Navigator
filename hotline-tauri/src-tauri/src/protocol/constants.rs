@@ -89,7 +89,26 @@ pub fn resolve_error_message(error_code: u32, server_error_text: Option<String>)
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_error_message, HotlineErrorCode};
+    use super::{access_bit, resolve_error_message, HotlineErrorCode, ACCESS_SEND_MEDIA};
+
+    #[test]
+    fn access_bit_uses_msb_first_numbering() {
+        // Hotline AccessBitmap: spec "bit n" is MSB-first, i.e. u64 bit (63 - n)
+        // when the 8-byte field is read as a big-endian u64.
+        assert_eq!(access_bit(0), 1u64 << 63); // DeleteFile = highest u64 bit
+        assert_eq!(access_bit(57), 1u64 << 6); // AccessSendMedia
+        assert_eq!(access_bit(63), 1u64); // last spec bit = lowest u64 bit
+        assert_eq!(ACCESS_SEND_MEDIA, access_bit(57));
+    }
+
+    #[test]
+    fn access_bit_57_matches_wire_bytes() {
+        // Byte-level cross-check: spec bit 57 lives in byte 7 (57/8), at
+        // intra-byte bit (7 - 57%8) = 6 → 0x40. Big-endian u64 of those bytes
+        // must equal ACCESS_SEND_MEDIA.
+        let wire: [u8; 8] = [0, 0, 0, 0, 0, 0, 0, 0x40];
+        assert_eq!(u64::from_be_bytes(wire), ACCESS_SEND_MEDIA);
+    }
 
     #[test]
     fn error_code_from_code_matches_known_values() {
@@ -166,8 +185,13 @@ pub const CAPABILITY_INLINE_MEDIA: u64 = 0x0008; // bit 3
 pub const CAPABILITY_CHAT_HISTORY: u64 = 0x0010; // bit 4
 pub const CAPABILITY_EXTENDED_PRIV: u64 = 0x0020; // bit 5 (provisional — DO NOT advertise)
 
-// Account access privilege bits (FieldUserAccess 110)
-pub const ACCESS_SEND_MEDIA: u64 = 1u64 << 57; // AccessSendMedia (inline media)
+// Account access privilege bits (FieldUserAccess 110).
+// Hotline's AccessBitmap uses MSB-first bit numbering: spec "bit n" maps to
+// u64 bit (63 - n) when the 8-byte field is read as a big-endian u64.
+pub const fn access_bit(n: u32) -> u64 {
+    1u64 << (63 - n)
+}
+pub const ACCESS_SEND_MEDIA: u64 = access_bit(57); // AccessSendMedia (inline media)
 
 // HTXF transfer flags
 pub const HTXF_FLAG_LARGE_FILE: u32 = 0x00000001;

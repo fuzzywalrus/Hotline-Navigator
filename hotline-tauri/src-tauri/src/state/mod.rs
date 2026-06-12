@@ -450,19 +450,40 @@ impl AppState {
                             "status": status,
                         });
                         let _ = app_handle.emit(&format!("status-changed-{}", server_id_clone), payload);
-                        
+
                         // Emit user access permissions when we're logged in
                         // This ensures we only emit after login is complete and user_access is set
                         if matches!(status, crate::protocol::types::ConnectionStatus::LoggedIn) {
                             // Get user access from the client (non-blocking, already logged in)
                             if let Some(client) = clients_clone.read().await.get(&server_id_clone) {
-                                let user_access = client.get_user_access().await;
+                                let user_access = client.get_user_access();
+                                // As a decimal string: u64 bitmaps overflow the
+                                // 53-bit JSON number precision in the webview.
                                 let access_payload = serde_json::json!({
-                                    "access": user_access,
+                                    "access": user_access.to_string(),
                                 });
                                 let _ = app_handle.emit(&format!("user-access-{}", server_id_clone), access_payload);
                             }
                         }
+                    }
+                    HotlineEvent::AccessUpdated { access, server_supports, can_send_media } => {
+                        // Mid-session access change: refresh the full permission
+                        // bitmap and the inline-media status so the UI updates
+                        // live without a reconnect. The event carries everything
+                        // needed, so no clients lock here (a disconnect in
+                        // flight holds it for writing).
+                        let access_payload = serde_json::json!({
+                            "access": access.to_string(),
+                        });
+                        let _ = app_handle.emit(&format!("user-access-{}", server_id_clone), access_payload);
+                        let payload = crate::commands::InlineMediaStatus {
+                            server_supports,
+                            can_send: can_send_media,
+                        };
+                        let _ = app_handle.emit(
+                            &format!("inline-media-status-{}", server_id_clone),
+                            payload,
+                        );
                     }
                 }
             }
@@ -900,7 +921,7 @@ impl AppState {
     pub async fn get_user_access(&self, server_id: &str) -> Result<u64, String> {
         let clients = self.clients.read().await;
         if let Some(client) = clients.get(server_id) {
-            Ok(client.get_user_access().await)
+            Ok(client.get_user_access())
         } else {
             Err("Server not connected".to_string())
         }

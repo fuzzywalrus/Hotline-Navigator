@@ -287,10 +287,42 @@ impl HotlineClient {
             return Err(format!("Get news article data failed: {}", error_msg));
         }
 
+        // Some servers (e.g. Lemoniscate) have been seen replying without a
+        // usable NewsArticleData (333) field; also accept the generic Data
+        // (101) field as a fallback before giving up.
         let content = reply
             .get_field(FieldType::NewsArticleData)
+            .or_else(|| reply.get_field(FieldType::Data))
             .and_then(|f| f.to_string().ok())
             .unwrap_or_default();
+
+        if content.is_empty() && !reply.fields.is_empty() {
+            // Diagnostic: list what the server actually sent. Note unknown
+            // field IDs decode as ErrorText (FieldType::from fallback), so a
+            // non-standard article-data field would show up mislabeled here.
+            let fields_desc: Vec<String> = reply
+                .fields
+                .iter()
+                .map(|f| {
+                    let preview: String = f
+                        .to_string()
+                        .unwrap_or_default()
+                        .chars()
+                        .take(40)
+                        .collect();
+                    format!("{:?}[{} bytes]{}{}", f.field_type, f.data.len(),
+                        if preview.is_empty() { "" } else { ": " }, preview)
+                })
+                .collect();
+            self.emit_protocol_log(
+                "warn",
+                format!(
+                    "News article {} reply had no article text; fields: {}",
+                    article_id,
+                    fields_desc.join(", ")
+                ),
+            );
+        }
 
         println!("Received news article content: {} chars", content.len());
 

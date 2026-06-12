@@ -129,9 +129,8 @@ impl HotlineClient {
     }
 
     /// Get current user access permissions (local cache)
-    pub async fn get_user_access(&self) -> u64 {
-        let access_guard = self.user_access.lock().await;
-        *access_guard
+    pub fn get_user_access(&self) -> u64 {
+        self.user_access.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Request own access privileges from the server (transaction 354)

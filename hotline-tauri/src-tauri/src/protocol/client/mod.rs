@@ -19,7 +19,7 @@ use super::transaction::{Transaction, TransactionField};
 use super::types::{Bookmark, ConnectionStatus, ServerInfo};
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -192,6 +192,11 @@ pub enum HotlineEvent {
     ServerBannerUpdate { banner_type: Option<u16>, url: Option<String> },
     ProtocolLog { level: String, message: String },
     StatusChanged(ConnectionStatus),
+    /// Access bitmap (FieldUserAccess) changed mid-session — typically from a
+    /// freestanding UserAccess (354) transaction sent by the server after login.
+    /// Carries the raw bitmap plus the derived inline-media flags so the
+    /// forwarding layer can re-emit without touching the clients lock.
+    AccessUpdated { access: u64, server_supports: bool, can_send_media: bool },
 }
 
 /// Convert a 0x00RRGGBB u32 color to a CSS hex string like "#RRGGBB"
@@ -232,8 +237,8 @@ pub struct HotlineClient {
     // Server info (extracted from login reply)
     server_info: Arc<Mutex<Option<ServerInfo>>>,
 
-    // User access permissions (from login reply)
-    user_access: Arc<Mutex<u64>>,
+    // User access permissions (from login reply or a freestanding UserAccess 354)
+    user_access: Arc<AtomicU64>,
 
     // Large file support (negotiated during login)
     pub(crate) large_file_support: Arc<AtomicBool>,
@@ -264,6 +269,33 @@ impl HotlineClient {
         });
     }
 
+    /// Cache a FieldUserAccess bitmap and derive AccessSendMedia (privilege
+    /// bit 57, MSB-first — see access_bit()). AccessSendMedia gates only the
+    /// SEND side of inline media; receiving has no privilege gate.
+    /// Shared by the login-reply path and the freestanding UserAccess (354)
+    /// handler in the receive loop. Returns (changed, can_send_media); logs
+    /// at info when the bitmap changed, debug when a re-send was identical.
+    fn apply_user_access(
+        access: u64,
+        source: &str,
+        user_access: &AtomicU64,
+        can_send_media: &AtomicBool,
+        event_tx: &mpsc::UnboundedSender<HotlineEvent>,
+    ) -> (bool, bool) {
+        let prev = user_access.swap(access, Ordering::SeqCst);
+        let can_send = (access & ACCESS_SEND_MEDIA) != 0;
+        can_send_media.store(can_send, Ordering::SeqCst);
+        let changed = prev != access;
+        let _ = event_tx.send(HotlineEvent::ProtocolLog {
+            level: if changed { "info" } else { "debug" }.to_string(),
+            message: format!(
+                "{}: FieldUserAccess = 0x{:016X}, AccessSendMedia (bit 57) = {}",
+                source, access, can_send
+            ),
+        });
+        (changed, can_send)
+    }
+
     pub fn new(bookmark: Bookmark, allow_legacy_tls: bool) -> Self {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
@@ -278,7 +310,7 @@ impl HotlineClient {
             transaction_counter: Arc::new(AtomicU32::new(1)),
             file_list_paths: Arc::new(RwLock::new(HashMap::new())),
             server_info: Arc::new(Mutex::new(None)),
-            user_access: Arc::new(Mutex::new(0)),
+            user_access: Arc::new(AtomicU64::new(0)),
             large_file_support: Arc::new(AtomicBool::new(false)),
             chat_history_support: Arc::new(AtomicBool::new(false)),
             inline_media_supported: Arc::new(AtomicBool::new(false)),
@@ -1095,10 +1127,13 @@ impl HotlineClient {
             .and_then(|f| f.to_u64().ok())
             .unwrap_or(0);
 
-        {
-            let mut access_guard = self.user_access.lock().await;
-            *access_guard = user_access;
-        }
+        let (_, send_media) = Self::apply_user_access(
+            user_access,
+            "Login reply",
+            &self.user_access,
+            &self.can_send_media,
+            &self.event_tx,
+        );
 
         println!("User access permissions: 0x{:016X}", user_access);
 
@@ -1115,12 +1150,6 @@ impl HotlineClient {
 
         let inline_media = (server_capabilities & CAPABILITY_INLINE_MEDIA) != 0;
         self.inline_media_supported.store(inline_media, Ordering::SeqCst);
-
-        // AccessSendMedia (privilege bit 57) gates the SEND side of inline media.
-        // Receiving has no privilege gate — any client that negotiated bit 3 can
-        // be a recipient.
-        let send_media = (user_access & ACCESS_SEND_MEDIA) != 0;
-        self.can_send_media.store(send_media, Ordering::SeqCst);
 
         // Spec: bit 5 (CAPABILITY_EXTENDED_PRIV) is provisional. We never advertise it.
         // If a server echoes it back anyway, log a warning and continue parsing
@@ -1300,6 +1329,9 @@ impl HotlineClient {
         let event_tx = self.event_tx.clone();
         let pending_transactions = self.pending_transactions.clone();
         let file_list_paths = self.file_list_paths.clone();
+        let user_access_state = self.user_access.clone();
+        let can_send_media_state = self.can_send_media.clone();
+        let inline_media_supported_state = self.inline_media_supported.clone();
 
         let task = tokio::spawn(async move {
             while running.load(Ordering::SeqCst) {
@@ -1461,7 +1493,49 @@ impl HotlineClient {
                         }
                     }
                 } else {
-                    // This is an unsolicited server message
+                    // Update access bitmap from a freestanding UserAccess (354)
+                    // transaction. Some servers (e.g. Janus) send this AFTER the
+                    // login reply, with a placeholder 0 in the login reply itself.
+                    if transaction.transaction_type == TransactionType::UserAccess {
+                        match transaction.get_field(FieldType::UserAccess).map(|f| f.to_u64()) {
+                            Some(Ok(access)) => {
+                                let (changed, can_send) = Self::apply_user_access(
+                                    access,
+                                    "UserAccess update",
+                                    &user_access_state,
+                                    &can_send_media_state,
+                                    &event_tx,
+                                );
+                                if changed {
+                                    let _ = event_tx.send(HotlineEvent::AccessUpdated {
+                                        access,
+                                        server_supports: inline_media_supported_state
+                                            .load(Ordering::SeqCst),
+                                        can_send_media: can_send,
+                                    });
+                                }
+                            }
+                            Some(Err(e)) => {
+                                let _ = event_tx.send(HotlineEvent::ProtocolLog {
+                                    level: "warn".to_string(),
+                                    message: format!(
+                                        "Ignoring UserAccess (354) with malformed FieldUserAccess (must be 8 bytes): {}",
+                                        e
+                                    ),
+                                });
+                            }
+                            None => {
+                                let _ = event_tx.send(HotlineEvent::ProtocolLog {
+                                    level: "warn".to_string(),
+                                    message: "Ignoring UserAccess (354) without a FieldUserAccess field"
+                                        .to_string(),
+                                });
+                            }
+                        }
+                        // Don't fall through to handle_server_event — that would just
+                        // print "Unhandled server event: UserAccess".
+                        continue;
+                    }
                     Self::handle_server_event(&transaction, &event_tx);
                 }
             }
@@ -2248,6 +2322,161 @@ mod tests {
         assert_eq!(reply.id, tx.id);
         assert_eq!(reply.is_reply, 1);
         assert_eq!(reply.error_code, 0);
+
+        server.join().expect("server thread panicked").expect("server failed");
+    }
+
+    // ─── User access handling ─────────────────────────────────────────────
+
+    #[test]
+    fn apply_user_access_derives_send_media_and_change_flag() {
+        use super::{HotlineEvent, ACCESS_SEND_MEDIA};
+        use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+        let user_access = AtomicU64::new(0);
+        let can_send = AtomicBool::new(false);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut expect_log_level = |want: &str| match rx.try_recv() {
+            Ok(HotlineEvent::ProtocolLog { level, .. }) => assert_eq!(level, want),
+            other => panic!("expected ProtocolLog({}), got {:?}", want, other),
+        };
+
+        // AccessSendMedia (spec bit 57) set → changed, can send
+        let (changed, send) = HotlineClient::apply_user_access(
+            ACCESS_SEND_MEDIA, "test", &user_access, &can_send, &tx,
+        );
+        assert!(changed && send);
+        assert_eq!(user_access.load(Ordering::SeqCst), ACCESS_SEND_MEDIA);
+        assert!(can_send.load(Ordering::SeqCst));
+        expect_log_level("info");
+
+        // Identical re-send → unchanged, still can send, logged at debug
+        let (changed, send) = HotlineClient::apply_user_access(
+            ACCESS_SEND_MEDIA, "test", &user_access, &can_send, &tx,
+        );
+        assert!(!changed && send);
+        expect_log_level("debug");
+
+        // Every other bit set EXCEPT bit 57 → changed, cannot send
+        let (changed, send) = HotlineClient::apply_user_access(
+            !ACCESS_SEND_MEDIA, "test", &user_access, &can_send, &tx,
+        );
+        assert!(changed && !send);
+        assert!(!can_send.load(Ordering::SeqCst));
+        expect_log_level("info");
+    }
+
+    /// Build the wire bytes for a freestanding (is_reply=0) UserAccess (354)
+    /// transaction carrying one FieldUserAccess (110) with the given payload.
+    fn user_access_tx_bytes(field: &[u8]) -> Vec<u8> {
+        let body_len = (2 + 4 + field.len()) as u32; // count + field header + data
+        let mut tx = Vec::new();
+        tx.push(0); // flags
+        tx.push(0); // is_reply = 0 (unsolicited)
+        tx.extend_from_slice(&354u16.to_be_bytes()); // TransactionType::UserAccess
+        tx.extend_from_slice(&0u32.to_be_bytes()); // id
+        tx.extend_from_slice(&0u32.to_be_bytes()); // error_code
+        tx.extend_from_slice(&body_len.to_be_bytes()); // total_size
+        tx.extend_from_slice(&body_len.to_be_bytes()); // data_size
+        tx.extend_from_slice(&1u16.to_be_bytes()); // field count
+        tx.extend_from_slice(&110u16.to_be_bytes()); // FieldType::UserAccess
+        tx.extend_from_slice(&(field.len() as u16).to_be_bytes());
+        tx.extend_from_slice(field);
+        tx
+    }
+
+    /// Fake server: handshake, then push three freestanding 354s — a valid
+    /// grant of AccessSendMedia, a malformed 4-byte field, and an identical
+    /// re-send of the grant — then close the socket.
+    fn spawn_user_access_server(
+    ) -> Result<(u16, thread::JoinHandle<Result<(), String>>), String> {
+        let listener =
+            TcpListener::bind("127.0.0.1:0").map_err(|e| format!("bind: {}", e))?;
+        let port = listener
+            .local_addr()
+            .map_err(|e| format!("local_addr: {}", e))?
+            .port();
+        let handle = thread::spawn(move || -> Result<(), String> {
+            let (mut stream, _) =
+                listener.accept().map_err(|e| format!("accept: {}", e))?;
+            let mut handshake = [0u8; 12];
+            stream
+                .read_exact(&mut handshake)
+                .map_err(|e| format!("read handshake: {}", e))?;
+            stream
+                .write_all(b"TRTP\x00\x00\x00\x00")
+                .map_err(|e| format!("write ack: {}", e))?;
+            // Spec bit 57 (AccessSendMedia) = wire byte 7, intra-byte bit 0x40
+            stream
+                .write_all(&user_access_tx_bytes(&[0, 0, 0, 0, 0, 0, 0, 0x40]))
+                .map_err(|e| format!("write 354 #1: {}", e))?;
+            stream
+                .write_all(&user_access_tx_bytes(&[0, 0, 0, 0x40]))
+                .map_err(|e| format!("write 354 #2: {}", e))?;
+            stream
+                .write_all(&user_access_tx_bytes(&[0, 0, 0, 0, 0, 0, 0, 0x40]))
+                .map_err(|e| format!("write 354 #3: {}", e))?;
+            stream.flush().map_err(|e| format!("flush: {}", e))?;
+            Ok(())
+        });
+        Ok((port, handle))
+    }
+
+    /// End-to-end: the receive loop must apply a freestanding UserAccess (354),
+    /// warn-and-ignore a malformed one, and dedupe an identical re-send —
+    /// emitting exactly one AccessUpdated.
+    #[tokio::test]
+    async fn receive_loop_applies_freestanding_user_access() {
+        use super::{ConnectionStatus, HotlineEvent, ACCESS_SEND_MEDIA};
+        use std::sync::atomic::Ordering;
+        use std::time::Duration;
+
+        let (port, server) = spawn_user_access_server().expect("server start");
+        let mut bookmark = test_tls_bookmark(port);
+        bookmark.tls = false;
+        let client = HotlineClient::new(bookmark, false);
+
+        client.open_connection().await.expect("open_connection failed");
+        client
+            .handshake(super::PROTOCOL_SUBVERSION)
+            .await
+            .expect("handshake failed");
+
+        let mut event_rx = client.event_rx.lock().await.take().expect("event_rx available");
+        client.start_receive_loop().await;
+
+        // Drain events until the server closes the socket (Disconnected), with
+        // a hard timeout so a regression fails fast instead of hanging CI.
+        let mut access_updates = Vec::new();
+        let mut access_logs = Vec::new();
+        loop {
+            let event = tokio::time::timeout(Duration::from_secs(5), event_rx.recv())
+                .await
+                .expect("timed out waiting for receive-loop events")
+                .expect("event channel closed unexpectedly");
+            match event {
+                HotlineEvent::AccessUpdated { access, server_supports, can_send_media } => {
+                    access_updates.push((access, server_supports, can_send_media));
+                }
+                HotlineEvent::ProtocolLog { level, message }
+                    if message.contains("UserAccess") =>
+                {
+                    access_logs.push((level, message));
+                }
+                HotlineEvent::StatusChanged(ConnectionStatus::Disconnected) => break,
+                _ => {}
+            }
+        }
+
+        // Exactly one AccessUpdated: the first 354 changed the bitmap, the
+        // malformed one was ignored, the identical re-send was deduped.
+        assert_eq!(access_updates, vec![(ACCESS_SEND_MEDIA, false, true)]);
+        assert_eq!(client.get_user_access(), ACCESS_SEND_MEDIA);
+        assert!(client.can_send_media.load(Ordering::SeqCst));
+        // Log trail: info (applied), warn (malformed), debug (unchanged re-send)
+        let levels: Vec<&str> = access_logs.iter().map(|(l, _)| l.as_str()).collect();
+        assert_eq!(levels, ["info", "warn", "debug"], "logs: {:?}", access_logs);
 
         server.join().expect("server thread panicked").expect("server failed");
     }

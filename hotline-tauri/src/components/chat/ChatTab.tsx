@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import MarkdownText from '../common/MarkdownText';
 import DiscordChatRenderer from './DiscordChatRenderer';
 import MediaImage from './MediaImage';
@@ -119,18 +120,38 @@ export default function ChatTab({
     canSend: false,
   });
 
-  // Probe inline-media status when server / pref changes.
+  // Probe inline-media status when server / pref changes, and listen for
+  // mid-session access updates (e.g. a freestanding UserAccess transaction
+  // arriving after the login reply).
   useEffect(() => {
     let cancelled = false;
-    invoke<InlineMediaStatus>('get_inline_media_status', { serverId })
+    let gotEvent = false;
+
+    const unlistenPromise = listen<InlineMediaStatus>(
+      `inline-media-status-${serverId}`,
+      (event) => {
+        if (cancelled) return;
+        gotEvent = true;
+        setMediaStatus(event.payload);
+      },
+    );
+
+    // Probe only after the listener is registered so an update can't slip
+    // between the snapshot and the subscription; if an event already arrived,
+    // it is fresher than the snapshot and wins.
+    unlistenPromise
+      .catch(() => {})
+      .then(() => invoke<InlineMediaStatus>('get_inline_media_status', { serverId }))
       .then((status) => {
-        if (!cancelled) setMediaStatus(status);
+        if (!cancelled && !gotEvent) setMediaStatus(status);
       })
       .catch(() => {
-        if (!cancelled) setMediaStatus({ serverSupports: false, canSend: false });
+        if (!cancelled && !gotEvent) setMediaStatus({ serverSupports: false, canSend: false });
       });
+
     return () => {
       cancelled = true;
+      unlistenPromise.then((fn) => fn()).catch(() => {});
     };
   }, [serverId]);
 
