@@ -1,6 +1,6 @@
-import { useState } from 'react';
 import { usePreferencesStore } from '../../stores/preferencesStore';
 import LinkPreview from './LinkPreview';
+import ExternalImageCard from './ExternalImageCard';
 
 const URL_REGEX = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/g;
 const IMAGE_EXT_REGEX = /\.(png|jpe?g|gif|webp|bmp|svg)(\?[^\s]*)?$/i;
@@ -11,30 +11,6 @@ function openUrl(url: string) {
   } else {
     window.open(url, '_blank');
   }
-}
-
-function InlineImage({ url }: { url: string }) {
-  const [failed, setFailed] = useState(false);
-
-  if (failed) return null;
-
-  return (
-    <a
-      href={url}
-      onClick={(e) => {
-        e.preventDefault();
-        openUrl(url);
-      }}
-      className="block my-1"
-    >
-      <img
-        src={url}
-        alt=""
-        onError={() => setFailed(true)}
-        className="max-w-[300px] max-h-[300px] object-contain rounded border border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-90 transition-opacity"
-      />
-    </a>
-  );
 }
 
 interface LinkifyProps {
@@ -48,9 +24,6 @@ export default function Linkify({ text, className, hideImageUrls = false }: Link
   const showLinkPreviews = usePreferencesStore((s) => s.showLinkPreviews);
   const chatDisplayMode = usePreferencesStore((s) => s.chatDisplayMode);
   const isDiscordMode = chatDisplayMode === 'discord';
-
-  // In Discord mode, always show inline images
-  const effectiveShowImages = showInlineImages || isDiscordMode;
   const parts = text.split(URL_REGEX);
 
   return (
@@ -58,11 +31,16 @@ export default function Linkify({ text, className, hideImageUrls = false }: Link
       {parts.map((part, i) => {
         if (!URL_REGEX.test(part)) return part;
 
-        const isImage = effectiveShowImages && IMAGE_EXT_REGEX.test(part);
+        const isImageUrl = IMAGE_EXT_REGEX.test(part);
+        const isImage = showInlineImages && isImageUrl;
+
+        if (isImageUrl && hideImageUrls && !showInlineImages) {
+          return <ExternalImageCard key={i} url={part} />;
+        }
 
         if (isImage && hideImageUrls) {
           // Discord mode: show only the image, no URL text
-          return <InlineImage key={i} url={part} />;
+          return <ExternalImageCard key={i} url={part} />;
         }
 
         return (
@@ -79,7 +57,7 @@ export default function Linkify({ text, className, hideImageUrls = false }: Link
             >
               {part}
             </a>
-            {isImage && <InlineImage url={part} />}
+            {isImage && <ExternalImageCard url={part} />}
             {!isImage && isDiscordMode && showLinkPreviews && <LinkPreview url={part} />}
           </span>
         );

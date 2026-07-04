@@ -2,6 +2,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { usePreferencesStore } from '../../stores/preferencesStore';
 import Linkify from './Linkify';
+import ExternalImageCard from './ExternalImageCard';
 
 // Patterns that suggest the text contains intentional markdown formatting.
 // We only look for block-level or unambiguous inline syntax so that plain
@@ -67,26 +68,12 @@ export default function MarkdownText({ text, className, linkify = true, hideImag
             {children}
           </a>
         ),
-        // Render images inline with sane size limits
-        img: ({ src, alt }) => (
-          <a
-            href={src}
-            onClick={(e) => {
-              e.preventDefault();
-              if (src) openUrl(src);
-            }}
-            className="block my-1"
-          >
-            <img
-              src={src}
-              alt={alt ?? ''}
-              className="max-w-[300px] max-h-[300px] object-contain rounded border border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-90 transition-opacity"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = 'none';
-              }}
-            />
-          </a>
-        ),
+        // Only auto-load inline images when the user has opted in.
+        img: ({ src, alt }) => {
+          if (!src) return null;
+
+          return <ExternalImageCard url={src} alt={alt} />;
+        },
         // Style code blocks
         code: ({ children, className: codeClassName }) => {
           const isBlock = codeClassName?.startsWith('language-');
@@ -110,8 +97,8 @@ export default function MarkdownText({ text, className, linkify = true, hideImag
         h4: ({ children }) => <p className="text-lg font-bold my-1">{children}</p>,
         h5: ({ children }) => <p className="text-lg font-bold my-1">{children}</p>,
         h6: ({ children }) => <p className="text-lg font-bold my-1">{children}</p>,
-        // Keep paragraphs tight for chat context
-        p: ({ children }) => <p className="my-1">{children}</p>,
+        // Keep paragraphs tight for chat context; use div to allow embedded cards.
+        p: ({ children }) => <div className="my-1">{children}</div>,
         // Blockquotes
         blockquote: ({ children }) => (
           <blockquote className="border-l-2 border-gray-300 dark:border-gray-600 pl-2 my-1 text-gray-600 dark:text-gray-400 italic">

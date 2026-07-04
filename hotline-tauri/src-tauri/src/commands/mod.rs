@@ -1086,6 +1086,13 @@ pub struct LinkPreviewData {
     pub site_name: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalImageData {
+    pub bytes_base64: String,
+    pub mime: String,
+}
+
 /// Check whether an IP address belongs to a private/internal range.
 fn is_private_ip(ip: &std::net::IpAddr) -> bool {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -1151,6 +1158,13 @@ async fn validate_url_target(url: &str) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn is_supported_external_image_mime(mime: &str) -> bool {
+    matches!(
+        mime,
+        "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "image/bmp"
+    )
 }
 
 #[tauri::command]
@@ -1283,6 +1297,91 @@ pub async fn fetch_link_preview(url: String) -> Result<LinkPreviewData, String> 
         description,
         image,
         site_name: og_site_name,
+    })
+}
+
+#[tauri::command]
+pub async fn fetch_external_image(url: String) -> Result<ExternalImageData, String> {
+    const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
+
+    validate_url_target(&url).await?;
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| format!("HTTP client error: {e}"))?;
+
+    let mut current_url = url.clone();
+    let mut response = None;
+    for _ in 0..5 {
+        let resp = client
+            .get(&current_url)
+            .header("User-Agent", "Mozilla/5.0 (compatible; HotlineNavigator/0.2.9)")
+            .header("Accept", "image/*")
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {e}"))?;
+
+        if resp.status().is_redirection() {
+            if let Some(location) = resp.headers().get("location").and_then(|v| v.to_str().ok()) {
+                let next = reqwest::Url::parse(location)
+                    .or_else(|_| reqwest::Url::parse(&current_url).and_then(|base| base.join(location)))
+                    .map_err(|e| format!("Invalid redirect URL: {e}"))?;
+                let next_str = next.to_string();
+                validate_url_target(&next_str).await?;
+                current_url = next_str;
+                continue;
+            }
+        }
+
+        response = Some(resp);
+        break;
+    }
+
+    let response = response.ok_or("Too many redirects")?;
+
+    if !response.status().is_success() {
+        return Err(format!("HTTP {}", response.status()));
+    }
+
+    if let Some(len) = response.content_length() {
+        if len as usize > MAX_IMAGE_BYTES {
+            return Err("Image is larger than the 8 MB preview limit".to_string());
+        }
+    }
+
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(';').next())
+        .map(str::trim)
+        .unwrap_or("")
+        .to_string();
+
+    let bytes = response.bytes().await.map_err(|e| format!("Read error: {e}"))?;
+    if bytes.len() > MAX_IMAGE_BYTES {
+        return Err("Image is larger than the 8 MB preview limit".to_string());
+    }
+
+    let detected_mime = detect_mime_from_content(&bytes)
+        .or_else(|| {
+            if content_type.starts_with("image/") {
+                Some(content_type.as_str())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| guess_mime(&current_url, Some(&bytes)));
+
+    if !is_supported_external_image_mime(detected_mime) {
+        return Err(format!("Unsupported image type: {}", detected_mime));
+    }
+
+    Ok(ExternalImageData {
+        bytes_base64: STANDARD.encode(&bytes),
+        mime: detected_mime.to_string(),
     })
 }
 

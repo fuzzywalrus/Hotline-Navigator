@@ -293,7 +293,7 @@ export default function GeneralSettingsTab() {
                   Inline Image Previews
                 </label>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Show previews of linked images in chat and messages. Images are loaded from external URLs.
+                  Automatically fetch and show external chat images inline. When off, each image can still be loaded individually from chat.
                 </p>
               </div>
               <input
@@ -309,7 +309,7 @@ export default function GeneralSettingsTab() {
                   Link Previews
                 </label>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Show rich previews (title, description, image) for links in Discord chat mode. Fetches page metadata from external URLs.
+                  Show rich previews (title and description) for links in Discord chat mode. This sends preview requests to external URLs when enabled.
                 </p>
               </div>
               <input
@@ -842,4 +842,3 @@ export default function GeneralSettingsTab() {
     </div>
   );
 }
-

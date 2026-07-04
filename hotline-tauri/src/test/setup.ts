@@ -62,6 +62,16 @@ const localStorageMock = (() => {
 
 Object.defineProperty(window, 'localStorage', { value: localStorageMock });
 
+Object.defineProperty(URL, 'createObjectURL', {
+  writable: true,
+  value: vi.fn(() => 'blob:mock-url'),
+});
+
+Object.defineProperty(URL, 'revokeObjectURL', {
+  writable: true,
+  value: vi.fn(),
+});
+
 // jsdom has no scrollIntoView; chat components call it on new messages.
 Element.prototype.scrollIntoView = vi.fn();
 

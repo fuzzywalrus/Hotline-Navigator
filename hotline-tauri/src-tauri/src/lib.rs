@@ -177,6 +177,7 @@ pub fn run() {
             commands::send_private_chat,
             commands::mnemosyne_fetch,
             commands::fetch_link_preview,
+            commands::fetch_external_image,
             commands::get_chat_history,
             commands::upload_media,
             commands::download_media,

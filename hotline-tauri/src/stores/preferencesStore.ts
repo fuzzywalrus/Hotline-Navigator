@@ -144,7 +144,7 @@ export const usePreferencesStore = create<PreferencesState>()(
       setShowInlineImages: (showInlineImages) => set({ showInlineImages }),
 
       // Link preview preferences
-      showLinkPreviews: true,
+      showLinkPreviews: false,
       setShowLinkPreviews: (showLinkPreviews) => set({ showLinkPreviews }),
 
       // Markdown preferences
@@ -249,7 +249,16 @@ export const usePreferencesStore = create<PreferencesState>()(
     {
       name: 'hotline-preferences',
       storage: createJSONStorage(() => localStorage),
+      version: 2,
+      migrate: (persistedState, version) => {
+        if (version < 2) {
+          return {
+            ...(persistedState as Record<string, unknown>),
+            showLinkPreviews: false,
+          };
+        }
+        return persistedState;
+      },
     }
   )
 );
-
