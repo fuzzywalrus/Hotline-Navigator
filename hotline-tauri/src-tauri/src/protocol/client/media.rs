@@ -26,6 +26,10 @@ pub const SINGLE_SHOT_THRESHOLD: usize = 60 * 1024;
 /// Default cache cap (64 MB). Configurable per-instance; this is the default.
 pub const DEFAULT_CACHE_CAP_BYTES: u64 = 64 * 1024 * 1024;
 
+/// Secondary cap on number of cached handles. This keeps metadata overhead
+/// bounded even if a server sends many tiny-but-distinct payloads.
+pub const DEFAULT_CACHE_CAP_ENTRIES: usize = 4_096;
+
 /// Spec recommends 30s idle timeout for chunked uploads.
 pub const CHUNK_REPLY_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -61,14 +65,16 @@ pub struct MediaCache {
     entries: HashMap<MediaHandle, MediaEntry>,
     total_bytes: u64,
     cap_bytes: u64,
+    cap_entries: usize,
 }
 
 impl MediaCache {
-    pub fn new(cap_bytes: u64) -> Self {
+    pub fn new(cap_bytes: u64, cap_entries: usize) -> Self {
         Self {
             entries: HashMap::new(),
             total_bytes: 0,
             cap_bytes,
+            cap_entries,
         }
     }
 
@@ -105,7 +111,7 @@ impl MediaCache {
     }
 
     fn evict_to_cap(&mut self) {
-        while self.total_bytes > self.cap_bytes {
+        while self.total_bytes > self.cap_bytes || self.entries.len() > self.cap_entries {
             // Find oldest entry by last_accessed
             let oldest_handle = self
                 .entries
@@ -169,15 +175,16 @@ pub fn handle_from_hex(hex_str: &str) -> Result<MediaHandle, String> {
 pub fn validate_magic_bytes(bytes: &[u8], mime: &str) -> Result<(), String> {
     let lower = mime.to_ascii_lowercase();
     let ok = match lower.as_str() {
-        "image/jpeg" | "image/jpg" => bytes.len() >= 3 && bytes[..3] == [0xFF, 0xD8, 0xFF],
+        // Reject implausibly short payloads even if the first few marker bytes match.
+        "image/jpeg" | "image/jpg" => bytes.len() >= 16 && bytes[..3] == [0xFF, 0xD8, 0xFF],
         "image/png" => {
-            bytes.len() >= 8
+            bytes.len() >= 24
                 && bytes[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
         }
         "image/gif" => {
-            bytes.len() >= 6
+            bytes.len() >= 10
                 && bytes[..6] == *b"GIF87a"
-                || bytes.len() >= 6 && bytes[..6] == *b"GIF89a"
+                || bytes.len() >= 10 && bytes[..6] == *b"GIF89a"
         }
         _ => return Err(format!("Unsupported canonical MIME: {}", mime)),
     };
@@ -542,7 +549,7 @@ mod tests {
 
     #[test]
     fn cache_inserts_and_retrieves() {
-        let mut cache = MediaCache::new(1024);
+        let mut cache = MediaCache::new(1024, 16);
         let handle: MediaHandle = vec![1, 2, 3];
         cache.insert(handle.clone(), dummy_entry(100, Instant::now()));
         assert_eq!(cache.len(), 1);
@@ -552,7 +559,7 @@ mod tests {
 
     #[test]
     fn cache_evicts_oldest_on_cap() {
-        let mut cache = MediaCache::new(150);
+        let mut cache = MediaCache::new(150, 16);
         let now = Instant::now();
         cache.insert(vec![1], dummy_entry(80, now - Duration::from_secs(10)));
         cache.insert(vec![2], dummy_entry(80, now - Duration::from_secs(5)));
@@ -564,7 +571,7 @@ mod tests {
 
     #[test]
     fn cache_get_updates_last_accessed() {
-        let mut cache = MediaCache::new(10_000);
+        let mut cache = MediaCache::new(10_000, 16);
         let handle: MediaHandle = vec![1];
         let original_time = Instant::now() - Duration::from_secs(60);
         cache.insert(handle.clone(), dummy_entry(100, original_time));
@@ -575,7 +582,7 @@ mod tests {
 
     #[test]
     fn cache_clear_resets_state() {
-        let mut cache = MediaCache::new(10_000);
+        let mut cache = MediaCache::new(10_000, 16);
         cache.insert(vec![1], dummy_entry(100, Instant::now()));
         cache.insert(vec![2], dummy_entry(200, Instant::now()));
         cache.clear();
@@ -584,25 +591,47 @@ mod tests {
     }
 
     #[test]
+    fn cache_evicts_oldest_on_entry_cap() {
+        let mut cache = MediaCache::new(10_000, 2);
+        let now = Instant::now();
+        cache.insert(vec![1], dummy_entry(10, now - Duration::from_secs(10)));
+        cache.insert(vec![2], dummy_entry(10, now - Duration::from_secs(5)));
+        cache.insert(vec![3], dummy_entry(10, now));
+        assert_eq!(cache.len(), 2);
+        assert!(cache.get(&vec![1]).is_none());
+        assert!(cache.get(&vec![2]).is_some());
+        assert!(cache.get(&vec![3]).is_some());
+    }
+
+    #[test]
     fn validate_magic_jpeg() {
-        let bytes = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10];
+        let bytes = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00];
         assert!(validate_magic_bytes(&bytes, "image/jpeg").is_ok());
     }
 
     #[test]
     fn validate_magic_png() {
-        let bytes = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00];
+        let bytes = [
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+            0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+        ];
         assert!(validate_magic_bytes(&bytes, "image/png").is_ok());
     }
 
     #[test]
     fn validate_magic_gif87() {
-        assert!(validate_magic_bytes(b"GIF87a..", "image/gif").is_ok());
+        assert!(validate_magic_bytes(b"GIF87a\x01\x00\x01\x00", "image/gif").is_ok());
     }
 
     #[test]
     fn validate_magic_gif89() {
-        assert!(validate_magic_bytes(b"GIF89a..", "image/gif").is_ok());
+        assert!(validate_magic_bytes(b"GIF89a\x01\x00\x01\x00", "image/gif").is_ok());
+    }
+
+    #[test]
+    fn validate_magic_rejects_tiny_jpeg() {
+        assert!(validate_magic_bytes(&[0xFF, 0xD8, 0xFF], "image/jpeg").is_err());
     }
 
     #[test]

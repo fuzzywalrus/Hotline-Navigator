@@ -318,6 +318,7 @@ impl HotlineClient {
             inline_media_enabled: Arc::new(AtomicBool::new(true)),
             media_cache: Arc::new(Mutex::new(media::MediaCache::new(
                 media::DEFAULT_CACHE_CAP_BYTES,
+                media::DEFAULT_CACHE_CAP_ENTRIES,
             ))),
             ft_base_key: Arc::new(Mutex::new(None)),
             running: Arc::new(AtomicBool::new(false)),
