@@ -123,7 +123,7 @@ The app includes a built-in debug logging system that is **active only in develo
 
 ## Building
 
-**Platform support:** macOS (x86_64, ARM64, Universal), Windows (x86_64), Linux (x86_64, ARM64), iOS, iPadOS, and Android. Mobile builds are not in app stores and must be built or sideloaded. See the [main project README](https://github.com/fuzzywalrus/hotline#platform-support) for details.
+**Platform support:** macOS (x86_64, ARM64, Universal), Windows (x86_64, ARM64), Linux (x86_64, ARM64), iOS, iPadOS, and Android. Mobile builds are not in app stores and must be built or sideloaded. See the [main project README](https://github.com/fuzzywalrus/hotline#platform-support) for details.
 
 ### Desktop
 
